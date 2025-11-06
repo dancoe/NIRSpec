@@ -142,6 +142,15 @@ class UnifiedPlotCanvas(FigureCanvas):
         self.trace_info = {}
         self._current_traces = {}  # Store current traces for UI updates
         
+        # Multiple trace support
+        self.multiple_slits = []  # List of (msa_x, msa_y, quadrant, col, row) tuples
+        self.selected_slit_index = None  # Index of currently selected slit
+        self.dragging_slit = False  # Whether we're currently dragging a slit
+        self.last_hover_pos = None  # Track last hover position to detect mouse movement
+        self.slit_markers = []  # Visual markers for slits on MSA
+        self.slits_by_config = {}  # Store slits for each grating config: {config_key: [(msa_x, msa_y, q, c, r), ...]}
+        self.traces_by_config = {}  # Store traces for each grating config: {config_key: {slit_index: {detector: trace_data}}}
+        
         # Enable mouse tracking
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -149,6 +158,7 @@ class UnifiedPlotCanvas(FigureCanvas):
         # Connect mouse events
         self.mpl_connect('motion_notify_event', self.on_mouse_move)
         self.mpl_connect('button_press_event', self.on_mouse_click)
+        self.mpl_connect('button_release_event', self.on_mouse_release)
     
     def setup_axes(self):
         """Setup the subplot layout with MSA on left, detectors on right, colorbar on far right"""
@@ -309,10 +319,58 @@ class UnifiedPlotCanvas(FigureCanvas):
         
         self.hover_pos = (msa_x, msa_y)
         
-        # Update hover visualization with smaller crosshair
-        crosshair_size = 8  # Smaller crosshair
-        self.hover_cross_h.set_data([msa_x - crosshair_size, msa_x + crosshair_size], [msa_y, msa_y])
-        self.hover_cross_v.set_data([msa_x, msa_x], [msa_y - crosshair_size, msa_y + crosshair_size])
+        # Check if mouse has moved significantly (for deselecting slit) - but NOT if we're dragging
+        if not self.dragging_slit and self.last_hover_pos is not None:
+            dx = abs(msa_x - self.last_hover_pos[0])
+            dy = abs(msa_y - self.last_hover_pos[1])
+            if dx > 1.0 or dy > 1.0:  # Moved significantly
+                self.selected_slit_index = None
+        self.last_hover_pos = (msa_x, msa_y)
+        
+        # Handle dragging
+        if self.dragging_slit and self.selected_slit_index is not None:
+            # Update the slit position
+            old_data = self.multiple_slits[self.selected_slit_index]
+            quadrant, col, row = self.get_quadrant_col_row(msa_x, msa_y)
+            if quadrant is not None:
+                self.multiple_slits[self.selected_slit_index] = (msa_x, msa_y, quadrant, col, row)
+                
+                # Update slit markers
+                self.draw_slit_markers()
+                
+                # If auto-calculate, update trace immediately
+                if self.main_window and hasattr(self.main_window, 'auto_calculate') and self.main_window.auto_calculate.isChecked():
+                    if hasattr(self.main_window, 'plot_multiple_traces'):
+                        self.main_window.plot_multiple_traces()
+                    if hasattr(self.main_window, 'update_selected_slits_display'):
+                        self.main_window.update_selected_slits_display()
+            return
+        
+        # Check if in multiple mode and update markers for hover effect
+        multiple_mode = self.main_window and hasattr(self.main_window, 'plot_multiple') and self.main_window.plot_multiple.isChecked()
+        if multiple_mode and self.multiple_slits:
+            # Redraw markers to show hover state
+            self.draw_slit_markers()
+        
+        # Check if hovering over a slit (cyan crosshair visible)
+        hovering_over_slit = False
+        if multiple_mode and self.multiple_slits:
+            hover_x, hover_y = msa_x, msa_y
+            tolerance = 5.0  # arcsec
+            for i, (sx, sy, q, c, r) in enumerate(self.multiple_slits):
+                if abs(hover_x - sx) < tolerance and abs(hover_y - sy) < tolerance:
+                    hovering_over_slit = True
+                    break
+        
+        # Update hover visualization with smaller crosshair (only if not hovering over a slit)
+        crosshair_size = 5  # Same size as slit markers
+        if hovering_over_slit:
+            # Hide the yellow crosshair
+            self.hover_cross_h.set_data([], [])
+            self.hover_cross_v.set_data([], [])
+        else:
+            self.hover_cross_h.set_data([msa_x - crosshair_size, msa_x + crosshair_size], [msa_y, msa_y])
+            self.hover_cross_v.set_data([msa_x, msa_x], [msa_y - crosshair_size, msa_y + crosshair_size])
         self.draw_idle()
         
         # If auto-calculate is enabled, treat hover like a click for selection
@@ -345,18 +403,120 @@ class UnifiedPlotCanvas(FigureCanvas):
         if msa_x is None or msa_y is None:
             return
         
-        # Store the click position and update white crosshair
-        self.last_click_pos = (msa_x, msa_y)
+        # Check if multiple traces mode is enabled
+        multiple_mode = self.main_window and hasattr(self.main_window, 'plot_multiple') and self.main_window.plot_multiple.isChecked()
         
-        # Update white crosshair at click location
-        crosshair_size = 8
-        self.click_cross_h.set_data([msa_x - crosshair_size, msa_x + crosshair_size], [msa_y, msa_y])
-        self.click_cross_v.set_data([msa_x, msa_x], [msa_y - crosshair_size, msa_y + crosshair_size])
-        self.draw_idle()
+        if multiple_mode:
+            # Check if clicking near an existing slit (for selection/dragging)
+            tolerance = 5.0  # arcsec
+            clicked_existing = False
+            for i, (sx, sy, q, c, r) in enumerate(self.multiple_slits):
+                if abs(msa_x - sx) < tolerance and abs(msa_y - sy) < tolerance:
+                    self.selected_slit_index = i
+                    self.dragging_slit = True
+                    self.last_hover_pos = (msa_x, msa_y)
+                    clicked_existing = True
+                    # Update markers to show we're dragging
+                    self.draw_slit_markers()
+                    return
+            
+            # Not near existing slit, add new slit
+            if not clicked_existing:
+                quadrant, col, row = self.get_quadrant_col_row(msa_x, msa_y)
+                if quadrant is not None:
+                    self.multiple_slits.append((msa_x, msa_y, quadrant, col, row))
+                    self.selected_slit_index = len(self.multiple_slits) - 1
+                    self.last_hover_pos = (msa_x, msa_y)
+                    
+                    if hasattr(self.main_window, 'plot_multiple_traces'):
+                        self.main_window.plot_multiple_traces()
+                    if hasattr(self.main_window, 'update_selected_slits_display'):
+                        self.main_window.update_selected_slits_display()
+        else:
+            # Single trace mode
+            # Store the click position and update white crosshair
+            self.last_click_pos = (msa_x, msa_y)
+            
+            # Update white crosshair at click location
+            crosshair_size = 8
+            self.click_cross_h.set_data([msa_x - crosshair_size, msa_x + crosshair_size], [msa_y, msa_y])
+            self.click_cross_v.set_data([msa_x, msa_x], [msa_y - crosshair_size, msa_y + crosshair_size])
+            self.draw_idle()
+            
+            # Trigger trace calculation
+            if self.main_window and hasattr(self.main_window, 'on_msa_click'):
+                self.main_window.on_msa_click(msa_x, msa_y)
+    
+    def on_mouse_release(self, event):
+        """Handle mouse release events"""
+        if self.dragging_slit:
+            self.dragging_slit = False
+            # If not auto-calculate, update trace on release
+            if self.main_window and hasattr(self.main_window, 'auto_calculate') and not self.main_window.auto_calculate.isChecked():
+                if hasattr(self.main_window, 'plot_multiple_traces'):
+                    self.main_window.plot_multiple_traces()
+            else:
+                # Just update markers to turn them white again
+                self.draw_slit_markers()
+            
+            if hasattr(self.main_window, 'update_selected_slits_display'):
+                self.main_window.update_selected_slits_display()
+    
+    def get_quadrant_col_row(self, msa_x, msa_y):
+        """Convert MSA position to quadrant, column, row"""
+        shutter_pitch_x = 0.27  # arcsec
+        shutter_pitch_y = 0.53  # arcsec
+        x_num_cols = 365
+        y_num_rows = 171
+        quad_width = x_num_cols * shutter_pitch_x
+        quad_height = y_num_rows * shutter_pitch_y
+        gap_x = 23  # arcsec
+        gap_y = 37  # arcsec
+        half_gap_x = gap_x / 2
+        half_gap_y = gap_y / 2
         
-        # Trigger trace calculation
-        if self.main_window and hasattr(self.main_window, 'on_msa_click'):
-            self.main_window.on_msa_click(msa_x, msa_y)
+        quadrant = None
+        shutter_col = None
+        shutter_row = None
+
+        if msa_x < -half_gap_x and msa_y > half_gap_y:  # Q3 (upper-left)
+            x_from_left_edge = -half_gap_x - msa_x
+            y_from_bottom = msa_y - half_gap_y
+            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+                quadrant = 3
+                x_frac = x_from_left_edge / quad_width
+                y_frac = 1 - y_from_bottom / quad_height
+                shutter_col = int(x_frac * x_num_cols) + 1
+                shutter_row = int(y_frac * y_num_rows) + 1
+        elif msa_x < -half_gap_x and msa_y < -half_gap_y:  # Q4 (lower-left)
+            x_from_left_edge = -half_gap_x - msa_x
+            y_from_top = -half_gap_y - msa_y
+            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+                quadrant = 4
+                x_frac = x_from_left_edge / quad_width
+                y_frac = y_from_top / quad_height
+                shutter_col = int(x_frac * x_num_cols) + 1
+                shutter_row = int(y_frac * y_num_rows) + 1
+        elif msa_x > half_gap_x and msa_y > half_gap_y:  # Q1 (upper-right)
+            x_from_left_edge = msa_x - half_gap_x
+            y_from_bottom = msa_y - half_gap_y
+            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+                quadrant = 1
+                x_frac = 1 - x_from_left_edge / quad_width
+                y_frac = 1 - y_from_bottom / quad_height
+                shutter_col = int(x_frac * x_num_cols) + 1
+                shutter_row = int(y_frac * y_num_rows) + 1
+        elif msa_x > half_gap_x and msa_y < -half_gap_y:  # Q2 (lower-right)
+            x_from_left_edge = msa_x - half_gap_x
+            y_from_top = -half_gap_y - msa_y
+            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+                quadrant = 2
+                x_frac = 1 - x_from_left_edge / quad_width
+                y_frac = y_from_top / quad_height
+                shutter_col = int(x_frac * x_num_cols) + 1
+                shutter_row = int(y_frac * y_num_rows) + 1
+        
+        return quadrant, shutter_col, shutter_row
     
     def clear_traces(self):
         """Clear existing spectral traces"""
@@ -374,6 +534,53 @@ class UnifiedPlotCanvas(FigureCanvas):
         # Now clear and reset the detector plots
         self.setup_detectors()
         self.draw()
+    
+    def draw_slit_markers(self):
+        """Draw crosshair markers for all slits in multiple trace mode"""
+        # Remove existing slit markers
+        if hasattr(self, 'slit_markers'):
+            for marker in self.slit_markers:
+                marker.remove()
+        self.slit_markers = []
+        
+        # Check if hovering near any slit (only if not currently dragging)
+        hover_slit_index = None
+        if self.hover_pos and not self.dragging_slit:
+            hover_x, hover_y = self.hover_pos
+            tolerance = 5.0  # arcsec
+            for i, (sx, sy, q, c, r) in enumerate(self.multiple_slits):
+                if abs(hover_x - sx) < tolerance and abs(hover_y - sy) < tolerance:
+                    hover_slit_index = i
+                    break
+        
+        # Draw crosshair markers for each slit
+        crosshair_size = 5  # arcsec
+        for i, (msa_x, msa_y, q, c, r) in enumerate(self.multiple_slits):
+            # Check if hovering over this slit OR if dragging this slit
+            if i == hover_slit_index or (self.dragging_slit and i == self.selected_slit_index):
+                color = 'cyan'
+                linewidth = 2.0
+                alpha = 0.9
+            else:
+                color = 'white'
+                linewidth = 1.5
+                alpha = 0.7
+            
+            # Horizontal line
+            line_h, = self.ax_msa.plot([msa_x - crosshair_size, msa_x + crosshair_size], 
+                                       [msa_y, msa_y], 
+                                       color=color, linewidth=linewidth, 
+                                       alpha=alpha, zorder=12)
+            # Vertical line
+            line_v, = self.ax_msa.plot([msa_x, msa_x], 
+                                       [msa_y - crosshair_size, msa_y + crosshair_size], 
+                                       color=color, linewidth=linewidth, 
+                                       alpha=alpha, zorder=12)
+            
+            self.slit_markers.append(line_h)
+            self.slit_markers.append(line_v)
+        
+        self.draw_idle()
     
     def plot_spectrum_trace(self, msa_x, msa_y, config_key='PRISM_CLEAR', force=False, verbose=False):
         """
@@ -399,10 +606,9 @@ class UnifiedPlotCanvas(FigureCanvas):
         expected_detectors = config['detectors']
 
         if verbose:
-            print(
-                f"\n=== Computing trace for MSA position ({msa_x:.1f}\", {msa_y:.1f}\") "
-                f"with {display_name} {'[FORCED]' if force else ''} ==="
-            )
+            msg = f"\n=== Computing trace for MSA position ({msa_x:.1f}" + '", ' + f"{msa_y:.1f}" + '") '
+            msg += f"with {display_name} " + ("[FORCED]" if force else "") + " ==="
+            print(msg)
         
         # Store trace info for display in output area
         self.trace_info = {}
@@ -799,7 +1005,7 @@ class NIRSpecViewer(QMainWindow):
         bottom_controls_layout.setSpacing(10)
         
 
-        # Combined line: Instruction | Auto-calculate | Disperser/Filter | Info
+        # Combined line: Instruction | Auto-calculate | Plot Multiple | Disperser/Filter | Info
         header_line_layout = QHBoxLayout()
 
         # Instructional text before checkbox
@@ -831,6 +1037,36 @@ class NIRSpecViewer(QMainWindow):
             }
         """)
         header_line_layout.addWidget(self.auto_calculate)
+        
+        # Add Plot Multiple checkbox
+        header_line_layout.addSpacing(20)
+        self.plot_multiple = QCheckBox("Plot multiple traces")
+        self.plot_multiple.setChecked(False)
+        self.plot_multiple.setStyleSheet("""
+            QCheckBox {
+                color: white;
+                font-size: 11pt;
+                font-weight: bold;
+                padding: 5px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+            }
+            QCheckBox::indicator:unchecked {
+                background-color: #3a3a5e;
+                border: 2px solid #ff8888;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff8888;
+                border: 2px solid #ff8888;
+                border-radius: 3px;
+            }
+        """)
+        self.plot_multiple.stateChanged.connect(self.on_plot_multiple_changed)
+        header_line_layout.addWidget(self.plot_multiple)
+        
         # Spacer
         header_line_layout.addSpacing(20)
         # Create a horizontal layout for the Disperser/Filter block
@@ -948,16 +1184,303 @@ class NIRSpecViewer(QMainWindow):
             }
         """)
         
+    def on_plot_multiple_changed(self, state):
+        """Handle plot multiple checkbox state change"""
+        if not state:
+            # Save slits for this config before clearing
+            self.plot_canvas.slits_by_config[self.current_config_key] = list(self.plot_canvas.multiple_slits)
+            
+            # Clear multiple slits when disabling
+            self.plot_canvas.multiple_slits = []
+            self.plot_canvas.selected_slit_index = None
+            self.plot_canvas.clear_traces()
+            
+            # Clear slit markers
+            if hasattr(self.plot_canvas, 'slit_markers'):
+                for marker in self.plot_canvas.slit_markers:
+                    marker.remove()
+                self.plot_canvas.slit_markers = []
+            self.plot_canvas.draw()
+            
+            self.text_msa_selected.setText("Click on MSA to select...")
+            self.text_nrs1.setText("Click on MSA to compute trace...")
+            self.text_nrs2.setText("Click on MSA to compute trace...")
+        else:
+            # Entering multiple mode - restore slits for this config if they exist
+            if self.current_config_key in self.plot_canvas.slits_by_config:
+                self.plot_canvas.multiple_slits = list(self.plot_canvas.slits_by_config[self.current_config_key])
+                self.plot_multiple_traces()
+                self.update_selected_slits_display()
+            else:
+                self.plot_canvas.multiple_slits = []
+                self.plot_canvas.selected_slit_index = None
+                self.text_msa_selected.setText("Click to add slits...")
+                self.text_nrs1.setText("Click to add slits...")
+                self.text_nrs2.setText("Click to add slits...")
+    
+    def plot_multiple_traces(self):
+        """Plot traces for all selected slits (always recalculates)"""
+        # Save current slits for this config
+        self.plot_canvas.slits_by_config[self.current_config_key] = list(self.plot_canvas.multiple_slits)
+        
+        # Initialize trace storage for this config if needed
+        if self.current_config_key not in self.plot_canvas.traces_by_config:
+            self.plot_canvas.traces_by_config[self.current_config_key] = {}
+        
+        self.plot_canvas.clear_traces()
+        
+        if not self.plot_canvas.multiple_slits:
+            self.text_nrs1.setText("Click to add slits...")
+            self.text_nrs2.setText("Click to add slits...")
+            self.plot_canvas.draw_slit_markers()
+            return
+        
+        # Plot each slit
+        all_nrs1_info = []
+        all_nrs2_info = []
+        
+        for i, (msa_x, msa_y, quadrant, col, row) in enumerate(self.plot_canvas.multiple_slits):
+            self._compute_and_plot_slit(i, msa_x, msa_y, quadrant, col, row, all_nrs1_info, all_nrs2_info)
+        
+        self._update_trace_text_boxes(all_nrs1_info, all_nrs2_info)
+        
+        # Draw slit markers on MSA
+        self.plot_canvas.draw_slit_markers()
+        
+        self.plot_canvas.draw()
+    
+    def plot_multiple_traces_from_saved(self):
+        """Plot traces for all selected slits (uses saved traces if available)"""
+        # Save current slits for this config
+        self.plot_canvas.slits_by_config[self.current_config_key] = list(self.plot_canvas.multiple_slits)
+        
+        # Initialize trace storage for this config if needed
+        if self.current_config_key not in self.plot_canvas.traces_by_config:
+            self.plot_canvas.traces_by_config[self.current_config_key] = {}
+        
+        self.plot_canvas.clear_traces()
+        
+        if not self.plot_canvas.multiple_slits:
+            self.text_nrs1.setText("Click to add slits...")
+            self.text_nrs2.setText("Click to add slits...")
+            self.plot_canvas.draw_slit_markers()
+            return
+        
+        # Plot each slit
+        all_nrs1_info = []
+        all_nrs2_info = []
+        
+        for i, (msa_x, msa_y, quadrant, col, row) in enumerate(self.plot_canvas.multiple_slits):
+            # Check if we have saved traces for this slit
+            saved_traces = self.plot_canvas.traces_by_config[self.current_config_key].get(i, {})
+            
+            if saved_traces:
+                # Use saved traces
+                config = self.plot_canvas.configs.get(self.current_config_key, {})
+                expected_detectors = config['detectors']
+                
+                for detector in expected_detectors:
+                    if detector in saved_traces:
+                        trace = saved_traces[detector]
+                        det_x = trace['x']
+                        det_y = trace['y']
+                        wavelengths_micron = trace['wavelength']
+                        
+                        # Plot on detector
+                        ax = self.plot_canvas.ax1 if detector == 'NRS1' else self.plot_canvas.ax2
+                        
+                        ax.scatter(
+                            det_x,
+                            det_y,
+                            c=wavelengths_micron,
+                            s=50,
+                            alpha=0.8,
+                            cmap=self.plot_canvas.cmap_name,
+                            vmin=self.plot_canvas.default_wave_range[0],
+                            vmax=self.plot_canvas.default_wave_range[1],
+                            edgecolors='none',
+                            linewidths=0,
+                            zorder=10 + i,
+                        )
+                        
+                        # Store info for text display
+                        if detector == 'NRS1':
+                            all_nrs1_info.append((i, quadrant, col, row, det_x, det_y, wavelengths_micron))
+                        else:
+                            all_nrs2_info.append((i, quadrant, col, row, det_x, det_y, wavelengths_micron))
+            else:
+                # No saved traces, compute them
+                self._compute_and_plot_slit(i, msa_x, msa_y, quadrant, col, row, all_nrs1_info, all_nrs2_info)
+        
+        self._update_trace_text_boxes(all_nrs1_info, all_nrs2_info)
+        
+        # Draw slit markers on MSA
+        self.plot_canvas.draw_slit_markers()
+        
+        self.plot_canvas.draw()
+    
+    def _compute_and_plot_slit(self, i, msa_x, msa_y, quadrant, col, row, all_nrs1_info, all_nrs2_info):
+        """Helper method to compute and plot a single slit trace"""
+        # Compute trace for this slit
+        config = self.plot_canvas.configs.get(self.current_config_key, {})
+        grating_name = config['grating']
+        filter_name = config['filter']
+        wave_min, wave_max = config['wave_range']
+        expected_detectors = config['detectors']
+        
+        # Create slit object
+        slit = get_slit_by_quadrant_col_row(quadrant, col, row)
+        
+        # Compute traces for each detector
+        for detector in expected_detectors:
+            try:
+                trace_data = calculate_nirspec_mos_trace(
+                    slit=slit,
+                    grating=grating_name,
+                    filt=filter_name,
+                    detector=detector,
+                    source_ypos=0.0,
+                    n_wave_points=200
+                )
+                
+                if trace_data is None:
+                    continue
+                
+                # Extract functions from trace_data
+                trace_func = trace_data['trace_func']
+                wavelength_func = trace_data['wavelength_func']
+                
+                # Generate points along the trace
+                det_x_range = np.linspace(0, 2048, 200)
+                det_y = trace_func(det_x_range)
+                det_wavelengths = wavelength_func(det_x_range)
+                
+                # Filter valid points
+                valid = np.isfinite(det_y) & np.isfinite(det_wavelengths)
+                det_x = det_x_range[valid]
+                det_y = det_y[valid]
+                det_wavelengths = det_wavelengths[valid]
+                
+                if len(det_x) == 0:
+                    continue
+                
+                # Wavelengths are in meters from trace calculation, convert to microns
+                wavelengths_micron = det_wavelengths * 1e6
+                
+                # Save trace for this slit and detector
+                if i not in self.plot_canvas.traces_by_config[self.current_config_key]:
+                    self.plot_canvas.traces_by_config[self.current_config_key][i] = {}
+                self.plot_canvas.traces_by_config[self.current_config_key][i][detector] = {
+                    'x': det_x,
+                    'y': det_y,
+                    'wavelength': wavelengths_micron
+                }
+                
+                # Plot on detector
+                ax = self.plot_canvas.ax1 if detector == 'NRS1' else self.plot_canvas.ax2
+                
+                # All traces have same appearance (no special highlight for selected)
+                ax.scatter(
+                    det_x,
+                    det_y,
+                    c=wavelengths_micron,
+                    s=50,
+                    alpha=0.8,
+                    cmap=self.plot_canvas.cmap_name,
+                    vmin=self.plot_canvas.default_wave_range[0],
+                    vmax=self.plot_canvas.default_wave_range[1],
+                    edgecolors='none',
+                    linewidths=0,
+                    zorder=10 + i,
+                )
+                
+                # Store info for text display
+                if detector == 'NRS1':
+                    all_nrs1_info.append((i, quadrant, col, row, det_x, det_y, wavelengths_micron))
+                else:
+                    all_nrs2_info.append((i, quadrant, col, row, det_x, det_y, wavelengths_micron))
+                
+            except Exception as e:
+                pass
+    
+    def _update_trace_text_boxes(self, all_nrs1_info, all_nrs2_info):
+        """Helper method to update detector text boxes"""
+        # Update text boxes
+        if all_nrs1_info:
+            lines = []
+            for i, q, c, r, x, y, w in all_nrs1_info:
+                marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
+                lines.append(f"{marker}Q{q} ({c},{r}): X=[{x.min():.0f},{x.max():.0f}]")
+            self.text_nrs1.setText("\n".join(lines))
+        else:
+            self.text_nrs1.setText("No NRS1 traces")
+        
+        if all_nrs2_info:
+            lines = []
+            for i, q, c, r, x, y, w in all_nrs2_info:
+                marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
+                lines.append(f"{marker}Q{q} ({c},{r}): X=[{x.min():.0f},{x.max():.0f}]")
+            self.text_nrs2.setText("\n".join(lines))
+        else:
+            self.text_nrs2.setText("No NRS2 traces")
+        
+        # Draw slit markers on MSA
+        self.plot_canvas.draw_slit_markers()
+        
+        self.plot_canvas.draw()
+    
+    def update_selected_slits_display(self):
+        """Update the MSA selected text box with all selected slits"""
+        if not self.plot_canvas.multiple_slits:
+            self.text_msa_selected.setText("Click to add slits...")
+            return
+        
+        lines = []
+        for i, (msa_x, msa_y, quadrant, col, row) in enumerate(self.plot_canvas.multiple_slits):
+            if i == self.plot_canvas.selected_slit_index:
+                marker = "→ "
+            else:
+                marker = "  "
+            lines.append(f"{marker}Q{quadrant} ({col}, {row})")
+        
+        self.text_msa_selected.setText("\n".join(lines))
+    
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        try:
+            from PyQt5.QtCore import Qt
+            delete_keys = [Qt.Key_Delete, Qt.Key_Backspace]
+        except ImportError:
+            from PyQt6.QtCore import Qt
+            delete_keys = [Qt.Key.Key_Delete, Qt.Key.Key_Backspace]
+        
+        if event.key() in delete_keys:
+            # Delete any slit that's currently cyan (hovering)
+            if self.plot_multiple.isChecked() and self.plot_canvas.hover_pos:
+                hover_x, hover_y = self.plot_canvas.hover_pos
+                tolerance = 5.0  # arcsec
+                for i, (sx, sy, q, c, r) in enumerate(self.plot_canvas.multiple_slits):
+                    if abs(hover_x - sx) < tolerance and abs(hover_y - sy) < tolerance:
+                        # Found a cyan slit, delete it
+                        del self.plot_canvas.multiple_slits[i]
+                        self.plot_canvas.selected_slit_index = None
+                        self.plot_multiple_traces()
+                        self.update_selected_slits_display()
+                        return
+        
+        super().keyPressEvent(event)
+    
     def on_msa_hover(self, pos):
         """Handle MSA hover event - only called when auto-calculate is enabled"""
         if pos:
             msa_x, msa_y = pos
             # Update MSA position text
             self.update_msa_position_text(msa_x, msa_y)
-            # Compute trace if auto-calculate is enabled
-            self.plot_canvas.plot_spectrum_trace(msa_x, msa_y, self.current_config_key, force=False)
-            # Update detector text boxes
-            self.update_detector_text_boxes()
+            # Compute trace if auto-calculate is enabled and not in multiple mode
+            if not self.plot_multiple.isChecked():
+                self.plot_canvas.plot_spectrum_trace(msa_x, msa_y, self.current_config_key, force=False)
+                # Update detector text boxes
+                self.update_detector_text_boxes()
     
     def update_msa_position_text(self, msa_x, msa_y):
         """Update MSA position text box with quadrant and slit info"""
@@ -1127,6 +1650,12 @@ class NIRSpecViewer(QMainWindow):
 
     def on_msa_click(self, msa_x, msa_y):
         """Handle MSA click event - force trace generation"""
+        # Check if in multiple mode
+        if self.plot_multiple.isChecked():
+            # Handled by canvas click handler
+            return
+        
+        # Single trace mode
         # Update MSA position text
         self.update_msa_position_text(msa_x, msa_y)
         self.update_msa_selected_text(msa_x, msa_y)
@@ -1165,16 +1694,41 @@ class NIRSpecViewer(QMainWindow):
         if config_key == self.current_config_key:
             return
 
+        # Save current slits for the current config
+        if self.plot_multiple.isChecked():
+            self.plot_canvas.slits_by_config[self.current_config_key] = list(self.plot_canvas.multiple_slits)
+
         self.current_config_key = config_key
         self.update_grating_info(config_key)
         self.first_trace_calculation = True
-        self.plot_canvas.clear_traces()
+        
+        # Restore slits for the new config, or start fresh
+        if config_key in self.plot_canvas.slits_by_config:
+            self.plot_canvas.multiple_slits = list(self.plot_canvas.slits_by_config[config_key])
+            self.plot_canvas.selected_slit_index = None
+            # Replot with the new grating (will use saved traces if they exist)
+            if self.plot_multiple.isChecked():
+                self.plot_multiple_traces_from_saved()
+                self.update_selected_slits_display()
+            else:
+                self.plot_canvas.clear_traces()
+        else:
+            # No slits for this config yet
+            self.plot_canvas.multiple_slits = []
+            self.plot_canvas.selected_slit_index = None
+            # Clear the plot
+            self.plot_canvas.clear_traces()
 
         # Reset text boxes
         self.text_msa_hover.setText("Hovering over MSA...")
         self.text_msa_selected.setText("Click on MSA to select...")
-        self.text_nrs1.setText("Click on MSA to compute trace...")
-        self.text_nrs2.setText("Click on MSA to compute trace...")
+        if not self.plot_multiple.isChecked():
+            self.text_nrs1.setText("Click on MSA to compute trace...")
+            self.text_nrs2.setText("Click on MSA to compute trace...")
+        else:
+            if not self.plot_canvas.multiple_slits:
+                self.text_nrs1.setText("Click to add slits...")
+                self.text_nrs2.setText("Click to add slits...")
 
     def update_trace_status(self, msa_x, msa_y, config_display, detectors, num_points, pixel_info=None, output_lines=None):
         """Update trace status in text boxes"""
