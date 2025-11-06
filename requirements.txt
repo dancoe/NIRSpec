@@ -1,0 +1,4 @@
+astropy >= 6.0.1
+astroquery >= 0.4.7
+jwst >= 1.14.0
+tqdm >= 4.66.4
