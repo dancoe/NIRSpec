@@ -17,7 +17,7 @@ Interactive plotter for JWST NIRSpec MOS (multi-object spectroscopy) observation
 - **Interactive MSA View**: Click or hover your mouse over the MSA footprint to select shutters.
 - **Multi-Trace Mode**: Plot dozens of spectral traces simultaneously to check for overlaps.
 - **Auto-Add Patterns**: Automatically generate 1 (centers), 2x2 (corners), or 3x3 (grid) shutter patterns across the FOV.
-- **Save & Load Results**: Save detector traces from selected shutters.
+- **Save & Load Shutters**: Save shutters and result summaries to CSV files. (Full traces are not saved and must be recomputed.)
 - **Wavelength Color-Coding**: Spectral traces are color-coded by wavelength (rainbow colormap).
 - **PRISM / Gratings & Dispersers**: Switch between PRISM and gratings (G140M/H, G235M/H, G395M/H)
 
@@ -68,7 +68,7 @@ python3 mos_trace.py
 2. **Auto-calculate on hover**: (Checkbox) When enabled, moving the mouse over the MSA updates the detector trace live. Performance may be slow.
 3. **Plot multiple traces**: (Checkbox) Option to plot multiple traces or one at a time.
 4. **Automatic Grids (1, 2x2, 3x3)**: Understand the geometry by plotting multiple traces from a grid of shutters. Adjust **Buffer** (distance from edge) and **Stagger** (vertical shift to avoid overlap) in the popup.
-5. **Save / Load / Clear**: Save traces to a file, load, or reset (clear all shutters and traces).
+5. **Save / Load / Clear**: Save shutters and result summaries to a CSV file. Reload shutters and recalcuate traces. Clear (reset) all shutters and traces.
 6. **Grating Selectors**: Use the grid of buttons to switch between dispersers (PRISM, High-res H, Medium-res M).
 
 ## Terminal Command Line Interface (CLI)
@@ -107,7 +107,7 @@ When saving results (via the GUI or `-save` CLI flag), the tool generates a CSV 
 - **Comparison Data** (Batch mode only): `NRS1/2 Min λ (diff)`, `NRS1/2 Min λ (sym)`, etc.
 
 ### Input CSV File: Batch Processing
-When an input CSV file is provided (from APT or this script, for example), the script iterates through each row to calculate spectral traces.
+When an input CSV file is provided (from this script or APT, for example), the script iterates through each row to calculate spectral traces.
 - **Auto-Configuration**: Grating and filtering are automatically inferred from the CSV filename (e.g., `G395H` and `F290LP` found in the name).
 - **Wavelength Comparison**: Calculated trace wavelength ranges are compared against `NRS1/2 Min/Max Wave` columns if present in the CSV.
 - **Comparison Symbols**:
@@ -123,7 +123,7 @@ When an input CSV file is provided (from APT or this script, for example), the s
 
 ### Accuracy
 
-In our spot testing with APT (File – Export – MSA Target Info [.csv]) we find that the traces are generally accurate to within 0.01 µm with high resolution gratings and up to 0.05 or 0.1 µm with PRISM.
+In our spot testing with APT (File – Export – MSA Target Info [.csv]) we find that the traces are generally accurate to within 0.01 µm with gratings and 0.1 µm with PRISM.
 
 ## Technical Details
 
@@ -141,9 +141,9 @@ In our spot testing with APT (File – Export – MSA Target Info [.csv]) we f
 
 ### Color Coding
 Wavelengths are mapped to colors using a rainbow colormap:
-- **Blue/Purple**: Shorter wavelengths (~1 μm)
+- **Purple/Blue**: Shorter wavelengths (~1 μm)
 - **Green/Yellow**: Mid wavelengths (~3 μm)
-- **Red/Dark Red**: Longer wavelengths (~5 μm)
+- **Orange/Red**: Longer wavelengths (~5 μm)
 
 ## References
 
