@@ -2,7 +2,7 @@
 
 ## JWST NIRSpec MSA ➡ Detector Trace Plotter
 
-> **CAUTION**: The outputs of this tool (spectral trace positions and wavelength calibrations) have yet to be rigorously tested and cross-verified against official ground-truth data. Use for visualization and planning purposes only.
+> **NOTE**: This tool is intended for visualization and planning purposes. Accuracy is discussed below. APT and the JWST pipeline can be used to calculate precise pixel traces and/or wavelength ranges.
 
 Interactive plotter for JWST NIRSpec MOS (multi-object spectroscopy) observations
 
