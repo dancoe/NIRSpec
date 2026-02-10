@@ -1,8 +1,44 @@
+import os
 import numpy as np
 from astropy.modeling.models import Shift
 from scipy.interpolate import interp1d
 import logging
 
+# 1) Define CRDS environment variables
+if 'CRDS_SERVER_URL' not in os.environ:
+    os.environ['CRDS_SERVER_URL'] = 'https://jwst-crds.stsci.edu'
+
+if 'CRDS_PATH' not in os.environ:
+    # Default to user home directory
+    os.environ['CRDS_PATH'] = os.path.join(os.path.expanduser("~"), "crds_cache")
+    # Ensure local cache directory exists
+    try:
+        os.makedirs(os.environ['CRDS_PATH'], exist_ok=True)
+    except Exception:
+        pass
+
+# 2) Import crds
+try:
+    import crds
+except ImportError:
+    crds = None
+
+def print_crds_status():
+    """Print the current CRDS configuration and status"""
+    print(f"Using CRDS_PATH: {os.environ.get('CRDS_PATH', '(not set)')}")
+    print(f"Using CRDS_SERVER_URL: {os.environ.get('CRDS_SERVER_URL', '(not set)')}")
+    if os.environ.get('CRDS_READONLY_CACHE'):
+        print(f"Using CRDS_READONLY_CACHE: {os.environ['CRDS_READONLY_CACHE']}")
+    
+    if crds:
+        try:
+            print(f"Current Operational CRDS Context = {crds.get_default_context()}")
+        except Exception:
+            print('CRDS server not found (are you offline?)')
+    else:
+        print("CRDS package not found.")
+
+# 3) Import JWST pipeline
 from stdatamodels.jwst import datamodels
 from stdatamodels.jwst.transforms.models import Slit
 

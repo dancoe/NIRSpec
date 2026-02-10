@@ -4,16 +4,17 @@
 Interactive JWST NIRSpec MSA Viewer
 Shows how spectra from different MSA shutters project onto the detectors
 with accurate wavelength color-coding using JWST pipeline trace model.
+
+Requires companion code calculate_trace.py
+and the JWST pipeline installed, along with PyQt and other requirements.
 """
 
-print('''
-Welcome to the NIRSpec MOS Trace Viewer!
-Please make sure you have installed the JWST pipeline and downloaded the CRDS reference files.
-The first time you run this, it will take a minute to load the reference files.
-Once loaded, you should see a window pop up and an app icon in your dock.
-''')
+
 
 import sys
+import os
+import re
+import csv
 import numpy as np
 try:
     from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
@@ -41,7 +42,188 @@ from matplotlib.colors import Normalize
 import matplotlib.patches as patches
 import matplotlib.gridspec as gridspec
 from matplotlib.collections import LineCollection
-from calculate_trace import calculate_nirspec_mos_trace, get_slit_by_quadrant_col_row
+from calculate_trace import calculate_nirspec_mos_trace, get_slit_by_quadrant_col_row, print_crds_status
+
+
+# Global instrument configurations for NIRSpec gratings and filters
+# NRS1 covers shorter wavelengths, NRS2 covers longer wavelengths
+INSTRUMENT_CONFIGS = {
+    'PRISM_CLEAR': {
+        'display': 'PRISM + CLEAR',
+        'button_lines': ['PRISM / CLEAR'],
+        'grating': 'PRISM',
+        'filter': 'CLEAR',
+        'wave_range': (0.6, 5.3),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'CLEAR | 0.60-5.30 μm on NRS1, NRS2'
+    },
+    'G140M_F070LP': {
+        'display': 'G140M + F070LP',
+        'button_lines': ['G140M / F070LP'],
+        'grating': 'G140M',
+        'filter': 'F070LP',
+        'wave_range': (0.70, 1.27),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F070LP | 0.70-1.27 μm on NRS1, NRS2'
+    },
+    'G140M_F100LP': {
+        'display': 'G140M + F100LP',
+        'button_lines': ['G140M / F100LP'],
+        'grating': 'G140M',
+        'filter': 'F100LP',
+        'wave_range': (0.97, 1.84),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F100LP | 0.97-1.84 μm on NRS1, NRS2'
+    },
+    'G235M_F170LP': {
+        'display': 'G235M + F170LP',
+        'button_lines': ['G235M / F170LP'],
+        'grating': 'G235M',
+        'filter': 'F170LP',
+        'wave_range': (1.66, 3.07),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F170LP | 1.66-3.07 μm on NRS1, NRS2'
+    },
+    'G395M_F290LP': {
+        'display': 'G395M + F290LP',
+        'button_lines': ['G395M / F290LP'],
+        'grating': 'G395M',
+        'filter': 'F290LP',
+        'wave_range': (2.87, 5.10),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F290LP | 2.87-5.10 μm on NRS1, NRS2'
+    },
+    'G140H_F070LP': {
+        'display': 'G140H + F070LP',
+        'button_lines': ['G140H / F070LP'],
+        'grating': 'G140H',
+        'filter': 'F070LP',
+        'wave_range': (0.81, 1.27),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F070LP | 0.81-1.27 μm on NRS1, NRS2'
+    },
+    'G140H_F100LP': {
+        'display': 'G140H + F100LP',
+        'button_lines': ['G140H / F100LP'],
+        'grating': 'G140H',
+        'filter': 'F100LP',
+        'wave_range': (0.97, 1.82),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F100LP | 0.97-1.82 μm on NRS1, NRS2'
+    },
+    'G235H_F170LP': {
+        'display': 'G235H + F170LP',
+        'button_lines': ['G235H / F170LP'],
+        'grating': 'G235H',
+        'filter': 'F170LP',
+        'wave_range': (1.66, 3.05),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F170LP | 1.66-3.05 μm on NRS1, NRS2'
+    },
+    'G395H_F290LP': {
+        'display': 'G395H + F290LP',
+        'button_lines': ['G395H / F290LP'],
+        'grating': 'G395H',
+        'filter': 'F290LP',
+        'wave_range': (2.87, 5.14),
+        'detectors': ['NRS1', 'NRS2'],
+        'description': 'F290LP | 2.87-5.14 μm on NRS1, NRS2'
+    },
+}
+
+
+def get_msa_coords(quadrant, col, row):
+    """Convert quadrant, column, row to MSA position (msa_x, msa_y) in arcsec"""
+    shutter_pitch_x = 0.27  # arcsec
+    shutter_pitch_y = 0.53  # arcsec
+    x_num_cols = 365
+    y_num_rows = 171
+    gap_x = 23  # arcsec
+    gap_y = 37  # arcsec
+    half_gap_x = gap_x / 2
+    half_gap_y = gap_y / 2
+
+    if quadrant == 3:
+        x_from_left = (col - 0.5) * shutter_pitch_x
+        y_from_bottom = (y_num_rows - row + 0.5) * shutter_pitch_y
+        msa_x = -half_gap_x - x_from_left
+        msa_y = half_gap_y + y_from_bottom
+    elif quadrant == 4:
+        x_from_left = (col - 0.5) * shutter_pitch_x
+        y_from_top = (row - 0.5) * shutter_pitch_y
+        msa_x = -half_gap_x - x_from_left
+        msa_y = -half_gap_y - y_from_top
+    elif quadrant == 1:
+        x_from_left = (x_num_cols - col + 0.5) * shutter_pitch_x
+        y_from_bottom = (y_num_rows - row + 0.5) * shutter_pitch_y
+        msa_x = half_gap_x + x_from_left
+        msa_y = half_gap_y + y_from_bottom
+    elif quadrant == 2:
+        x_from_left = (x_num_cols - col + 0.5) * shutter_pitch_x
+        y_from_top = (row - 0.5) * shutter_pitch_y
+        msa_x = half_gap_x + x_from_left
+        msa_y = -half_gap_y - y_from_top
+    else:
+        msa_x, msa_y = 0.0, 0.0
+
+    return msa_x, msa_y
+
+
+def get_quadrant_col_row(msa_x, msa_y):
+    """Convert MSA position to quadrant, column, row"""
+    shutter_pitch_x = 0.27  # arcsec
+    shutter_pitch_y = 0.53  # arcsec
+    x_num_cols = 365
+    y_num_rows = 171
+    quad_width = x_num_cols * shutter_pitch_x
+    quad_height = y_num_rows * shutter_pitch_y
+    gap_x = 23  # arcsec
+    gap_y = 37  # arcsec
+    half_gap_x = gap_x / 2
+    half_gap_y = gap_y / 2
+
+    quadrant = None
+    shutter_col = None
+    shutter_row = None
+
+    if msa_x < -half_gap_x and msa_y > half_gap_y:  # Q3 (upper-left)
+        x_from_left_edge = -half_gap_x - msa_x
+        y_from_bottom = msa_y - half_gap_y
+        if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+            quadrant = 3
+            x_frac = x_from_left_edge / quad_width
+            y_frac = 1 - y_from_bottom / quad_height
+            shutter_col = int(x_frac * x_num_cols) + 1
+            shutter_row = int(y_frac * y_num_rows) + 1
+    elif msa_x < -half_gap_x and msa_y < -half_gap_y:  # Q4 (lower-left)
+        x_from_left_edge = -half_gap_x - msa_x
+        y_from_top = -half_gap_y - msa_y
+        if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+            quadrant = 4
+            x_frac = x_from_left_edge / quad_width
+            y_frac = y_from_top / quad_height
+            shutter_col = int(x_frac * x_num_cols) + 1
+            shutter_row = int(y_frac * y_num_rows) + 1
+    elif msa_x > half_gap_x and msa_y > half_gap_y:  # Q1 (upper-right)
+        x_from_left_edge = msa_x - half_gap_x
+        y_from_bottom = msa_y - half_gap_y
+        if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+            quadrant = 1
+            x_frac = 1 - x_from_left_edge / quad_width
+            y_frac = 1 - y_from_bottom / quad_height
+            shutter_col = int(x_frac * x_num_cols) + 1
+            shutter_row = int(y_frac * y_num_rows) + 1
+    elif msa_x > half_gap_x and msa_y < -half_gap_y:  # Q2 (lower-right)
+        x_from_left_edge = msa_x - half_gap_x
+        y_from_top = -half_gap_y - msa_y
+        if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+            quadrant = 2
+            x_frac = 1 - x_from_left_edge / quad_width
+            y_frac = y_from_top / quad_height
+            shutter_col = int(x_frac * x_num_cols) + 1
+            shutter_row = int(y_frac * y_num_rows) + 1
+
+    return quadrant, shutter_col, shutter_row
 
 
 class UnifiedPlotCanvas(FigureCanvas):
@@ -58,89 +240,7 @@ class UnifiedPlotCanvas(FigureCanvas):
         # Disperser/filter configurations
         # Note: NIRSpec uses both detectors (NRS1 and NRS2) for most grating/filter combinations
         # NRS1 covers shorter wavelengths, NRS2 covers longer wavelengths
-        self.configs = {
-            'PRISM_CLEAR': {
-                'display': 'PRISM + CLEAR',
-                'button_lines': ['PRISM / CLEAR'],
-                'grating': 'PRISM',
-                'filter': 'CLEAR',
-                'wave_range': (0.6, 5.3),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'CLEAR | 0.60-5.30 μm on NRS1, NRS2'
-            },
-            'G140M_F070LP': {
-                'display': 'G140M + F070LP',
-                'button_lines': ['G140M / F070LP'],
-                'grating': 'G140M',
-                'filter': 'F070LP',
-                'wave_range': (0.70, 1.27),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F070LP | 0.70-1.27 μm on NRS1, NRS2'
-            },
-            'G140M_F100LP': {
-                'display': 'G140M + F100LP',
-                'button_lines': ['G140M / F100LP'],
-                'grating': 'G140M',
-                'filter': 'F100LP',
-                'wave_range': (0.97, 1.84),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F100LP | 0.97-1.84 μm on NRS1, NRS2'
-            },
-            'G235M_F170LP': {
-                'display': 'G235M + F170LP',
-                'button_lines': ['G235M / F170LP'],
-                'grating': 'G235M',
-                'filter': 'F170LP',
-                'wave_range': (1.66, 3.07),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F170LP | 1.66-3.07 μm on NRS1, NRS2'
-            },
-            'G395M_F290LP': {
-                'display': 'G395M + F290LP',
-                'button_lines': ['G395M / F290LP'],
-                'grating': 'G395M',
-                'filter': 'F290LP',
-                'wave_range': (2.87, 5.10),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F290LP | 2.87-5.10 μm on NRS1, NRS2'
-            },
-            'G140H_F070LP': {
-                'display': 'G140H + F070LP',
-                'button_lines': ['G140H / F070LP'],
-                'grating': 'G140H',
-                'filter': 'F070LP',
-                'wave_range': (0.81, 1.27),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F070LP | 0.81-1.27 μm on NRS1, NRS2'
-            },
-            'G140H_F100LP': {
-                'display': 'G140H + F100LP',
-                'button_lines': ['G140H / F100LP'],
-                'grating': 'G140H',
-                'filter': 'F100LP',
-                'wave_range': (0.97, 1.82),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F100LP | 0.97-1.82 μm on NRS1, NRS2'
-            },
-            'G235H_F170LP': {
-                'display': 'G235H + F170LP',
-                'button_lines': ['G235H / F170LP'],
-                'grating': 'G235H',
-                'filter': 'F170LP',
-                'wave_range': (1.66, 3.05),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F170LP | 1.66-3.05 μm on NRS1, NRS2'
-            },
-            'G395H_F290LP': {
-                'display': 'G395H + F290LP',
-                'button_lines': ['G395H / F290LP'],
-                'grating': 'G395H',
-                'filter': 'F290LP',
-                'wave_range': (2.87, 5.14),
-                'detectors': ['NRS1', 'NRS2'],
-                'description': 'F290LP | 2.87-5.14 μm on NRS1, NRS2'
-            },
-        }
+        self.configs = INSTRUMENT_CONFIGS
 
         self.default_wave_range = (0.6, 5.3)
         self.cmap_name = 'rainbow'
@@ -486,95 +586,11 @@ class UnifiedPlotCanvas(FigureCanvas):
     
     def get_quadrant_col_row(self, msa_x, msa_y):
         """Convert MSA position to quadrant, column, row"""
-        shutter_pitch_x = 0.27  # arcsec
-        shutter_pitch_y = 0.53  # arcsec
-        x_num_cols = 365
-        y_num_rows = 171
-        quad_width = x_num_cols * shutter_pitch_x
-        quad_height = y_num_rows * shutter_pitch_y
-        gap_x = 23  # arcsec
-        gap_y = 37  # arcsec
-        half_gap_x = gap_x / 2
-        half_gap_y = gap_y / 2
-        
-        quadrant = None
-        shutter_col = None
-        shutter_row = None
-
-        if msa_x < -half_gap_x and msa_y > half_gap_y:  # Q3 (upper-left)
-            x_from_left_edge = -half_gap_x - msa_x
-            y_from_bottom = msa_y - half_gap_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
-                quadrant = 3
-                x_frac = x_from_left_edge / quad_width
-                y_frac = 1 - y_from_bottom / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x < -half_gap_x and msa_y < -half_gap_y:  # Q4 (lower-left)
-            x_from_left_edge = -half_gap_x - msa_x
-            y_from_top = -half_gap_y - msa_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
-                quadrant = 4
-                x_frac = x_from_left_edge / quad_width
-                y_frac = y_from_top / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x > half_gap_x and msa_y > half_gap_y:  # Q1 (upper-right)
-            x_from_left_edge = msa_x - half_gap_x
-            y_from_bottom = msa_y - half_gap_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
-                quadrant = 1
-                x_frac = 1 - x_from_left_edge / quad_width
-                y_frac = 1 - y_from_bottom / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x > half_gap_x and msa_y < -half_gap_y:  # Q2 (lower-right)
-            x_from_left_edge = msa_x - half_gap_x
-            y_from_top = -half_gap_y - msa_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
-                quadrant = 2
-                x_frac = 1 - x_from_left_edge / quad_width
-                y_frac = y_from_top / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        
-        return quadrant, shutter_col, shutter_row
+        return get_quadrant_col_row(msa_x, msa_y)
 
     def get_msa_coords(self, quadrant, col, row):
         """Convert quadrant, column, row to MSA position (msa_x, msa_y)"""
-        shutter_pitch_x = 0.27  # arcsec
-        shutter_pitch_y = 0.53  # arcsec
-        x_num_cols = 365
-        y_num_rows = 171
-        gap_x = 23  # arcsec
-        gap_y = 37  # arcsec
-        half_gap_x = gap_x / 2
-        half_gap_y = gap_y / 2
-
-        if quadrant == 3:
-            x_from_left = (col - 0.5) * shutter_pitch_x
-            y_from_bottom = (y_num_rows - row + 0.5) * shutter_pitch_y
-            msa_x = -half_gap_x - x_from_left
-            msa_y = half_gap_y + y_from_bottom
-        elif quadrant == 4:
-            x_from_left = (col - 0.5) * shutter_pitch_x
-            y_from_top = (row - 0.5) * shutter_pitch_y
-            msa_x = -half_gap_x - x_from_left
-            msa_y = -half_gap_y - y_from_top
-        elif quadrant == 1:
-            x_from_left = (x_num_cols - col + 0.5) * shutter_pitch_x
-            y_from_bottom = (y_num_rows - row + 0.5) * shutter_pitch_y
-            msa_x = half_gap_x + x_from_left
-            msa_y = half_gap_y + y_from_bottom
-        elif quadrant == 2:
-            x_from_left = (x_num_cols - col + 0.5) * shutter_pitch_x
-            y_from_top = (row - 0.5) * shutter_pitch_y
-            msa_x = half_gap_x + x_from_left
-            msa_y = -half_gap_y - y_from_top
-        else:
-            msa_x, msa_y = 0.0, 0.0
-
-        return msa_x, msa_y
+        return get_msa_coords(quadrant, col, row)
     
     def clear_traces(self):
         """Clear existing spectral traces"""
@@ -680,8 +696,8 @@ class UnifiedPlotCanvas(FigureCanvas):
         expected_detectors = config['detectors']
 
         if verbose:
-            msg = f"\n=== Computing trace for MSA position ({msa_x:.1f}" + '", ' + f"{msa_y:.1f}" + '") '
-            msg += f"with {display_name} " + ("[FORCED]" if force else "") + " ==="
+            msg = "\n=== Computing trace for MSA position ({:.1f}, {:.1f}) ".format(msa_x, msa_y)
+            msg += "with " + str(display_name) + (" [FORCED]" if force else "") + " ==="
             print(msg)
         
         # Store trace info for display in output area
@@ -978,69 +994,73 @@ class AutoAddDialog(QDialog):
         # Grid Controls
         grid_layout = QGridLayout()
         
+        # Rows Input
+        rows_label = QLabel("Rows:")
+        rows_label.setStyleSheet("color: white;")
+        grid_layout.addWidget(rows_label, 0, 0)
+        
+        self.rows_spin = QSpinBox()
+        self.rows_spin.setRange(1, 3)
+        self.rows_spin.setValue(1)
+        if self.mode == 'grid': self.rows_spin.setValue(3)
+        elif self.mode == 'corners': self.rows_spin.setValue(2)
+        self.rows_spin.setMinimumWidth(120)
+        self.rows_spin.setMinimumHeight(35)
+        self.rows_spin.setStyleSheet(self.spin_style())
+        self.rows_spin.valueChanged.connect(self.on_rows_changed)
+        grid_layout.addWidget(self.rows_spin, 0, 1)
+
+        # Columns Input
+        cols_label = QLabel("Columns:")
+        cols_label.setStyleSheet("color: white;")
+        grid_layout.addWidget(cols_label, 1, 0)
+        
+        self.cols_spin = QSpinBox()
+        self.cols_spin.setRange(1, 3)
+        self.cols_spin.setValue(1)
+        if self.mode == 'grid': self.cols_spin.setValue(3)
+        elif self.mode == 'corners': self.cols_spin.setValue(2)
+        self.cols_spin.setMinimumWidth(120)
+        self.cols_spin.setMinimumHeight(35)
+        self.cols_spin.setStyleSheet(self.spin_style())
+        self.cols_spin.valueChanged.connect(self.on_rows_changed)
+        grid_layout.addWidget(self.cols_spin, 1, 1)
+        
         # Buffer Input
-        buffer_label = QLabel("Buffer (shutters from edge):")
-        buffer_label.setStyleSheet("color: white;")
-        grid_layout.addWidget(buffer_label, 0, 0)
+        self.buffer_label = QLabel("Buffer (shutters from edge):")
+        self.buffer_label.setStyleSheet("color: white;")
+        grid_layout.addWidget(self.buffer_label, 2, 0)
         
         self.buffer_spin = QSpinBox()
         self.buffer_spin.setRange(0, 80)
         self.buffer_spin.setValue(10)
         self.buffer_spin.setMinimumWidth(120)
         self.buffer_spin.setMinimumHeight(35)
-        self.buffer_spin.setStyleSheet("""
-            QSpinBox {
-                background-color: #1a1a2e;
-                color: white;
-                border: 2px solid #6688aa;
-                border-radius: 4px;
-                padding: 2px 5px;
-                font-size: 11pt;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                width: 25px;
-                background-color: #3b3b5c;
-            }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #4b4b7c;
-            }
-        """)
+        self.buffer_spin.setStyleSheet(self.spin_style())
         self.buffer_spin.valueChanged.connect(self.update_preview)
-        grid_layout.addWidget(self.buffer_spin, 0, 1)
+        grid_layout.addWidget(self.buffer_spin, 2, 1)
         
         # Stagger Input
-        stagger_label = QLabel("Stagger (shutters down/col):")
-        stagger_label.setStyleSheet("color: white;")
-        grid_layout.addWidget(stagger_label, 1, 0)
+        self.stagger_label = QLabel("Stagger (shutters down/col):")
+        self.stagger_label.setStyleSheet("color: white;")
+        grid_layout.addWidget(self.stagger_label, 3, 0)
         
         self.stagger_spin = QSpinBox()
         self.stagger_spin.setRange(0, 50)
-        self.stagger_spin.setValue(8)  # Default
+        self.stagger_spin.setValue(8)  # Default for 3 rows
         self.stagger_spin.setMinimumWidth(120)
         self.stagger_spin.setMinimumHeight(35)
-        self.stagger_spin.setStyleSheet("""
-            QSpinBox {
-                background-color: #1a1a2e;
-                color: white;
-                border: 2px solid #6688aa;
-                border-radius: 4px;
-                padding: 2px 5px;
-                font-size: 11pt;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                width: 25px;
-                background-color: #3b3b5c;
-            }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #4b4b7c;
-            }
-        """)
+        self.stagger_spin.setStyleSheet(self.spin_style())
         self.stagger_spin.valueChanged.connect(self.update_preview)
-        grid_layout.addWidget(self.stagger_spin, 1, 1)
-        self.stagger_spin.valueChanged.connect(self.update_preview)
-        grid_layout.addWidget(self.stagger_spin, 1, 1)
+        grid_layout.addWidget(self.stagger_spin, 3, 1)
         
         layout.addLayout(grid_layout)
+        
+        # Track last row count for defaults
+        self._last_rows = self.rows_spin.value()
+        
+        # Initial visibility/defaults
+        self.on_rows_changed()
         
         preview_label = QLabel("(Previewing orange markers on MSA FOV)")
         preview_label.setStyleSheet("color: orange; font-style: italic;")
@@ -1085,10 +1105,64 @@ class AutoAddDialog(QDialog):
         # Initial preview
         self.update_preview()
 
+    def spin_style(self):
+        return """
+            QSpinBox {
+                background-color: #1a1a2e;
+                color: white;
+                border: 2px solid #6688aa;
+                border-radius: 4px;
+                padding: 2px 5px;
+                font-size: 11pt;
+            }
+            QSpinBox::up-button, QSpinBox::down-button {
+                width: 25px;
+                background-color: #3b3b5c;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background-color: #4b4b7c;
+            }
+            QSpinBox:disabled {
+                color: #555577;
+                border-color: #334455;
+            }
+        """
+
+    def on_rows_changed(self):
+        rows = self.rows_spin.value()
+        cols = self.cols_spin.value()
+        
+        # Update Defaults (when rows change)
+        if hasattr(self, '_last_rows') and self._last_rows != rows:
+            if rows == 2:
+                self.stagger_spin.setValue(12)
+            elif rows == 3:
+                self.stagger_spin.setValue(8)
+            elif rows == 1:
+                self.stagger_spin.setValue(16)
+        self._last_rows = rows
+            
+        # Enabled/Gray-out Logic
+        is_1x1 = (rows == 1 and cols == 1)
+        # Gray out buffer for 1x1
+        self.buffer_label.setEnabled(not is_1x1)
+        self.buffer_spin.setEnabled(not is_1x1)
+        self.buffer_label.setStyleSheet("color: " + ("white" if not is_1x1 else "#555") + ";")
+        
+        # Gray out stagger if there's only one column
+        is_1_col = (cols == 1)
+        self.stagger_label.setEnabled(not is_1_col)
+        self.stagger_spin.setEnabled(not is_1_col)
+        self.stagger_label.setStyleSheet("color: " + ("white" if not is_1_col else "#555") + ";")
+        
+        self.update_preview()
+
     def update_preview(self):
+        rows = self.rows_spin.value()
+        cols = self.cols_spin.value()
         buf = self.buffer_spin.value()
         stag = self.stagger_spin.value()
-        self.viewer.generate_auto_add_preview(self.mode, buf, stag)
+        self.viewer.generate_auto_add_preview(rows, cols, buf, stag)
 
 
 class NIRSpecViewer(QMainWindow):
@@ -2095,46 +2169,173 @@ class NIRSpecViewer(QMainWindow):
             self.text_nrs2.setPlainText("")
 
     def on_save_shutters(self):
-        """Save current list of shutters to a JSON file"""
-        import json
-        filename, _ = QFileDialog.getSaveFileName(self, "Save MSA Shutters", "", "JSON Files (*.json)")
-        if filename:
-            try:
-                data = {
-                    'config': self.current_config_key,
-                    'multiple_slits': self.plot_canvas.multiple_slits,
-                    'slits_by_config': self.plot_canvas.slits_by_config
-                }
-                with open(filename, 'w') as f:
-                    json.dump(data, f)
-            except Exception as e:
-                print(f"Save failed: {e}")
+        """Save current list of shutters to a CSV file including calculated trace info"""
+        # Ensure all currently plotted slits are in our config storage
+        if self.current_config_key:
+            self.plot_canvas.slits_by_config[self.current_config_key] = list(self.plot_canvas.multiple_slits)
+            
+        filename, _ = QFileDialog.getSaveFileName(self, "Save MSA Shutters", "", "CSV Files (*.csv)")
+        if not filename:
+            return
+            
+        try:
+            output_rows = []
+            # Gather slugs from all configs
+            for config_key, slits in self.plot_canvas.slits_by_config.items():
+                if not slits:
+                    continue
+                
+                config = self.plot_canvas.configs.get(config_key, {})
+                grating = config.get('grating', '')
+                filt = config.get('filter', '')
+                
+                for slit_tuple in slits:
+                    sx, sy, q, c, r = slit_tuple[:5]
+                    
+                    row = {
+                        'Grating': grating,
+                        'Filter': filt,
+                        'Quadrant': q,
+                        'Column (Disp)': c,
+                        'Row (Spat)': r,
+                    }
+                    
+                    # Compute trace summary info for "full data"
+                    slit_obj = get_slit_by_quadrant_col_row(q, c, r)
+                    calc_results = {}
+                    for det in ['NRS1', 'NRS2']:
+                        try:
+                            trace_data = calculate_nirspec_mos_trace(
+                                slit=slit_obj, grating=grating, filt=filt, detector=det
+                            )
+                            if trace_data:
+                                wave_func = trace_data['wavelength_func']
+                                trace_func = trace_data['trace_func']
+                                det_x = np.linspace(0, 2048, 200)
+                                det_w = wave_func(det_x) * 1e6
+                                det_y = trace_func(det_x)
+                                valid = np.isfinite(det_y) & np.isfinite(det_w)
+                                if np.any(valid):
+                                    calc_results[det] = {
+                                        'w_min': f"{det_w[valid].min():.4f}",
+                                        'w_max': f"{det_w[valid].max():.4f}",
+                                        'x_min': f"{det_x[valid].min():.1f}",
+                                        'x_max': f"{det_x[valid].max():.1f}",
+                                        'y_min': f"{det_y[valid].min():.1f}",
+                                        'y_max': f"{det_y[valid].max():.1f}"
+                                    }
+                        except Exception:
+                            pass
+                    
+                    # Add wavelengths first
+                    for det in ['NRS1', 'NRS2']:
+                        res = calc_results.get(det, {})
+                        row[f"{det} Min λ (calc)"] = res.get('w_min', "")
+                        row[f"{det} Max λ (calc)"] = res.get('w_max', "")
+                    
+                    # Then detector ranges
+                    for det in ['NRS1', 'NRS2']:
+                        res = calc_results.get(det, {})
+                        row[f"{det} Min X (calc)"] = res.get('x_min', "")
+                        row[f"{det} Max X (calc)"] = res.get('x_max', "")
+                        row[f"{det} Min Y (calc)"] = res.get('y_min', "")
+                        row[f"{det} Max Y (calc)"] = res.get('y_max', "")
+                    
+                    # Then MSA coordinates
+                    row['MSA_X_arcsec'] = f"{sx:.4f}"
+                    row['MSA_Y_arcsec'] = f"{sy:.4f}"
+                    
+                    output_rows.append(row)
+            
+            if output_rows:
+                # Get all headers across all rows
+                all_headers = []
+                for r in output_rows:
+                    for k in r.keys():
+                        if k not in all_headers: all_headers.append(k)
+                
+                with open(filename, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=all_headers)
+                    writer.writeheader()
+                    writer.writerows(output_rows)
+                print(f"Successfully saved {len(output_rows)} shutters to {filename}")
+            else:
+                print("No shutters to save.")
+                
+        except Exception as e:
+            print(f"Save failed: {e}")
 
     def on_load_shutters(self):
-        """Load list of shutters from a JSON file"""
-        import json
-        filename, _ = QFileDialog.getOpenFileName(self, "Load MSA Shutters", "", "JSON Files (*.json)")
-        if filename:
-            try:
-                with open(filename, 'r') as f:
-                    data = json.load(f)
-                    if 'multiple_slits' in data:
-                        self.plot_canvas.multiple_slits = data['multiple_slits']
-                    if 'slits_by_config' in data:
-                        self.plot_canvas.slits_by_config = data['slits_by_config']
-                    if 'config' in data and data['config'] in self.plot_canvas.configs:
-                        # Find the correct button and check it
-                        for btn, key in self.button_to_config.items():
-                            if key == data['config']:
-                                btn.setChecked(True)
-                                self.current_config_key = key
-                                break
+        """Load list of shutters from a CSV file"""
+        filename, _ = QFileDialog.getOpenFileName(self, "Load MSA Shutters", "", "CSV Files (*.csv)")
+        if not filename:
+            return
+            
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                new_slits_by_config = {}
+                rows_read = 0
+                
+                for row in reader:
+                    try:
+                        # Extract core info
+                        q = int(row.get('Quadrant', 0))
+                        c = int(row.get('Column (Disp)', row.get('Column', 0)))
+                        r = int(row.get('Row (Spat)', row.get('Row', 0)))
+                        if q == 0: continue
+                        
+                        config_key = row.get('Config')
+                        if not config_key:
+                            g = row.get('Grating')
+                            f_val = row.get('Filter')
+                            if g and f_val:
+                                # Look up config key from grating/filter
+                                for k, cfg in self.plot_canvas.configs.items():
+                                    if cfg.get('grating') == g and cfg.get('filter') == f_val:
+                                        config_key = k
+                                        break
+                        
+                        if not config_key:
+                            config_key = self.current_config_key
+                        
+                        sx = float(row.get('MSA_X_arcsec', row.get('MSA_X', 0)))
+                        sy = float(row.get('MSA_Y_arcsec', row.get('MSA_Y', 0)))
+                        if sx == 0 and sy == 0:
+                            sx, sy = get_msa_coords(q, c, r)
+                            
+                        if config_key not in new_slits_by_config:
+                            new_slits_by_config[config_key] = []
+                            
+                        new_slits_by_config[config_key].append((sx, sy, q, c, r))
+                        rows_read += 1
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                
+                if rows_read > 0:
+                    self.plot_canvas.slits_by_config = new_slits_by_config
+                    
+                    # Update current config multiple_slits
+                    if self.current_config_key in new_slits_by_config:
+                        self.plot_canvas.multiple_slits = list(new_slits_by_config[self.current_config_key])
+                        # If the loaded file has a config setting, try to switch to it
+                        # but prioritize existing current_config_key if it matches anything.
+                    else:
+                        # If current config not in file, take the first available config's slits
+                        first_key = list(new_slits_by_config.keys())[0]
+                        # Don't switch current_config_key automatically to avoid confusion, 
+                        # just clear if not matched, or keep current.
+                        # Actually, let's keep current as is if not matched.
+                        pass
                     
                     if self.plot_multiple.isChecked():
                         self.plot_multiple_traces()
                     self.update_selected_slits_display()
-            except Exception as e:
-                print(f"Load failed: {e}")
+                    print(f"Successfully loaded {rows_read} shutters from {filename}")
+                else:
+                    print("No valid shutters found in file.")
+        except Exception as e:
+            print(f"Load failed: {e}")
     def on_auto_add_clicked(self, mode):
         """Handle auto-add buttons by opening settings dialog and showing preview"""
         dialog = AutoAddDialog(self, mode)
@@ -2157,17 +2358,21 @@ class NIRSpecViewer(QMainWindow):
             self.plot_canvas.draw_slit_markers()
             self.plot_canvas.draw()
 
-    def generate_auto_add_preview(self, mode, buffer, stagger=0):
-        """Update the orange preview markers based on mode, buffer, and stagger"""
-        # Determine cols and rows based on mode
-        if mode == 'grid':
+    def generate_auto_add_preview(self, num_rows, num_cols, buffer, stagger=0):
+        """Update the orange preview markers based on rows, cols, buffer, and stagger"""
+        # Determine cols and rows based on input counts
+        if num_cols == 3:
             cols = [365 - buffer, 183, 1 + buffer]
-            row_points = [1 + buffer, 86, 171 - buffer]
-        elif mode == 'corners':
+        elif num_cols == 2:
             cols = [365 - buffer, 1 + buffer]
-            row_points = [1 + buffer, 171 - buffer]
-        else: # centers
+        else: # 1
             cols = [183]
+
+        if num_rows == 3:
+            row_points = [1 + buffer, 86, 171 - buffer]
+        elif num_rows == 2:
+            row_points = [1 + buffer, 171 - buffer]
+        else: # 1
             row_points = [86]
 
         # Top half sequence (Q3 -> Q1) - Continuous left-to-right physically
@@ -2280,8 +2485,437 @@ class NIRSpecViewer(QMainWindow):
             self.grating_info.setText(f"({config_key})")
 
 
+def handle_cli():
+    """Handle command line arguments for quick trace calculation"""
+    args = sys.argv[1:]
+    if not args:
+        return False
+        
+    # Check for -save flag (strictly at the end)
+    save_file = None
+    if len(args) >= 2 and args[-2] == '-save':
+        save_file = args[-1]
+        args = args[:-2]
+    # Configuration mappings for CLI
+    # Basic mapping from common names to internal keys
+    config_maps = {
+        'PRISM': 'PRISM_CLEAR',
+        'G140M': 'G140M_F100LP',
+        'G140H': 'G140H_F100LP',
+        'G235M': 'G235M_F170LP',
+        'G235H': 'G235H_F170LP',
+        'G395M': 'G395M_F290LP',
+        'G395H': 'G395H_F290LP',
+    }
+    
+    # Check for help
+    if args[0] in ['-h', '--help', 'help']:
+        print("Usage:")
+        print("  python3 mos_trace.py Q3 319 108")
+        print("  python3 mos_trace.py PRISM Q3 319 108")
+        print("  python3 mos_trace.py G395H Q3 319 108")
+        print("  python3 mos_trace.py G140M/F070LP Q3 319 108")
+        print("  python3 mos_trace.py q3d319s108")
+        print("  python3 mos_trace.py PRISM data.csv -save results.csv")
+        return True
+
+    current_config_key = 'PRISM_CLEAR'
+    pos_args_start = 0
+
+    # Look for grating/filter in first argument
+    first_arg = args[0].upper().replace(' ', '')
+    
+    # Handle G140M/F070LP format
+    if '/' in first_arg:
+        g, f = first_arg.split('/', 1)
+        found_key = None
+        for k, cfg in INSTRUMENT_CONFIGS.items():
+            if cfg['grating'] == g and cfg['filter'] == f:
+                found_key = k
+                break
+        if found_key:
+            current_config_key = found_key
+            pos_args_start = 1
+    elif first_arg in config_maps:
+        current_config_key = config_maps[first_arg]
+        pos_args_start = 1
+    elif first_arg in ['G140M', 'G140H', 'G235M', 'G235H', 'G395M', 'G395H', 'PRISM']:
+        for k, cfg in INSTRUMENT_CONFIGS.items():
+            if cfg['grating'] == first_arg:
+                current_config_key = k
+                break
+        pos_args_start = 1
+
+    remaining_args = args[pos_args_start:]
+    if not remaining_args:
+        return False
+
+    # Check if we're processing a CSV file
+    csv_file = None
+    for arg in remaining_args:
+        if arg.lower().endswith('.csv'):
+            csv_file = arg
+            break
+    
+    # If CSV file provided, try to extract config from filename if not explicitly set by user
+    if csv_file and pos_args_start == 0:
+        fname = os.path.basename(csv_file).upper()
+        # Find combination that matches the filename
+        best_match = None
+        # Sort by length of grating string descending to match G140M before G140
+        for k in sorted(INSTRUMENT_CONFIGS.keys(), key=lambda x: len(INSTRUMENT_CONFIGS[x]['grating']), reverse=True):
+            cfg = INSTRUMENT_CONFIGS[k]
+            if cfg['grating'] in fname and cfg['filter'] in fname:
+                best_match = k
+                break
+        
+        if not best_match:
+            # Try just grating if filter not found in filename
+            for k in sorted(INSTRUMENT_CONFIGS.keys(), key=lambda x: len(INSTRUMENT_CONFIGS[x]['grating']), reverse=True):
+                cfg = INSTRUMENT_CONFIGS[k]
+                if cfg['grating'] in fname:
+                    best_match = k
+                    break
+                    
+        if best_match:
+            current_config_key = best_match
+        elif 'PRISM' in fname:
+            current_config_key = 'PRISM_CLEAR'
+
+    # Show CRDS configuration and status early
+    print_crds_status()
+    print()
+
+    # Function to format with en-dash for negatives and space for positives to align
+    def f_dash(val, fmt=".1f"):
+        s = f"{val: {fmt}}"
+        return s.replace('-', '–')
+
+    def get_match_symbol(val1, val2, nominal_min=None, nominal_max=None):
+        # val1 is calculated, val2 is CSV
+        symbol = "❌"
+        diff = -1.0
+        is_direct_comparison = True
+        
+        # Handle special markers in CSV (-1.0: off blue end, -2.0: off red end)
+        if val2 in [-1.0, -2.0]:
+            is_direct_comparison = False
+            # If calculation is negative/unset, it's a solid match for off-detector
+            if val1 < 0: return "✅", 0.0, False
+            # If calculation is positive, check how close it is to the correct nominal detector edge
+            edge = nominal_min if val2 == -1.0 else nominal_max
+            if edge is not None:
+                diff = abs(val1 - edge)
+                if   diff <= 0.01: symbol = "✅"
+                elif diff <= 0.02: symbol = "🔰"
+                elif diff <= 0.03: symbol = "〽️"
+                elif diff <= 0.05: symbol = "⚠️ "
+                elif diff <= 0.10: symbol = "🔶"
+                else: symbol = "❌"
+                return symbol, diff, False # False: exclude markers from aggregate math
+            return "✅", 0.0, False
+        
+        # Normal comparison (if both are positive)
+        if val1 >= 0 and val2 >= 0:
+            diff = abs(val1 - val2)
+            if   diff <= 0.01: symbol = "✅"
+            elif diff <= 0.02: symbol = "🔰"
+            elif diff <= 0.03: symbol = "〽️"
+            elif diff <= 0.05: symbol = "⚠️ "
+            elif diff <= 0.10: symbol = "🔶"
+            else: symbol = "❌"
+            return symbol, diff, True
+            
+        # If both are negative/unset
+        if val1 < 0 and val2 < 0: return "✅", 0.0, False
+        
+        # Mismatch (one is negative, other isn't, and not a special marker case)
+        return "❌", -1.0, True
+
+    config = INSTRUMENT_CONFIGS[current_config_key]
+    grating = config['grating']
+    filt = config['filter']
+
+    if csv_file:
+        print(f"Processing CSV: {csv_file}")
+        print(f"Configuration: {grating} / {filt}")
+        print()
+        
+        try:
+            with open(csv_file, 'r') as f:
+                # Strip spaces from header names
+                content = f.read().splitlines()
+                header = [h.strip() for h in content[0].split(',')]
+                reader = csv.DictReader(content[1:], fieldnames=header)
+                
+                stats_counts = {"✅": 0, "🔰": 0, "〽️": 0, "⚠️ ": 0, "🔶": 0, "❌": 0, "_": 0}
+                all_diffs = []
+                output_rows = []
+                
+                for row_data in reader:
+                    row_output = row_data.copy()
+                    
+                    # Ensure Grating/Filter are present
+                    if 'Grating' not in row_output: row_output['Grating'] = grating
+                    if 'Filter' not in row_output: row_output['Filter'] = filt
+
+                    try:
+                        q = int(row_data['Quadrant'])
+                        c = int(row_data['Column (Disp)'])
+                        r = int(row_data['Row (Spat)'])
+                    except (KeyError, ValueError):
+                        continue
+                    
+                    msa_x, msa_y = get_msa_coords(q, c, r)
+                    print(f"Q{q} Slit ({c:3d}, {r:3d}) ({f_dash(msa_x, '.1f')}\", {f_dash(msa_y, '.1f')}\")")
+                    
+                    slit_obj = get_slit_by_quadrant_col_row(q, c, r)
+                    calc_results = {}
+                    for det_name in ['NRS1', 'NRS2']:
+                        trace_data = calculate_nirspec_mos_trace(
+                            slit=slit_obj, grating=grating, filt=filt, detector=det_name
+                        )
+                        
+                        calc_w_min, calc_w_max = -1.0, -1.0
+                        if trace_data:
+                            trace_func = trace_data['trace_func']
+                            wavelength_func = trace_data['wavelength_func']
+                            det_x = np.linspace(0, 2048, 200)
+                            det_y = trace_func(det_x)
+                            det_w = wavelength_func(det_x) * 1e6
+                            valid = np.isfinite(det_y) & np.isfinite(det_w)
+                            if np.any(valid):
+                                x_v = det_x[valid]
+                                y_v = det_y[valid]
+                                calc_w_min = det_w[valid].min()
+                                calc_w_max = det_w[valid].max()
+                                
+                                calc_results[det_name] = {
+                                    'w_min': f"{calc_w_min:.4f}",
+                                    'w_max': f"{calc_w_max:.4f}",
+                                    'x_min': f"{x_v.min():.1f}",
+                                    'x_max': f"{x_v.max():.1f}",
+                                    'y_min': f"{y_v.min():.1f}",
+                                    'y_max': f"{y_v.max():.1f}"
+                                }
+                                print(f"  {det_name} Trace:  X=[{x_v.min():4.0f}, {x_v.max():4.0f}] Y=[{y_v.min():4.0f}, {y_v.max():4.0f}] λ=[{calc_w_min:.2f},{calc_w_max:.2f}]μm", end="")
+                            else:
+                                print(f"  {det_name} Trace:  No data on detector", end="")
+                        else:
+                            print(f"  {det_name} Trace:  No data on detector", end="")
+                        
+                        # Compare with CSV if columns exist
+                        csv_w_min_key = f"{det_name} Min Wave"
+                        csv_w_max_key = f"{det_name} Max Wave"
+                        if csv_w_min_key in row_data and csv_w_max_key in row_data:
+                            csv_w_min = float(row_data[csv_w_min_key])
+                            csv_w_max = float(row_data[csv_w_max_key])
+                            nominal_min = config['wave_range'][0]
+                            nominal_max = config['wave_range'][1]
+                            s_min, d_min, v_min = get_match_symbol(calc_w_min, csv_w_min, nominal_min=nominal_min, nominal_max=nominal_max)
+                            s_max, d_max, v_max = get_match_symbol(calc_w_max, csv_w_max, nominal_min=nominal_min, nominal_max=nominal_max)
+                            
+                            # Aggregate stats (exclude markers unless v flag is True)
+                            include_edges = False # Set to True to include -1/-2 comparisons (vs. nominal edges) in stats
+                            
+                            # Determine display symbols and tally
+                            if not v_min and not include_edges:
+                                s_min_disp = "_"
+                            else:
+                                s_min_disp = s_min
+                                
+                            if not v_max and not include_edges:
+                                s_max_disp = "_"
+                            else:
+                                s_max_disp = s_max
+                                
+                            stats_counts[s_min_disp] = stats_counts.get(s_min_disp, 0) + 1
+                            stats_counts[s_max_disp] = stats_counts.get(s_max_disp, 0) + 1
+                            
+                            if d_min >= 0 and (v_min or include_edges): all_diffs.append(d_min)
+                            if d_max >= 0 and (v_max or include_edges): all_diffs.append(d_max)
+                            
+                            # Add to CSV row if saving
+                            if v_min: row_output[f"{det_name} Min λ (diff)"] = f"{d_min:.4f}"
+                            row_output[f"{det_name} Min λ (sym)"] = s_min_disp
+                            if v_max: row_output[f"{det_name} Max λ (diff)"] = f"{d_max:.4f}"
+                            row_output[f"{det_name} Max λ (sym)"] = s_max_disp
+                            
+                            print(f"  (CSV: {f_dash(csv_w_min, '5.2f')} {s_min_disp}, {f_dash(csv_w_max, '5.2f')} {s_max_disp})")
+                        else:
+                            print()
+
+                    # Add calculation results in specified order
+                    for det in ['NRS1', 'NRS2']:
+                        res = calc_results.get(det, {})
+                        row_output[f"{det} Min λ (calc)"] = res.get('w_min', "")
+                        row_output[f"{det} Max λ (calc)"] = res.get('w_max', "")
+                    for det in ['NRS1', 'NRS2']:
+                        res = calc_results.get(det, {})
+                        row_output[f"{det} Min X (calc)"] = res.get('x_min', "")
+                        row_output[f"{det} Max X (calc)"] = res.get('x_max', "")
+                        row_output[f"{det} Min Y (calc)"] = res.get('y_min', "")
+                        row_output[f"{det} Max Y (calc)"] = res.get('y_max', "")
+                    print()
+                
+                    # Summary Stats (reported after every object/slit)
+                    if all_diffs:
+                        diffs_arr = np.array(all_diffs)
+                        avg_diff = np.mean(diffs_arr)
+                        med_diff = np.median(diffs_arr)
+                        p95_diff = np.percentile(diffs_arr, 95)
+                        max_diff = np.max(diffs_arr)
+                        
+                        counts_str = " ".join([f"{s}{stats_counts[s]}" for s in ["✅", "🔰", "〽️", "⚠️ ", "🔶", "❌", "_"] if stats_counts.get(s, 0) > 0])
+                        total_count = sum(stats_counts.values())
+                        print(f"  Summary: {counts_str} / {total_count} Total")
+                        print(f"  λ diff (µm): med={med_diff:.4f}, avg={avg_diff:.4f}, 95%={p95_diff:.4f}, max={max_diff:.4f}")
+                        print()
+                        
+                    if save_file:
+                        output_rows.append(row_output)
+                
+                # Final save
+                if save_file and output_rows:
+                    print(f"--- Saving results to {save_file} ---")
+                    try:
+                        # Collect all headers seen
+                        all_keys = []
+                        for r in output_rows:
+                            for k in r.keys():
+                                if k not in all_keys: all_keys.append(k)
+                        
+                        with open(save_file, 'w', newline='') as f_out:
+                            writer = csv.DictWriter(f_out, fieldnames=all_keys)
+                            writer.writeheader()
+                            writer.writerows(output_rows)
+                        print(f"Successfully saved {len(output_rows)} objects.")
+                    except Exception as e:
+                        print(f"Error saving CSV: {e}")
+        except Exception as e:
+            print(f"Error reading CSV: {e}")
+        return True
+
+    # Parse as single shutter
+    raw_shutter = " ".join(remaining_args)
+    match = re.search(r'[qQ]([1-4])[dD](\d+)[sS](\d+)', raw_shutter)
+    if match:
+        quadrant = int(match.group(1))
+        col = int(match.group(2))
+        row = int(match.group(3))
+    elif len(remaining_args) >= 3:
+        q_arg = remaining_args[0].upper()
+        if q_arg.startswith('Q'):
+            try: quadrant = int(q_arg[1:])
+            except ValueError: return False
+        else:
+            try: quadrant = int(q_arg)
+            except ValueError: return False
+        try:
+            col = int(remaining_args[1])
+            row = int(remaining_args[2])
+        except ValueError: return False
+    else:
+        return False
+
+    # Validate quadrant
+    if not (1 <= quadrant <= 4):
+        print(f"Error: Quadrant must be 1-4, got {quadrant}")
+        return True
+
+    # Calculate MSA coordinates
+    msa_x, msa_y = get_msa_coords(quadrant, col, row)
+    print(f"Q{quadrant} Slit ({col}, {row}) ({f_dash(msa_x, '.1f')}\", {f_dash(msa_y, '.1f')}\")")
+    print(f"Configuration: {grating} / {filt}")
+    
+    # Create slit object
+    try:
+        slit = get_slit_by_quadrant_col_row(quadrant, col, row)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return True
+    
+    # Track for saving if requested
+    row_out = {
+        'Grating': grating,
+        'Filter': filt,
+        'Quadrant': quadrant,
+        'Column (Disp)': col,
+        'Row (Spat)': row,
+    }
+    
+    # Compute traces for each detector
+    calc_results = {}
+    for det_name in ['NRS1', 'NRS2']:
+        trace_data = calculate_nirspec_mos_trace(
+            slit=slit, grating=grating, filt=filt, detector=det_name
+        )
+        if not trace_data: continue
+        
+        trace_func = trace_data['trace_func']
+        wavelength_func = trace_data['wavelength_func']
+        det_x = np.linspace(0, 2048, 200)
+        det_y = trace_func(det_x)
+        det_w = wavelength_func(det_x) * 1e6
+        valid = np.isfinite(det_y) & np.isfinite(det_w)
+        if np.any(valid):
+            x = det_x[valid]
+            y = det_y[valid]
+            w = det_w[valid]
+            calc_results[det_name] = {
+                'w_min': f"{w.min():.4f}",
+                'w_max': f"{w.max():.4f}",
+                'x_min': f"{x.min():.1f}",
+                'x_max': f"{x.max():.1f}",
+                'y_min': f"{y.min():.1f}",
+                'y_max': f"{y.max():.1f}",
+            }
+            print(f"{det_name} Trace: Q{quadrant} ({col:d}, {row:d}): "
+                  f"X=[{x.min():4.0f}, {x.max():4.0f}] Y=[{y.min():4.0f}, {y.max():4.0f}] "
+                  f"λ=[{w.min():.2f},{w.max():.2f}]μm")
+    
+    # Add wavelengths first
+    for det in ['NRS1', 'NRS2']:
+        res = calc_results.get(det, {})
+        row_out[f"{det} Min λ (calc)"] = res.get('w_min', "")
+        row_out[f"{det} Max λ (calc)"] = res.get('w_max', "")
+    
+    # Then detector ranges
+    for det in ['NRS1', 'NRS2']:
+        res = calc_results.get(det, {})
+        row_out[f"{det} Min X (calc)"] = res.get('x_min', "")
+        row_out[f"{det} Max X (calc)"] = res.get('x_max', "")
+        row_out[f"{det} Min Y (calc)"] = res.get('y_min', "")
+        row_out[f"{det} Max Y (calc)"] = res.get('y_max', "")
+
+    # Final save for single shutter case
+    if save_file and not csv_file:
+        print(f"--- Saving results to {save_file} ---")
+        try:
+            with open(save_file, 'w', newline='') as f_out:
+                writer = csv.DictWriter(f_out, fieldnames=row_out.keys())
+                writer.writeheader()
+                writer.writerow(row_out)
+            print(f"Successfully saved 1 object.")
+        except Exception as e:
+            print(f"Error saving CSV: {e}")
+
+    return True
+
+
 def main():
     """Run the application"""
+    # Try handling CLI first
+    if handle_cli():
+        return
+
+    print('''
+Welcome to the NIRSpec MOS Trace Viewer!
+Please make sure you have installed the JWST pipeline and downloaded the CRDS reference files.
+The first time you run this, it will take a minute to load the reference files.
+Once loaded, you should see a window pop up and an app icon in your dock.
+''')
+
     app = QApplication(sys.argv)
     viewer = NIRSpecViewer()
     viewer.show()

@@ -57,9 +57,9 @@ pip install PyQt5 numpy matplotlib scipy astropy jwst stdatamodels gwcs
 
 ## Usage
 
-Run the application:
+Run the application to launch the interactive viewer:
 ```bash
-python nirspec_msa_viewer.py
+python3 mos_trace.py
 ```
 
 ### Controls
@@ -71,6 +71,59 @@ python nirspec_msa_viewer.py
 5. **Save / Load / Clear**: Save traces to a file, load, or reset (clear all shutters and traces).
 6. **Grating Selectors**: Use the grid of buttons to switch between dispersers (PRISM, High-res H, Medium-res M).
 
+## Terminal Command Line Interface (CLI)
+For quick trace calculations in the Terminal without launching the GUI:
+```bash
+# Basic usage (defaults to PRISM/CLEAR)
+python3 mos_trace.py Q3 319 108
+
+# Specify a configuration (G395H, G140M, etc.)
+python3 mos_trace.py G395H Q3 319 108
+
+# Specify an explicit grating/filter pair
+python3 mos_trace.py G140M/F070LP Q3 319 108
+
+# Use compact shutter ID format
+python3 mos_trace.py q3d319s108
+
+# Process a CSV file (auto-detects grating/filter from filename)
+python3 mos_trace.py traces/4246/4246-obs3-exp1-c1e1n1-G395H-F290LP.csv
+
+# Process a CSV file with an explicit grating/filter override
+python3 mos_trace.py PRISM traces/test.csv
+
+# Process a CSV and save results (the -save flag MUST be at the end)
+python3 mos_trace.py PRISM data.csv -save results.csv
+```
+
+### Save Results as Output CSV
+When saving results (via the GUI or `-save` CLI flag), the tool generates a CSV with the following column structure:
+
+- **Instrument Info**: `Grating`, `Filter`
+- **Shutter Info**: `Quadrant`, `Column (Disp)`, `Row (Spat)`, `MSA_X_arcsec`, `MSA_Y_arcsec`
+- **Calculated Results**:
+    - **Wavelengths**: `NRS1/2 Min λ (calc)`, `NRS1/2 Max λ (calc)`
+    - **Detector Ranges**: `NRS1/2 Min/Max X/Y (calc)` (pixel coordinates 0-2048)
+- **Comparison Data** (Batch mode only): `NRS1/2 Min λ (diff)`, `NRS1/2 Min λ (sym)`, etc.
+
+### Input CSV File: Batch Processing
+When an input CSV file is provided (from APT or this script, for example), the script iterates through each row to calculate spectral traces.
+- **Auto-Configuration**: Grating and filtering are automatically inferred from the CSV filename (e.g., `G395H` and `F290LP` found in the name).
+- **Wavelength Comparison**: Calculated trace wavelength ranges are compared against `NRS1/2 Min/Max Wave` columns if present in the CSV.
+- **Comparison Symbols**:
+    - ✅ : (≤ 0.01 µm) **Match** 
+    - 🔰 : (≤ 0.02 µm) **Minor Variance**
+    - 〽️ : (≤ 0.03 µm) **Small Variance**
+    - ⚠️ : (≤ 0.05 µm) **Medium Variance**
+    - 🔶 : (≤ 0.10 µm) **Large Variance**
+    - ❌ : (> 0.10 µm) **Mismatch**
+- **Special Markers**: The script recognizes special markers in the CSV:
+    - `–1.00`: Off the blue (short wavelength) end of the detector.
+    - `–2.00`: Off the red (long wavelength) end of the detector.
+
+### Accuracy
+
+In our spot testing with APT (File – Export – MSA Target Info [.csv]) we find that the traces are generally accurate to within 0.01 µm with high resolution gratings and up to 0.05 or 0.1 µm with PRISM.
 
 ## Technical Details
 
