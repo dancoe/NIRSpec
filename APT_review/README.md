@@ -1,28 +1,30 @@
-# NIRSpec APT Review Tools — Overview
+# NIRSpec MOS APT Review Assistant
 
-This directory contains documentation for the NIRSpec MOS program review toolset. This guide is intended for new users who want to understand what the tools do and how to get started.
-
----
-
-## What Is This?
-
-The **NIRSpec APT Review** toolset automates the technical review of JWST NIRSpec Multi-Object Spectroscopy (MOS) programs. It reads an APT program file (`.aptx` or `.xml`) and produces a structured report that checks for common issues and summarizes key program parameters.
-
-This is a practical aid for support scientists reviewing NIRSpec MOS Phase 2 submissions — it does **not** replace judgment, but it quickly surfaces the details that matter most.
+`APT_review.py` aids Instrument Scientists in reviewing NIRSpec MOS programs by extracting information from an APT file `.aptx` and generating an ASCII report `.txt`, including:
+* List of observations
+* Exposure specifications (gratings, integration times, readout patterns, etc.)
+* Warnings and errors
+* Aperture PA planned vs. assigned
+* Total Charged Time vs. Allocated
+* and more...
 
 ---
 
-## Key Files
+## Example Report
+
+`python3 APT_review.py JWST7417.aptx  --include "3-8, 10-15, 19"`
+
+generates:
+
+[`JWST7417_review.txt`](JWST7417_review.txt)
+
+---
+
+## Documentation
 
 | File | Purpose |
 |------|---------|
-| `APT_review.py` | Main review script. Parses the APT file and generates the report. |
-
-### Documentation
-
-| File | Purpose |
-|------|---------|
-| `docs/APT_report.md` | **Full technical reference** — describes every metric extracted, where it comes from, and how the report is structured. |
+| `docs/APT_report.md` | Full technical reference describing every metric extracted, where it comes from, and how the report is structured. |
 | `docs/APT_XML.md` | Reference for the APT XML schema — where specific data lives in the XML tree. |
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
 
@@ -36,7 +38,7 @@ This is a practical aid for support scientists reviewing NIRSpec MOS Phase 2 sub
 python APT_review.py /path/to/program.aptx
 ```
 
-The report is **automatically saved** to `<stem>_review.txt` in the same directory (e.g. `program_review.txt`). It is also printed to the terminal.
+The report is output to the Terminal and saved to `<filename>_review.txt` in the same directory (e.g., `program_review.txt`).
 
 ### 2. Override the output path
 

@@ -740,41 +740,70 @@ class NIRSpecMOSReviewer:
     def print_report(self):
         output = io.StringIO()
         icons = {'ERROR': '❌', 'WARNING': '⚠️', 'INFO': 'ℹ️', 'SUCCESS': '✅'}
-        
+
         def write(text):
             print(text)
             output.write(text + "\n")
 
-        write("\n" + "="*60)
-        write("NIRSPEC MOS TECHNICAL REVIEW REPORT")
-        write("="*60)
-        
-        # Initialize obs_map with all observed MOS numbers
+        # Build shared obs_map / general_issues used by section methods
         obs_map = {str(i): [] for i in self.stats.get('observed_nums', [])}
         general_issues = []
         for item in self.results:
-            match = re.match(r'Obs (\d+): (.*)', item['message'])
-            if match:
-                obs_num = match.group(1)
-                content = match.group(2)
-                if obs_num not in obs_map: obs_map[obs_num] = []
+            m = re.match(r'Obs (\d+): (.*)', item['message'])
+            if m:
+                obs_num = m.group(1)
+                content = m.group(2)
+                if obs_num not in obs_map:
+                    obs_map[obs_num] = []
                 obs_map[obs_num].append((item['status'], f"{item['category']}: {content}"))
             else:
                 general_issues.append((item['status'], f"{item['category']}: {item['message']}"))
 
-        # skip printing general issues at the beginning as they are now in sections / final summary
+        # ── Section calls – reorder freely ──────────────────────────────
+        self._report_header(write)                                    # Title banner
+        self._report_observing_description(write)                     # Program title, PI, observing description, MAZ justification
+        self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
+        self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
+        self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
+        self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
+        self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
+        self._report_parallels_dithers(write, icons)                  # Coordinated parallel sets and dither types
+        self._report_special_requirements(write)                      # Aperture PA ranges, background limited, other SRs
+        self._report_msa_strategy(write)                              # MSA config slitlets, primaries, fillers, leakcal, conf images
+        self._report_msata_ref_stars(write, icons)                    # MSATA reference star counts and quadrant coverage
+        self._report_target_catalogs(write)                           # Source counts, ref stars, accuracy, weight filters per catalog
+        self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
+        self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
+        # ────────────────────────────────────────────────────────────────
 
+        # Save to file if requested
+        if self.output_path:
+            with open(self.output_path, 'w') as f:
+                f.write(output.getvalue())
+            print(f"\nReport saved to: {self.output_path}")
+
+    # ── Report section methods ───────────────────────────────────────────
+
+    def _report_header(self, write):
+        write("\n" + "="*60)
+        write("NIRSPEC MOS TECHNICAL REVIEW REPORT")
+        write("="*60)
+
+    def _report_findings(self, write, icons, obs_map, general_issues):
         write("\n" + "="*80)
         write("DETAILED FINDINGS & RECOMMENDATIONS")
         write("="*80)
-        
-        # 1. Program-wide (Skip MOS Catalog as it is summarized later)
-        filtered_general = [g for g in general_issues if "Reviewing Proposal" not in g[1] and "MOS Catalog:" not in g[1]]
+
+        # Program-wide (skip MOS Catalog — summarized in catalog section)
+        filtered_general = [
+            g for g in general_issues
+            if "Reviewing Proposal" not in g[1] and "MOS Catalog:" not in g[1]
+        ]
         if filtered_general:
             for status, msg in filtered_general:
                 write(f"{icons.get(status, ' ')} {msg}")
-        
-        # 2. Observation-specific (Warnings/Errors only, skip Info/Success)
+
+        # Observation-specific (Warnings/Errors only)
         for obs_num in sorted(obs_map.keys(), key=int):
             obs_findings = [f for f in obs_map[obs_num] if f[0] not in ['SUCCESS', 'INFO']]
             if obs_findings:
@@ -783,250 +812,306 @@ class NIRSpecMOSReviewer:
                 for status, msg in obs_findings:
                     write(f"  {icons.get(status, ' ')} {msg}")
 
-        # APERTURE PA SUMMARY TABLE
-        if any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o] for o in self.analytics):
-            write("\n" + "="*80)
-            write("APERTURE PA SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*80)
-            write(f"{'Obs':<5} | {'Status':<10} | {'Planned PA':<20} | {'Assigned PA'}")
-            write("-" * 80)
-            for obs_num in sorted(self.analytics.keys(), key=int):
-                planned = self.analytics[obs_num].get('apa_planned', "N/A")
-                assigned = self.analytics[obs_num].get('apa_assigned', "N/A")
-                p_val = self.analytics[obs_num].get('apa_planned_val')
-                a_val = self.analytics[obs_num].get('apa_assigned_val')
-                
-                if p_val is not None and a_val is not None:
-                    match = abs(p_val - a_val) < 0.001
-                else:
-                    match = (planned == assigned)
-                
-                status = "SUCCESS" if match else "WARNING"
-                status_icon = icons.get(status, ' ')
-                write(f"{obs_num:<5} | {status_icon} {status:<7} | {planned:<20} | {assigned}")
+    def _report_aperture_pa(self, write, icons):
+        if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]
+                   for o in self.analytics):
+            return
+        write("\n" + "="*80)
+        write("APERTURE PA SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*80)
+        write(f"{'Obs':<5} | {'Status':<10} | {'Planned PA':<20} | {'Assigned PA'}")
+        write("-" * 80)
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            planned  = self.analytics[obs_num].get('apa_planned',  "N/A")
+            assigned = self.analytics[obs_num].get('apa_assigned', "N/A")
+            p_val    = self.analytics[obs_num].get('apa_planned_val')
+            a_val    = self.analytics[obs_num].get('apa_assigned_val')
+            if p_val is not None and a_val is not None:
+                match = abs(p_val - a_val) < 0.001
+            else:
+                match = (planned == assigned)
+            status      = "SUCCESS" if match else "WARNING"
+            status_icon = icons.get(status, ' ')
+            write(f"{obs_num:<5} | {status_icon} {status:<7} | {planned:<20} | {assigned}")
 
-        if self.stats['all_exposure_specs']:
-            write("\n" + "="*80)
-            write("EXPOSURE SPECIFICATIONS SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*80)
-            write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | {'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
-            write("-" * 95)
-            for s in self.stats['all_exposure_specs']:
-                write(f"{s['obs']:<5} | {s['id']:<5} | {s['gf']:<18} | {s['rp']:<18} | {s['g']:<8} | {s['i']:<6} | {s['dur']:<11.1f}")
+    def _report_exposure_specs(self, write):
+        if not self.stats['all_exposure_specs']:
+            return
+        write("\n" + "="*80)
+        write("EXPOSURE SPECIFICATIONS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*80)
+        write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | "
+              f"{'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
+        write("-" * 95)
+        for s in self.stats['all_exposure_specs']:
+            write(f"{s['obs']:<5} | {s['id']:<5} | {s['gf']:<18} | {s['rp']:<18} | "
+                  f"{s['g']:<8} | {s['i']:<6} | {s['dur']:<11.1f}")
 
-        # CONFIGURATIONS / POINTINGS SUMMARY
-        if any(self.analytics[o].get('configs') for o in self.analytics):
-            write("\n" + "="*110)
-            write("CONFIGURATIONS / POINTINGS SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*110)
-            write(f"{'Obs':<5} | {'#':<3} | {'Config':<8} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Pointing'}")
-            write("-" * 110)
-            for obs_num in sorted(self.analytics.keys(), key=int):
-                if 'configs' in self.analytics[obs_num]:
-                    for pt in self.analytics[obs_num]['configs']:
-                        write(f"{obs_num:<5} | {pt['id']:<3} | {pt['config']:<8} | {pt['nod']:<20} | {pt['total_ints']:<10} | {pt['total_time']:<10.1f} | {pt['pointing']}")
+    def _report_configs_pointings(self, write):
+        if not any(self.analytics[o].get('configs') for o in self.analytics):
+            return
+        write("\n" + "="*110)
+        write("CONFIGURATIONS / POINTINGS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*110)
+        write(f"{'Obs':<5} | {'#':<3} | {'Config':<8} | {'Nod Pattern':<20} | "
+              f"{'Total Ints':<10} | {'Total Time':<10} | {'Pointing'}")
+        write("-" * 110)
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            if 'configs' in self.analytics[obs_num]:
+                for pt in self.analytics[obs_num]['configs']:
+                    write(f"{obs_num:<5} | {pt['id']:<3} | {pt['config']:<8} | {pt['nod']:<20} | "
+                          f"{pt['total_ints']:<10} | {pt['total_time']:<10.1f} | {pt['pointing']}")
 
-        # PARALLELS & DITHERS SUMMARY
-        if any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
-            write("\n" + "="*90)
-            write("PARALLELS & DITHERS SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*90)
-            write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
-            write("-" * 90)
-            for obs_num in sorted(self.analytics.keys(), key=int):
-                p = self.analytics[obs_num].get('parallel', "None")
-                d = self.analytics[obs_num].get('dither', "NONE")
-                status = icons['SUCCESS']
-                if p != "None" and "JOINT" not in d.upper(): status = icons['INFO']
-                write(f"{obs_num:<5} | {p:<35} | {d:<25} | {status}")
+    def _report_parallels_dithers(self, write, icons):
+        if not any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
+            return
+        write("\n" + "="*90)
+        write("PARALLELS & DITHERS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*90)
+        write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
+        write("-" * 90)
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            p = self.analytics[obs_num].get('parallel', "None")
+            d = self.analytics[obs_num].get('dither',   "NONE")
+            status = icons['SUCCESS']
+            if p != "None" and "JOINT" not in d.upper():
+                status = icons['INFO']
+            write(f"{obs_num:<5} | {p:<35} | {d:<25} | {status}")
 
-        # SPECIAL REQUIREMENTS SUMMARY
-        if any(self.analytics[o].get('special_reqs_data') for o in self.analytics):
-            write("\n" + "="*110)
-            write("SPECIAL REQUIREMENTS SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*110)
-            write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
-            write("-" * 110)
-            for obs_num in sorted(self.analytics.keys(), key=int):
-                d = self.analytics[obs_num].get('special_reqs_data', {'apa_range': "None", 'bg_lim': "None", 'others': []})
-                others_str = ", ".join(d['others']) if d['others'] else "None"
-                write(f"{obs_num:<5} | {d['apa_range']:<35} | {d['bg_lim']:<20} | {others_str}")
+    def _report_special_requirements(self, write):
+        if not any(self.analytics[o].get('special_reqs_data') for o in self.analytics):
+            return
+        write("\n" + "="*110)
+        write("SPECIAL REQUIREMENTS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*110)
+        write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
+        write("-" * 110)
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            d = self.analytics[obs_num].get(
+                'special_reqs_data', {'apa_range': "None", 'bg_lim': "None", 'others': []})
+            others_str = ", ".join(d['others']) if d['others'] else "None"
+            write(f"{obs_num:<5} | {d['apa_range']:<35} | {d['bg_lim']:<20} | {others_str}")
 
-        # MSA CONFIGURATIONS & STRATEGY SUMMARY
-        if any(self.analytics[o].get('msa_configs') or self.analytics[o].get('nod_pattern') for o in self.analytics):
-            write("\n" + "="*140)
-            write("MSA CONFIGURATIONS & STRATEGY SUMMARY (ALL REVIEWED OBSERVATIONS)")
-            write("="*140)
-            write(f"{'Obs':<5} | {'Config':<12} | {'Slitlets (Lengths)':<35} | {'Primaries':<12} | {'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
-            write("-" * 140)
-            for obs_num in sorted(self.analytics.keys(), key=int):
-                conf = "✚" if self.analytics[obs_num].get('conf_img') else "No"
-                leak = "✚" if self.analytics[obs_num].get('has_leakcal') else "No"
-                nod = self.analytics[obs_num].get('nod_pattern', "NONE")
-                sl = self.analytics[obs_num].get('slitlet_lengths', "None")
-                
-                msa_configs = self.analytics[obs_num].get('msa_configs', [])
-                if msa_configs:
-                    for cfg in msa_configs:
-                        # Combine slitlet count from XML and lengths from JSON
-                        slitlet_str = f"{cfg['n_slitlets']} ({sl})" if sl != "None" else str(cfg['n_slitlets'])
-                        write(f"{obs_num:<5} | {cfg['name']:<12} | {slitlet_str:<35} | {cfg['n_primaries']:<12} | {cfg['n_fillers']:<10} | {nod:<20} | {conf:<6} | {leak:<8}")
-                else:
-                    write(f"{obs_num:<5} | {'None':<12} | {sl:<35} | {'N/A':<12} | {'N/A':<10} | {nod:<20} | {conf:<6} | {leak:<8}")
+    def _report_msa_strategy(self, write):
+        if not any(self.analytics[o].get('msa_configs') or self.analytics[o].get('nod_pattern')
+                   for o in self.analytics):
+            return
+        write("\n" + "="*140)
+        write("MSA CONFIGURATIONS & STRATEGY SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("="*140)
+        write(f"{'Obs':<5} | {'Config':<12} | {'Slitlets (Lengths)':<35} | {'Primaries':<12} | "
+              f"{'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
+        write("-" * 140)
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            conf = "✚" if self.analytics[obs_num].get('conf_img')    else "No"
+            leak = "✚" if self.analytics[obs_num].get('has_leakcal') else "No"
+            nod  = self.analytics[obs_num].get('nod_pattern', "NONE")
+            sl   = self.analytics[obs_num].get('slitlet_lengths', "None")
+            msa_configs = self.analytics[obs_num].get('msa_configs', [])
+            if msa_configs:
+                for cfg in msa_configs:
+                    slitlet_str = f"{cfg['n_slitlets']} ({sl})" if sl != "None" else str(cfg['n_slitlets'])
+                    write(f"{obs_num:<5} | {cfg['name']:<12} | {slitlet_str:<35} | {cfg['n_primaries']:<12} | "
+                          f"{cfg['n_fillers']:<10} | {nod:<20} | {conf:<6} | {leak:<8}")
+            else:
+                write(f"{obs_num:<5} | {'None':<12} | {sl:<35} | {'N/A':<12} | "
+                      f"{'N/A':<10} | {nod:<20} | {conf:<6} | {leak:<8}")
 
-        # MSATA / REFERENCE STARS SUMMARY
+    def _report_msata_ref_stars(self, write, icons):
         write("\n" + "="*80)
         write("MSATA & REFERENCE STARS SUMMARY (ALL REVIEWED OBSERVATIONS)")
         write("="*80)
         write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10} | {'Status'}")
         write("-" * 80)
         for obs_num in sorted(self.analytics.keys(), key=int):
-            ref_logs = [item for item in self.results if item['category'] == "Reference Stars" and f"Obs {obs_num}:" in item['message']]
-            stars = "None"
-            quads = "None"
+            ref_logs = [item for item in self.results
+                        if item['category'] == "Reference Stars" and f"Obs {obs_num}:" in item['message']]
+            stars  = "None"
+            quads  = "None"
             status = icons['ERROR']
-            
-            # Simple parser for the logs we produced
             for log in ref_logs:
                 if "Stars:" in log['message']:
                     stars = re.search(r'Stars: (\d+)', log['message']).group(1)
-                    if log['status'] == 'SUCCESS': status = icons['SUCCESS']
-                    elif log['status'] == 'WARNING' and status != icons['ERROR']: status = icons['WARNING']
+                    if log['status'] == 'SUCCESS':
+                        status = icons['SUCCESS']
+                    elif log['status'] == 'WARNING' and status != icons['ERROR']:
+                        status = icons['WARNING']
                 if "Quadrants:" in log['message']:
                     quads = re.search(r'Quadrants: (\d+)', log['message']).group(1)
-
-            ta_method = "MSATA" # Assumed if we are here, though we could extract
+            ta_method = "MSATA"
             write(f"{obs_num:<5} | {ta_method:<8} | {stars:<10} | {quads:<10} | {status}")
 
-        # PROGRAM METADATA SUMMARY
+    def _report_submission_info(self, write, icons):
+        """APT version, email, submission comments, diagnostic justification, submission log."""
         meta = self.stats.get('program_metadata')
-        if meta and (meta['plans'] or meta['error_text'] or meta['submission_comments'] != "None"):
-            write("\n" + "="*80)
-            write("PROGRAM METADATA & SUBMISSION DETAILS")
-            write("="*80)
-            write(f"APT Version: {meta['apt_version']}")
-            write(f"Has Errors:  {meta['has_errors']}")
-            if meta['email'] != "None":
-                write(f"Email:       {meta['email']}")
-            
-            if meta['submission_comments'] != "None":
-                write(f"\n[Submission Comments]")
-                write(f"{meta['submission_comments']}")
-            
-            if meta['justification'] != "None":
-                write(f"\n[Diagnostic Justifications]")
-                write(f"{meta['justification']}")
-            
-            if meta['submission_log'] != "None":
-                write(f"\n[Submission Log]")
-                # The log usually contains multiple entries, print exactly as found
-                write(f"{meta['submission_log']}")
-            
-            if meta['error_text']:
-                write(f"\n[Submission Errors/Warnings]")
-                for line in meta['error_text'].split('\n'):
-                    if line.strip():
-                        # Determine icon based on content
-                        is_error = 'error' in line.lower() or 'assigned an Aperture PA of' in line
-                        icon = icons['ERROR'] if is_error else icons['WARNING']
-                        write(f"  {icon} {line.strip()}")
+        if not (meta and (meta['plans'] or meta['submission_comments'] != "None"
+                          or meta['justification'] != "None" or meta['submission_log'] != "None")):
+            return
+        write("\n" + "="*80)
+        write("PROGRAM METADATA & SUBMISSION DETAILS")
+        write("="*80)
+        write(f"APT Version: {meta['apt_version']}")
+        write(f"Has Errors:  {meta['has_errors']}")
+        if meta['email'] != "None":
+            write(f"Email:       {meta['email']}")
+        if meta['submission_comments'] != "None":
+            write(f"\n[Submission Comments]")
+            write(f"{meta['submission_comments']}")
+        if meta['justification'] != "None":
+            write(f"\n[Diagnostic Justifications]")
+            write(f"{meta['justification']}")
+        if meta['submission_log'] != "None":
+            write(f"\n[Submission Log]")
+            write(f"{meta['submission_log']}")
 
-        # INTEGRATED TARGET CATALOG PER OBSERVATION
+    def _report_submission_errors(self, write, icons):
+        """APT submission errors and warnings from ErrorText (deduplicated)."""
+        meta = self.stats.get('program_metadata')
+        if not (meta and meta['error_text']):
+            return
+        write("\n" + "="*80)
+        write("SUBMISSION ERRORS / WARNINGS")
+        write("="*80)
+        # Deduplicate: count occurrences, print each unique line once with a count suffix
+        counts = {}
+        order  = []
+        for line in meta['error_text'].split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            if line not in counts:
+                counts[line] = 0
+                order.append(line)
+            counts[line] += 1
+        for line in order:
+            is_error = 'error' in line.lower() or 'assigned an Aperture PA of' in line
+            icon  = icons['ERROR'] if is_error else icons['WARNING']
+            count = f" ({counts[line]}x)" if counts[line] > 1 else ""
+            write(f"  {icon} {line}{count}")
+
+    def _report_target_catalogs(self, write):
         write("\n" + "="*160)
         write("TARGET CATALOG PER OBSERVATION")
         write("="*160)
-        write(f"{'Obs':<5} | {'Target Catalog Name':<35} | {'Sources':<8} | {'Ref':<5} | {'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
+        write(f"{'Obs':<5} | {'Target Catalog Name':<35} | {'Sources':<8} | {'Ref':<5} | "
+              f"{'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
         write("-" * 160)
         for obs_num in sorted(self.analytics.keys(), key=int):
-            target = self.analytics[obs_num].get('target_name', 'Unknown')
-            info = self.stats['catalog_info'].get(target, {})
+            target  = self.analytics[obs_num].get('target_name', 'Unknown')
+            info    = self.stats['catalog_info'].get(target, {})
             sources = info.get('total_sources', "N/A")
-            ref = info.get('ref_sources', "N/A")
-            acc = info.get('accuracy', "N/A")
-            if isinstance(acc, float): acc = f"{acc:.1f}"
+            ref     = info.get('ref_sources',   "N/A")
+            acc     = info.get('accuracy',       "N/A")
+            if isinstance(acc, float):
+                acc = f"{acc:.1f}"
             w_range = info.get('weight_range', (0, 0))
-            w_min = f"{w_range[0]:.1f}" if w_range[1] > 0 else "N/A"
-            w_max = f"{w_range[1]:.1f}" if w_range[1] > 0 else "N/A"
+            w_min   = f"{w_range[0]:.1f}" if w_range[1] > 0 else "N/A"
+            w_max   = f"{w_range[1]:.1f}" if w_range[1] > 0 else "N/A"
             filters = ", ".join(info.get('weight_filters', []))
-            write(f"{obs_num:<5} | {target:<35} | {sources:<8} | {ref:<5} | {acc:<6} | {w_min:<10} | {w_max:<10} | {filters}")
+            write(f"{obs_num:<5} | {target:<35} | {sources:<8} | {ref:<5} | "
+                  f"{acc:<6} | {w_min:<10} | {w_max:<10} | {filters}")
 
-        # The section was moved much earlier in print_report
-
-        # FINAL SUMMARY
-        write("\n" + "="*80)
-        write("FINAL SUMMARY")
-        write("="*80)
-        
-        # Program Info
+    def _report_observing_description(self, write):
+        """Program title, PI, observing description, and MAZ justification."""
         meta = self.stats.get('program_metadata', {})
-        write(f"JWST {self.pid or 'Unknown'}")
+        write(f"\nJWST {self.pid or 'Unknown'}")
         write(f"{meta.get('title', 'Unknown Title')}")
         write(f"PI: {meta.get('pi', 'Unknown PI')}")
-        
         if meta.get('observing_description') and meta['observing_description'] != "None":
             write(f"\nObserving Description:")
             write(f"{meta['observing_description'].strip()}")
-            
         if meta.get('maz_justification') and meta['maz_justification'] != "None":
             write(f"\nMeteroid Zone Justification:")
             write(f"{meta['maz_justification'].strip()}")
 
-        write("-" * 40)
+    def _report_final_summary(self, write, icons):
+        """Gold summary block: data excess, time budget, MSATA/integration/IRS2 bullets."""
+        meta = self.stats.get('program_metadata', {})
 
-        # Summarized Warnings from ErrorText
+        # Repeat program identity so the flourish is self-contained
+        write("\n" + "="*80)
+        write("SUMMARY")
+        write("="*80)
+        write(f"\nJWST {self.pid or 'Unknown'}")
+        write(f"{meta.get('title', 'Unknown Title')}")
+        write(f"PI: {meta.get('pi', 'Unknown PI')}")
+        write('')
+
+        # Summarized warnings from ErrorText
         err_text = meta.get('error_text', "")
         if err_text:
-            low = err_text.count("Data Excess over lower threshold")
-            mid = err_text.count("Data Excess over middle threshold")
-            upp = err_text.count("Data Excess over upper threshold")
+            low  = err_text.count("Data Excess over lower threshold")
+            mid  = err_text.count("Data Excess over middle threshold")
+            upp  = err_text.count("Data Excess over upper threshold")
             items = []
             if low: items.append(f"lower threshold ({low}x)")
             if mid: items.append(f"middle threshold ({mid}x)")
             if upp: items.append(f"upper threshold ({upp}x)")
             if items:
-                write(f"  {icons['WARNING']} Data Excess over " + ", ".join(items))
-        
+                write(f"{icons['WARNING']}  Data Excess over " + ", ".join(items))
+
         # Catalog IDs warning
         any_id_warning = any("IDs >= 1,000,000" in item['message'] for item in self.results)
         if any_id_warning:
-            write(f"  {icons['WARNING']} Catalog sources have IDs greater than 1000000 which is not recommended")
+            write(f"{icons['WARNING']}  Catalog sources have IDs greater than 1000000 which is not recommended")
 
-        # Time Comparison
+        # Time comparison
         alloc = meta.get('allocated_time', 0.0)
-        charg = meta.get('charged_time', 0.0)
+        charg = meta.get('charged_time',   0.0)
         if alloc > 0:
             time_status = icons['SUCCESS'] if charg <= alloc else icons['ERROR']
-            write(f"  {time_status} {charg:.1f} Hours Total Charged / {alloc:.1f} Hours Allocated")
+            write(f"{time_status} {charg:.1f} Hours Total Charged / {alloc:.1f} Hours Allocated")
 
-        write("")
-        # 1. MSATA & Ref Stars
-        if self.stats['total_mos'] > 0:
-            avg_stars = sum(self.stats['ref_stars'])/len(self.stats['ref_stars']) if self.stats['ref_stars'] else 0
-            star_range = f"{min(self.stats['ref_stars'])} - {max(self.stats['ref_stars'])}" if self.stats['ref_stars'] else "unknown"
+        # MSATA & Reference Stars
+        if False: #self.stats['total_mos'] > 0:
+            avg_stars  = (sum(self.stats['ref_stars']) / len(self.stats['ref_stars'])
+                          if self.stats['ref_stars'] else 0)
+            star_range = (f"{min(self.stats['ref_stars'])} - {max(self.stats['ref_stars'])}"
+                          if self.stats['ref_stars'] else "unknown")
             msata_icon = icons['SUCCESS'] if self.stats['msata_count'] == self.stats['total_mos'] else icons['WARNING']
             write(f"{msata_icon} MSATA with {star_range} available reference stars (Average: {avg_stars:.1f})")
-        
-        # 2. Integration Times
+
+        # Integration Times
         if self.stats['integration_times']:
-            all_min = min(t[0] for t in self.stats['integration_times'])
-            all_max = max(t[1] for t in self.stats['integration_times'])
+            all_min   = min(t[0] for t in self.stats['integration_times'])
+            all_max   = max(t[1] for t in self.stats['integration_times'])
             time_icon = icons['SUCCESS'] if self.stats['all_under_1500'] else icons['WARNING']
             if abs(all_min - all_max) < 0.1:
                 write(f"{time_icon} Integration times all {all_min:.1f} s (< 1500 s)")
             else:
-                write(f"{time_icon} Integration times ranged from {all_min:.1f} s - {all_max:.1f} s (all < 1500 s: {self.stats['all_under_1500']})")
-        
-        # 3. IRS2
+                write(f"{time_icon} Integration times ranged from {all_min:.1f} s - {all_max:.1f} s "
+                      f"(all < 1500 s: {self.stats['all_under_1500']})")
+
+        # IRS2 readout
         irs2_icon = icons['SUCCESS'] if self.stats['all_irs2'] else icons['INFO']
         write(f"{irs2_icon} IRS2 Readout used for all MOS exposures: {self.stats['all_irs2']}")
 
-        write("\n" + "="*80)
+        # Aperture PA: planned vs. assigned
+        if self.analytics:
+            pa_total   = len(self.analytics)
+            pa_matched = sum(
+                1 for o in self.analytics
+                if abs((self.analytics[o].get('apa_planned_val') or 0.0) -
+                        (self.analytics[o].get('apa_assigned_val') or 0.0)) < 0.001
+                and self.analytics[o].get('apa_planned_val') is not None
+            )
+            pa_icon = icons['SUCCESS'] if pa_matched == pa_total else icons['WARNING']
+            write(f"{pa_icon} Aperture PA Planned = Assigned for {pa_matched}/{pa_total} observations")
 
-        # Save to file if requested
-        if self.output_path:
-            with open(self.output_path, 'w') as f:
-                f.write(output.getvalue())
-            print(f"\nReport saved to: {self.output_path}")
+        # Nod pattern
+        if self.analytics:
+            nod_counts = {}
+            for o in self.analytics:
+                nod = self.analytics[o].get('nod_pattern', 'NONE')
+                nod_counts[nod] = nod_counts.get(nod, 0) + 1
+            standard = "3 Shutter Slitlet"
+            if set(nod_counts) == {standard}:
+                write(f"{icons['SUCCESS']} Nod Pattern: {standard} for all observations")
+            else:
+                others = ", ".join(f"{n} ({c}x)" for n, c in nod_counts.items() if n != standard)
+                std_count = nod_counts.get(standard, 0)
+                note = f"{standard} ({std_count}x)" if std_count else "no standard nod"
+                write(f"{icons['WARNING']}  Nod Pattern: {note}; non-standard: {others}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
