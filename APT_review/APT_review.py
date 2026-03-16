@@ -9,6 +9,9 @@ import os
 import shutil
 import csv
 import io
+from datetime import datetime
+import subprocess
+import sys
 
 # Namespaces
 NS = {
@@ -20,28 +23,50 @@ NS = {
     'msa': "http://www.stsci.edu/JWST/APT/Template/NirspecMSA",
 }
 
+TA_MAG_LIMITS = {
+    ('F110W', 'NRSRAPID'): (19.5, 22.0),
+    ('F140X', 'NRSRAPID'): (20.6, 23.0),
+    ('CLEAR', 'NRSRAPID'): (21.3, 23.8),
+    ('F110W', 'NRSRAPIDD6'): (21.3, 24.0),
+    ('F140X', 'NRSRAPIDD6'): (22.3, 25.0),
+    ('CLEAR', 'NRSRAPIDD6'): (23.1, 25.7),
+}
+
 class NIRSpecMOSReviewer:
-    def __init__(self, input_file, output_file=None, include=None, exclude=None):
-        self.input_path = Path(input_file)
+    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None):
+        self.input_path = Path(input_file).absolute()
+        self.exports_path = Path(exports_dir) if exports_dir else None
         self.output_path = Path(output_file) if output_file else None
         
+        self.pid = None
+        self.files_used = {} # path -> mtime
+        if self.input_path.exists():
+            self.files_used[str(self.input_path)] = self.input_path.stat().st_mtime
+            
+        self.potential_csv_files = []
         self.include_set = self._parse_obs_list(include) if include else set()
         self.exclude_set = self._parse_obs_list(exclude) if exclude else set()
         
+        self.target_name_map = {}
+        self.obs_info = {} # int -> {label, status, target_name}
         self.results = []
+        self.catalogs = {}
         self.analytics = {}
         self.stats = {
             'msata_count': 0,
             'total_mos': 0,
             'ref_stars': [], # list of counts
             'integration_times': [], # list of (min, max) per obs
+            'observed_nums': [],
             'all_irs2': True,
+            'all_irs2_rapid': True,
             'max_groups': 0,
             'all_under_1500': True,
             'observed_nums': [],
             'all_exposure_specs': [], # List of dicts for summary table
             'catalog_info': {}, # Map catalog name to detailed info
             'all_targets': [], # List of all Target metadata
+            'high_priority_analysis': {}, # New analysis for top weighted targets
             'program_metadata': {
                 'title': "Unknown",
                 'pi': "Unknown",
@@ -59,6 +84,14 @@ class NIRSpecMOSReviewer:
                 'submission_log': "None"
             }
         }
+        self.exports_data = {
+            'assigned_pas': {}, # obs_num string -> float
+            'ta_stars': {},    # obs_num string -> {'count': N, 'quads': set(), 'file': name}
+            'ta_params': {},   # obs_num string -> {visit_num string -> bin_string}
+            'failed_shutters': [], # list of dicts {obs, msg}
+            'wavelengths': {}, # obs_num -> {sid -> {gf -> {'n1_min': val, ...}}}
+            'availability': {} # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
+        }
         self._tree = None
         self._root = None
         self._main_xml_arcname = None
@@ -66,9 +99,224 @@ class NIRSpecMOSReviewer:
         
         try:
             self._load_xml()
+            self.catalogs = self._parse_all_catalogs(self._root)
+            self._load_exports()
+            self.check_program_tooldata() # Load error_text early
             self.perform_review()
         finally:
             shutil.rmtree(self._temp_dir)
+
+    def _record_file_used(self, path):
+        p = Path(path).absolute()
+        if p.exists():
+            self.files_used[str(p)] = p.stat().st_mtime
+
+    def _load_exports(self):
+        """Search for and parse exported files (diag, csv) to supplement XML data."""
+        potential_dirs = []
+        if self.exports_path:
+            potential_dirs.append(self.exports_path)
+        else:
+            p = self.input_path.parent
+            potential_dirs.append(p / "exports")
+            try:
+                for d in p.glob("*/"):
+                    if d.is_dir(): potential_dirs.append(d)
+            except: pass
+            potential_dirs.append(Path("."))
+            try:
+                for d in Path(".").glob("*/"):
+                    if d.is_dir(): potential_dirs.append(d)
+            except: pass
+
+        final_dirs = []
+        seen = set()
+        for d in potential_dirs:
+            abs_d = d.absolute()
+            if abs_d not in seen and d.exists() and d.is_dir():
+                final_dirs.append(d)
+                seen.add(abs_d)
+
+        diag_files = []
+        csv_files = []
+        for d in final_dirs:
+            diag_files.extend(list(d.glob("*.diag")))
+            csv_files.extend(list(d.glob("*.csv")))
+
+        diag_files = {f.absolute(): f for f in diag_files}.values()
+        csv_files = {f.absolute(): f for f in csv_files}.values()
+
+        for diag_file in diag_files:
+            # Stopped using .diag files per user request. 
+            # Information believed to be in .aptx/XML instead.
+            pass
+
+        wavelength_files = []
+        for csv_file in csv_files:
+            name = csv_file.name
+            if name.endswith("-TA.csv"):
+                m = re.search(r'obs(\d+)(?:-(\d+))?', name)
+                if m:
+                    obs_num = m.group(1)
+                    visit_num = m.group(2)
+                    if self._parse_ta_csv(csv_file, obs_num, visit_num):
+                        self._record_file_used(csv_file)
+            elif name.endswith("_visits.csv"):
+                if self._parse_visits_csv(csv_file):
+                    self._record_file_used(csv_file)
+            elif "msa.csv" in name.lower():
+                # Potential catalog
+                self._record_file_used(csv_file)
+            elif "obs" in name.lower() and name.endswith(".csv"):
+                wavelength_files.append(csv_file)
+        
+        self.potential_csv_files = wavelength_files
+
+    def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                if not reader.fieldnames: return False
+                col_map = {h.strip().upper(): h for h in reader.fieldnames}
+                id_col = col_map.get('ID')
+                q_col = col_map.get('QUADRANT')
+                pa_col = col_map.get('APERTURE PA (DEGREES)')
+                quad_counts = {1: 0, 2: 0, 3: 0, 4: 0}
+                count = 0
+                pa_val = None
+                star_rows = []  # list of {'id': str, 'quad': int}
+                for row in reader:
+                    val = row.get(q_col)
+                    sid = str(row.get(id_col, '')).strip() if id_col else ''
+                    if val and str(val).strip():
+                        try:
+                            q_idx = int(float(str(val).strip()))
+                            if q_idx in quad_counts:
+                                quad_counts[q_idx] += 1
+                                count += 1
+                                if sid:
+                                    star_rows.append({'id': sid, 'quad': q_idx})
+                        except: pass
+                    if pa_col and pa_val is None:
+                        try: pa_val = float(row.get(pa_col))
+                        except: pass
+                if count > 0:
+                    if obs_num not in self.exports_data['ta_stars']:
+                        self.exports_data['ta_stars'][obs_num] = {}
+                    v_key = str(int(visit_num)) if visit_num else '1'
+                    active_quads = {str(q) for q, c in quad_counts.items() if c > 0}
+                    self.exports_data['ta_stars'][obs_num][v_key] = {
+                        'count': count,
+                        'quad_counts': quad_counts,
+                        'quads': active_quads,
+                        'pa': pa_val,
+                        'file': file_path.name,
+                        'star_rows': star_rows,
+                    }
+                    return True
+        except: pass
+        return False
+
+    def _parse_visits_csv(self, file_path):
+        import numpy as np
+        try:
+            import pysiaf
+            from pysiaf.utils import rotations
+            HAS_PYSIAF = True
+        except ImportError:
+            HAS_PYSIAF = False
+            
+        if not HAS_PYSIAF:
+            print("⚠️ PySIAF not found. Skipping quadrant availability analysis.")
+            return False
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                if not reader.fieldnames: return False
+                
+                def is_inside(point, polygon):
+                    ra, dec = point
+                    n = len(polygon)
+                    inside = False
+                    p1x, p1y = polygon[0]
+                    for i in range(n + 1):
+                        p2x, p2y = polygon[i % n]
+                        if dec > min(p1y, p2y):
+                            if dec <= max(p1y, p2y):
+                                if ra <= max(p1x, p2x):
+                                    if p1y != p2y:
+                                        xinters = (dec - p1y) * (p2x-p1x) / (p2y-p1y) + p1x
+                                    if p1x == p2x or ra <= xinters:
+                                        inside = not inside
+                        p1x, p1y = p2x, p2y
+                    return inside
+
+                siaf = pysiaf.Siaf('NIRSpec')
+                
+                for row in reader:
+                    vid = row.get('Visit ID')
+                    if not vid or vid in self.exports_data['availability']: continue
+                    
+                    cat_name = row.get('Target')
+                    ra_ptr = float(row.get('RA Center Rot', 0))
+                    dec_ptr = float(row.get('Dec Center Rot', 0))
+                    pa_ptr = float(row.get('Orient Used', 0))
+                    ap_name = row.get('Aperture', 'NRS_FULL_MSA')
+                    
+                    try:
+                        main_ap = siaf[ap_name]
+                        attitude = rotations.attitude(main_ap.V2Ref, main_ap.V3Ref, ra_ptr, dec_ptr, pa_ptr)
+                        
+                        quad_maps = {1: 'NRS_FULL_MSA1', 2: 'NRS_FULL_MSA2', 3: 'NRS_FULL_MSA3', 4: 'NRS_FULL_MSA4'}
+                        quad_polys = {}
+                        for q_idx, q_ap_name in quad_maps.items():
+                            q_ap = siaf[q_ap_name]
+                            q_ap.set_attitude_matrix(attitude)
+                            q_ra, q_dec = q_ap.closed_polygon_points('sky')
+                            quad_polys[q_idx] = np.column_stack((q_ra, q_dec))
+                    except Exception as e:
+                        print(f"Warning: SIAF calculation failed for visit {vid}: {e}")
+                        continue
+                    
+                    counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
+                    cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
+                    if not cat_sources: continue
+                    
+                    for sid, src in cat_sources.items():
+                        for q_idx, q_poly in quad_polys.items():
+                            if is_inside((src['ra'], src['dec']), q_poly):
+                                if src['is_ref']:
+                                    counts[q_idx]['ref'] += 1
+                                else:
+                                    counts[q_idx]['sci'] += 1
+                                break
+                    
+                    self.exports_data['availability'][vid] = {
+                        'cat': cat_name,
+                        'counts': counts
+                    }
+                
+                # Proactively generate plots using the external script
+                script_dir = Path(__file__).parent
+                plot_script = script_dir / "msa_coverage_plot.py"
+                if plot_script.exists():
+                    try:
+                        valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
+                        valid_obs_str = ",".join(valid_obs)
+                        print(f"Generating MSA coverage plots for {file_path.name}...")
+                        subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(file_path), valid_obs_str], 
+                                       check=True)
+                    except subprocess.CalledProcessError as e:
+                        print(f"Warning: MSA coverage plot generation failed.")
+                    except Exception as e:
+                        print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
+
+                return True
+        except Exception as e:
+            print(f"Warning: Could not parse visits CSV: {e}")
+            return False
+        return False
 
     def _parse_obs_list(self, obs_str):
         """Parses strings like '1,3-5,10' into a set of integers."""
@@ -124,8 +372,7 @@ class NIRSpecMOSReviewer:
         return parent.findall(f".//{{{NS['apt']}}}{tag}", NS)
 
     def _parse_all_catalogs(self, root):
-        """Extract all reference stars from all catalogs in the XML."""
-        import math
+        """Extract all sources from all catalogs in the XML."""
         catalogs = {}
         for catalog_node in root.findall(f".//{{{NS['apt']}}}Catalog"):
             name_node = catalog_node.find(f"{{{NS['msa']}}}Name")
@@ -133,51 +380,88 @@ class NIRSpecMOSReviewer:
             if name_node is not None and csv_node is not None and csv_node.text:
                 name = name_node.text
                 csv_text = csv_node.text
-                ref_stars = []
-                # Simple parser for CSV text
+                
+                headers = []
+                for line in csv_text.splitlines():
+                    if line.strip().startswith('#ID'):
+                        headers = [h.strip().upper() for h in line.strip()[1:].replace('[MAGNITUDE] - ', '').split(',')]
+                        break
+                
                 lines = [l for l in csv_text.splitlines() if l.strip() and not l.startswith('#')]
-                for line in lines:
-                    parts = line.split(',')
-                    if len(parts) >= 9 and parts[8].lower() == 'true':
-                        try:
-                            ref_stars.append({'id': parts[0], 'ra': float(parts[1]), 'dec': float(parts[2])})
-                        except: continue
-                catalogs[name] = ref_stars
+                f = io.StringIO("\n".join(lines))
+                reader = csv.DictReader(f, fieldnames=headers) if headers else csv.DictReader(f)
+                
+                fieldnames = reader.fieldnames if reader.fieldnames else []
+                id_col = next((f for f in fieldnames if f.upper() in ['ID', '#ID']), None)
+                weight_col = next((f for f in fieldnames if f.upper() == 'WEIGHT'), None)
+                ref_col = next((f for f in fieldnames if f.upper() == 'REFERENCE'), None)
+                ra_col = next((f for f in fieldnames if f.upper() == 'RA'), None)
+                dec_col = next((f for f in fieldnames if f.upper() == 'DEC'), None)
+                
+                ta_cols = {
+                    'NRS_F110W': next((f for f in fieldnames if 'NRS_F110W' in f.upper()), None),
+                    'NRS_F140W': next((f for f in fieldnames if 'NRS_F140W' in f.upper()), None),
+                    'NRS_CLEAR': next((f for f in fieldnames if f.upper() == 'NRS_CLEAR'), None),
+                }
+
+                all_sources = {}
+                for row in reader:
+                    try:
+                        sid = row.get(id_col)
+                        w = float(row.get(weight_col, 0))
+                        is_ref = str(row.get(ref_col, '')).lower() == 'true'
+                        ra = float(row.get(ra_col, 0))
+                        dec = float(row.get(dec_col, 0))
+                        mags = {}
+                        for col_label, col_name in ta_cols.items():
+                            if col_name:
+                                raw = row.get(col_name, '').strip()
+                                try: mags[col_label] = float(raw)
+                                except: mags[col_label] = None
+                        all_sources[sid] = {'weight': w, 'is_ref': is_ref, 'ra': ra, 'dec': dec, 'mags': mags}
+                    except: continue
+                
+                catalogs[name] = {
+                    'sources': all_sources,
+                    'ref_stars': [{'id': sid, 'ra': val['ra'], 'dec': val['dec']} for sid, val in all_sources.items() if val['is_ref']]
+                }
                 
                 # Also handle SubCatalogs which might be referenced by name in observations
                 for subcat in catalog_node.findall(f"{{{NS['msa']}}}SubCatalogs"):
                     subname = subcat.get('Name')
                     if subname and subname not in catalogs:
-                        catalogs[subname] = ref_stars
+                        catalogs[subname] = catalogs[name]
         return catalogs
+
+    def hms_to_deg(self, hms):
+        if not hms: return 0.0
+        parts = hms.split()
+        if len(parts) < 3: return float(parts[0])
+        return (float(parts[0]) * 15) + (float(parts[1]) * 15 / 60) + (float(parts[2]) * 15 / 3600)
+        
+    def dms_to_deg(self, dms):
+        if not dms: return 0.0
+        parts = dms.split()
+        if len(parts) < 3: return float(parts[0])
+        sign = -1 if '-' in parts[0] else 1
+        pts = [abs(float(p)) for p in parts]
+        return sign * (pts[0] + (pts[1] / 60) + (pts[2] / 3600))
 
     def _get_candidate_ref_stars(self, catalog_name, point_ra_str, point_dec_str, pa_deg):
         """Find candidate reference stars from catalog within field."""
         import math
         if catalog_name not in self.catalogs: return 0, 0
         
-        def hms_to_deg(hms):
-            parts = hms.split()
-            if len(parts) < 3: return float(parts[0])
-            return (float(parts[0]) * 15) + (float(parts[1]) * 15 / 60) + (float(parts[2]) * 15 / 3600)
-            
-        def dms_to_deg(dms):
-            parts = dms.split()
-            if len(parts) < 3: return float(parts[0])
-            sign = -1 if '-' in parts[0] else 1
-            pts = [abs(float(p)) for p in parts]
-            return sign * (pts[0] + (pts[1] / 60) + (pts[2] / 3600))
-
         try:
-            ra_p = hms_to_deg(point_ra_str)
-            dec_p = dms_to_deg(point_dec_str)
+            ra_p = self.hms_to_deg(point_ra_str)
+            dec_p = self.dms_to_deg(point_dec_str)
         except: return 0, 0
 
         candidates = []
         quads = set()
         pa_rad = math.radians(pa_deg)
         
-        for star in self.catalogs[catalog_name]:
+        for star in self.catalogs[catalog_name]['ref_stars']:
             # Rough distance (arcsec)
             dra = (star['ra'] - ra_p) * math.cos(math.radians(dec_p)) * 3600
             ddec = (star['dec'] - dec_p) * 3600
@@ -194,9 +478,47 @@ class NIRSpecMOSReviewer:
                 elif x > 0 and y < 0: quads.add(4)
         return len(candidates), len(quads)
 
+    def abbreviate_mode(self, tag_name):
+        if not tag_name: return ""
+        # Common mappings for brevity
+        m = {
+            'NirspecMOS': 'NIRSpec MOS',
+            'NirspecMultiObjectSpectroscopy': 'NIRSpec MOS',
+            'NirspecFixedSlit': 'NIRSpec FS',
+            'NirspecFixedSlitSpectroscopy': 'NIRSpec FS',
+            'NirspecIfu': 'NIRSpec IFU',
+            'NirspecIfuSpectroscopy': 'NIRSpec IFU',
+            'NirspecBots': 'NIRSpec BOTS',
+            'NirspecBrightObjectTimeSeries': 'NIRSpec BOTS',
+            'NircamImaging': 'NIRCam Imaging',
+            'NircamWfss': 'NIRCam WFSS',
+            'NircamTimeSeries': 'NIRCam TS',
+            'MiriImaging': 'MIRI Imaging',
+            'MiriMrs': 'MIRI MRS',
+            'MiriLrs': 'MIRI LRS',
+        }
+        if tag_name in m: return m[tag_name]
+        # Fallback: CamelCase to space
+        return re.sub(r'([a-z])([A-Z])', r'\1 \2', tag_name)
+
     def perform_review(self):
-        self.catalogs = self._parse_all_catalogs(self._root)
+        # 0. Parse Visit Statuses from XML
+        self.obs_status = {} # int -> str
+        for vs in (self.findall(self._root, 'VisitStatus') or []):
+            vid = vs.get('VisitId') # PPPPPMMMVVV
+            if vid and len(vid) >= 8:
+                try:
+                    obs_num = str(int(vid[5:8]))
+                    status = vs.get('Status')
+                    if obs_num not in self.obs_status:
+                        self.obs_status[obs_num] = status
+                    elif status == "COMPLETED":
+                        self.obs_status[obs_num] = "COMPLETED"
+                except: pass
+
+        # self.catalogs already parsed in __init__
         # 1. Proposal Info
+        # ... (rest of logic remains same, but using self.obs_status in loop)
         prop_info = self.find(self._root, 'ProposalInformation')
         if prop_info is not None:
             self.pid = prop_info.findtext(f"{{{NS['apt']}}}ProposalID")
@@ -216,26 +538,200 @@ class NIRSpecMOSReviewer:
                 if fname and lname:
                     self.stats['program_metadata']['pi'] = f"{fname} {lname}"
             
+        # Add Export-derived findings to general results
+        for item in self.exports_data['failed_shutters']:
+            self.log("MSA Strategy", item['msg'], "WARNING", int(item['obs']))
 
         # 2. Targets & Catalog Checks
         self.check_targets()
 
         # 3. Observations
+        self.all_obs_nums = []
+        self.reviewed_obs_nums = []
         obs_parent = self.find(self._root, 'DataRequests')
         if obs_parent is not None:
             for obs in self.findall(obs_parent, 'Observation'):
                 obs_num_str = obs.findtext(f"{{{NS['apt']}}}Number")
                 if obs_num_str:
-                    obs_num = int(obs_num_str)
-                    # Filtering logic
-                    if self.include_set and obs_num not in self.include_set:
-                        continue
-                    if self.exclude_set and obs_num in self.exclude_set:
-                        continue
-                self.review_observation(obs)
+                    obs_num = obs_num_str
+                    self.all_obs_nums.append(obs_num)
+                    
+                    # Collect metadata for table
+                    label = obs.findtext(f"{{{NS['apt']}}}Label") or ""
+                    status = self.obs_status.get(obs_num, "UNKNOWN")
+                    target_id = obs.findtext(f"{{{NS['apt']}}}TargetID") or "Unknown"
+                    target_name = target_id
+                    if target_id.isdigit():
+                        target_name = self.target_name_map.get(target_id, target_id)
+                    elif ' ' in target_id:
+                        parts = target_id.split(' ', 1)
+                        if parts[0].isdigit():
+                            target_name = parts[1]
+
+                    # Mode/Template
+                    template_node = obs.find(f"{{{NS['apt']}}}Template")
+                    prime_template = "Unknown"
+                    if template_node is not None:
+                        children = list(template_node)
+                        if children:
+                            prime_template = children[0].tag.split('}')[-1]
+
+                    # Parallel
+                    parallel_node = obs.find(f"{{{NS['apt']}}}CoordinatedParallelSet/{{{NS['apt']}}}CoordinatedParallel")
+                    parallel_str = ""
+                    if parallel_node is not None:
+                        p_temp_node = parallel_node.find(f"{{{NS['apt']}}}Template")
+                        p_mode = ""
+                        if p_temp_node is not None:
+                            p_children = list(p_temp_node)
+                            if p_children:
+                                p_mode = p_children[0].tag.split('}')[-1]
+                        parallel_str = self.abbreviate_mode(p_mode)
+
+                    is_mos = (prime_template in ["NirspecMOS", "NirspecMultiObjectSpectroscopy"])
+                    is_completed = (status == "COMPLETED")
+                    
+                    # Determine Sign
+                    if not is_mos:
+                        sign = "🤷🏻"
+                    elif is_completed:
+                        # If explicitly included, it's 🔎, otherwise ☑️
+                        if self.include_set and obs_num in self.include_set:
+                            sign = "🔎"
+                        else:
+                            sign = "☑️"
+                    elif self.include_set and obs_num not in self.include_set:
+                        sign = "🙈"
+                    elif self.exclude_set and obs_num in self.exclude_set:
+                        sign = "🙈"
+                    else:
+                        sign = "🔎"
+
+                    self.obs_info[obs_num] = {
+                        'label': label,
+                        'status': status,
+                        'target': target_name,
+                        'mode': self.abbreviate_mode(prime_template),
+                        'parallel': parallel_str,
+                        'sign': sign
+                    }
+
+                    # Extract TA Parameters (Filter/Readout) from visits
+                    for visit in self.findall(obs, 'Visit'):
+                        v_num = visit.get('Number')
+                        rs_bin = visit.get('ReferenceStarBin')
+                        if rs_bin and v_num:
+                            if obs_num not in self.exports_data['ta_params']:
+                                self.exports_data['ta_params'][obs_num] = {}
+                            self.exports_data['ta_params'][obs_num][v_num] = rs_bin
+
+                    # Determine if it's "Not Designed" (e.g. Planning status)
+                    is_unplanned = False
+                    mos_template = self.find(template_node, 'nsmos:NirspecMOS') if template_node is not None else None
+                    xml_pa = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS) if mos_template is not None else None
+                    if xml_pa:
+                        try:
+                            val = float(re.search(r'[\d\.]+', xml_pa).group())
+                            # Check for PA mismatch in program error text
+                            err_text = self.stats['program_metadata'].get('error_text', "")
+                            if f"created with an Aperture PA of {val:.4f}" in err_text:
+                                is_unplanned = True
+                        except: pass
+                    
+                    if is_unplanned:
+                        self.obs_info[obs_num]['sign'] = "👷"
+                        self.obs_info[obs_num]['unplanned'] = True
+
+                    # Processing logic for actual review execution
+                    if not is_mos: continue # Only review MOS
+                    
+                    if self.include_set:
+                        if obs_num not in self.include_set: continue
+                    else:
+                        # Default filters
+                        if is_unplanned: 
+                            # Continue to review for PA summary, but it's not a full review
+                            pass
+                        elif is_completed: continue
+                        elif self.exclude_set and obs_num in self.exclude_set: continue
+
+                    self.reviewed_obs_nums.append(obs_num)
+                    sign = self.obs_info.get(obs_num, {}).get('sign')
+                    self.review_observation(obs, is_full_review=(sign == "🔎"))
                         
-        # 4. Program-wide ToolData (Plans & Submission)
-        self.check_program_tooldata()
+        # 5. Cross-Observation Checks (Spotlight Tool)
+        self.check_program_strategy()
+        self.check_cross_observation_logic()
+
+        # 6. High Priority Target Analysis
+        self.analyze_high_priority_targets()
+        
+        # 7. Wavelength Coverage from Exports
+        self._load_wavelength_exports()
+
+    def check_program_strategy(self):
+        """Spotlight: FS+MOS angle checks and NIRCam+MOS timing checks."""
+        templates = set()
+        for template in self._root.findall(".//{http://www.stsci.edu/JWST/APT}Template"):
+            for child in template:
+                templates.add(child.tag.split('}')[-1])
+        
+        has_mos = 'NirspecMOS' in templates
+        has_fs = 'NirspecFixedSlitSpectroscopy' in templates
+        has_nircam = 'NircamImaging' in templates or 'NircamIprImaging' in templates
+        
+        if has_mos:
+            for obs_num in sorted(self.analytics.keys(), key=int):
+                if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+                data = self.analytics[obs_num]
+                sr = data.get('special_reqs_data', {})
+                
+                if has_fs:
+                    # check for angle SR
+                    if sr.get('apa_range') == "None":
+                        self.log("Strategy", "Program contains both FS and MOS, but this MOS observation has no Aperture PA special requirement.", "INFO", obs_num)
+                
+                if has_nircam:
+                    # check for timing SR
+                    timing_found = any('Timing' in s or 'Between' in s or 'After' in s for s in sr.get('others', []))
+                    if not timing_found:
+                        self.log("Strategy", "Program contains NIRCam imaging (potential pre-imaging), but this MOS observation has no timing link.", "INFO", obs_num)
+
+    def check_cross_observation_logic(self):
+        """Spotlight: Many MOS observations in same field (clustering) and conflicting PAs."""
+        import math
+        obs_nums = sorted(self.analytics.keys(), key=int)
+        checked = set()
+        
+        for i, num1 in enumerate(obs_nums):
+            if num1 in checked: continue
+            data1 = self.analytics[num1]
+            if 'ra' not in data1 or 'dec' not in data1: continue
+            
+            cluster = [num1]
+            for num2 in obs_nums[i+1:]:
+                data2 = self.analytics[num2]
+                if 'ra' not in data2 or 'dec' not in data2: continue
+                
+                # Simple angular distance
+                dist = math.sqrt((data1['ra'] - data2['ra'])**2 + (data1['dec'] - data2['dec'])**2)
+                if dist < 1.5: # 1.5 degrees
+                    cluster.append(num2)
+                    checked.add(num2)
+            
+            if len(cluster) > 1:
+                # 1. Clustering Flag
+                self.log("Clustering", f"Observations {', '.join(cluster)} are within 1.5 degrees. Consider planning as Visits in same Obs for efficiency.", "INFO")
+                
+                # 2. Conflicting PAs
+                pas = [self.analytics[n].get('apa_assigned_val') for n in cluster if 'apa_assigned_val' in self.analytics[n]]
+                if pas and any(abs(p - pas[0]) > 0.1 for p in pas):
+                    self.log("Clustering", f"Observations {', '.join(cluster)} in same field have different assigned angles. Allowing same angle may be more efficient.", "WARNING")
+                
+                # 3. Separate Catalogs
+                cats = {self.analytics[n].get('catalog_name') for n in cluster if self.analytics[n].get('catalog_name')}
+                if len(cats) > 1:
+                    self.log("Clustering", f"Observations {', '.join(cluster)} in same field use different catalogs: {', '.join(filter(None, cats))}. Better to have one complete catalog per field.", "INFO")
 
     def check_program_tooldata(self):
         # MPT Plans
@@ -271,6 +767,8 @@ class NIRSpecMOSReviewer:
             target_type = target.get(f"{{{NS['xsi']}}}type")
             name = target.findtext(f"{{{NS['apt']}}}TargetName")
             num = target.findtext(f"{{{NS['apt']}}}Number")
+            if num and name:
+                self.target_name_map[num] = name
             
             target_data = {
                 'num': num,
@@ -314,6 +812,62 @@ class NIRSpecMOSReviewer:
 
             self.stats['all_targets'].append(target_data)
 
+    def analyze_high_priority_targets(self):
+        """Analyze how many exposures are obtained for the top 20 weighted targets in each catalog."""
+        analysis = {}
+        
+        for cat_name, cat_data in self.catalogs.items():
+            if not cat_data.get('sources'): continue
+            
+            # Sort by weight descending
+            sorted_v = sorted(cat_data['sources'].items(), key=lambda x: x[1]['weight'], reverse=True)
+            top_20 = sorted_v[:20]
+            
+            analysis[cat_name] = {
+                'top_20': [],
+                'results': {} # source_id -> {obs_num: {n_obs: count, n_total: count}}
+            }
+            
+            for sid, val in top_20:
+                sid_str = str(sid)
+                analysis[cat_name]['top_20'].append({'id': sid_str, 'weight': val['weight']})
+                analysis[cat_name]['results'][sid_str] = {}
+
+        # Scan observations
+        for obs_num, data in self.analytics.items():
+            raw_cat = data.get('primary_candidate_set', "")
+            # Extract name from "Name (N sources)"
+            cat_name = raw_cat.split('(')[0].strip() if '(' in raw_cat else raw_cat
+            
+            if cat_name not in analysis: continue
+            
+            # Configurations used in Pointings (excluding ALLCLOSED)
+            pointings = data.get('configs', [])
+            # Map Config Name -> set of Primary IDs
+            cfg_id_map = {c['name']: set(c['primary_ids']) for c in data.get('msa_configs', [])}
+            
+            for sid_info in analysis[cat_name]['top_20']:
+                sid = sid_info['id']
+                # Store breakdown by gf (Grating/Filter)
+                # results[sid][obs_num] = { gf: {n_obs, n_total}, ... }
+                if obs_num not in analysis[cat_name]['results'][sid]:
+                    analysis[cat_name]['results'][sid][obs_num] = {}
+                
+                obs_res = analysis[cat_name]['results'][sid][obs_num]
+                
+                for pt in pointings:
+                    if pt['config'] == 'ALLCLOSED': continue
+                    gf = pt.get('gf', 'Unknown')
+                    if gf not in obs_res:
+                        obs_res[gf] = {'n_obs': 0, 'n_total': 0}
+                    
+                    cnt = pt.get('total_ints', 1)
+                    obs_res[gf]['n_total'] += cnt
+                    if sid in cfg_id_map.get(pt['config'], set()):
+                        obs_res[gf]['n_obs'] += cnt
+        
+        self.stats['high_priority_analysis'] = analysis
+
     def check_csv_catalog(self, name, csv_text):
         lines = [line for line in csv_text.splitlines() if line.strip() and not line.startswith('#')]
         if not lines: return {}
@@ -342,49 +896,66 @@ class NIRSpecMOSReviewer:
             self.log("MOS Catalog", f"Catalog '{name}' has Reference stars but missing TA filter columns (e.g. NRS_F110W).", "WARNING")
 
         id_warning = False
+        weight_warning = False
         ref_count = 0
         total_count = 0
         weights = []
+        stellarities = []
 
         # Map 'Reference' and 'Weight' columns case-insensitively
         ref_col = next((f for f in fieldnames if f.upper() == 'REFERENCE'), None)
         weight_col = next((f for f in fieldnames if f.upper() == 'WEIGHT'), None)
         id_col = next((f for f in fieldnames if f.upper() in ['ID', '#ID']), None)
+        stel_col = next((f for f in fieldnames if f.upper() == 'STELLARITY'), None)
 
+        max_id = 0
         for row in reader:
             total_count += 1
             source_id = row.get(id_col)
-            try:
-                if source_id and int(float(source_id)) >= 1e9:
-                    id_warning = True
-            except: pass
+            if source_id:
+                try:
+                    cur_id = int(float(source_id))
+                    if cur_id > max_id: max_id = cur_id
+                    if cur_id >= 1000000:
+                        id_warning = True
+                except: pass
 
             if ref_col and row.get(ref_col, '').lower() == 'true':
                 ref_count += 1
             
             if weight_col:
                 try:
-                    weights.append(float(row[weight_col]))
+                    w_val = float(row[weight_col])
+                    weights.append(w_val)
+                    if w_val >= 1e9:
+                        weight_warning = True
                 except: pass
             
-            if id_col:
+            if stel_col:
                 try:
-                    # User requested warning for IDs > 1,000,000
-                    if source_id and int(float(source_id)) >= 1000000:
-                        id_warning = True
+                    stellarities.append(float(row[stel_col]))
                 except: pass
         
         if id_warning:
             self.log("MOS Catalog", f"Catalog '{name}' contains IDs >= 1,000,000.", "WARNING")
+        
+        if weight_warning:
+            self.log("MOS Catalog", f"Catalog '{name}' contains weights >= 1,000,000,000.", "WARNING")
+            
+        if stel_col:
+            unique_stel = set(stellarities)
+            if len(unique_stel) <= 1:
+                self.log("MOS Catalog", f"Catalog '{name}' has only one unique Stellarity value (e.g. all -1).", "INFO")
 
         metrics = {
             'total_sources': total_count,
             'ref_sources': ref_count,
-            'weight_range': (min(weights), max(weights)) if weights else (0, 0)
+            'weight_range': (min(weights), max(weights)) if weights else (0, 0),
+            'max_id': max_id
         }
         return metrics
 
-    def review_observation(self, obs):
+    def review_observation(self, obs, is_full_review=True):
         num = obs.findtext(f"{{{NS['apt']}}}Number")
         instr = obs.findtext(f"{{{NS['apt']}}}Instrument")
         if instr != "NIRSPEC": return
@@ -413,14 +984,14 @@ class NIRSpecMOSReviewer:
             self.analytics[num]['dither'] = prime_dither
             
             # Joint Dithering check
-            if is_parallel and "JOINT" not in prime_dither.upper():
+            if is_full_review and is_parallel and "JOINT" not in prime_dither.upper():
                 self.log("Dithers", f"Parallel observation active but Dither Type '{prime_dither}' is not a JOINT dither.", "INFO", num)
 
             # TA Method & Confirmation Images
             ta_method = mos_template.findtext(f".//{{{NS['nsmos']}}}TaMethod", namespaces=NS)
             if ta_method == "MSATA":
-                self.stats['msata_count'] += 1
-            else:
+                if is_full_review: self.stats['msata_count'] += 1
+            elif is_full_review:
                 self.log("TA Method", f"TA Method is '{ta_method}'. MSATA recommended.", "WARNING", num)
             
             conf_img = mos_template.findtext(f"{{{NS['nsmos']}}}ConfirmationImage", namespaces=NS) == "true"
@@ -440,13 +1011,20 @@ class NIRSpecMOSReviewer:
                     frame_time = 14.58889 if "IRS2" in (readout or "") else 10.73677
                     duration = (g_val + 1) * frame_time
                     obs_times.append(duration)
-                    if duration > 1500:
+                    if is_full_review and duration > 1500:
                         self.stats['all_under_1500'] = False
                         self.log("Exposures", f"Exp {i+1} duration {duration:.1f}s. Recommended < 1500s.", "WARNING", num)
+                    if is_full_review and g_val <= 3 and readout and "RAPID" not in readout:
+                        self.log("Exposures", f"Exp {i+1} has {g_val} groups; RAPID readout recommended for < 4 groups.", "INFO", num)
                 if readout and "IRS2" not in readout:
-                    self.stats['all_irs2'] = False
-                    self.log("Exposures", f"Exp {i+1} uses '{readout}'. IRS2 recommended.", "INFO", num)
-            if obs_times:
+                    if is_full_review: self.stats['all_irs2'] = False
+                    if is_full_review: self.log("Exposures", f"Exp {i+1} uses '{readout}'. IRS2 recommended.", "INFO", num)
+                
+                if readout and "RAPID" not in readout:
+                    self.stats['all_irs2_rapid'] = False
+                
+
+            if is_full_review and obs_times:
                 self.stats['integration_times'].append((min(obs_times), max(obs_times)))
 
             # Special Requirements
@@ -467,10 +1045,15 @@ class NIRSpecMOSReviewer:
                     pct = bg_lim.text or "active"
                     sr_data['bg_lim'] = pct
                 
+                # 3. No Parallel
+                no_parallel = self.find(sr_node, 'NoParallel')
+                if no_parallel is not None:
+                    sr_data['others'].append("No Parallel")
+                
                 # Catch-all for others
                 for child in sr_node:
                     tag = child.tag.split('}')[-1]
-                    if tag not in ['OrientRange', 'BackgroundLimited']:
+                    if tag not in ['OrientRange', 'BackgroundLimited', 'NoParallel']:
                         sr_data['others'].append(f"{tag}: {child.text or 'active'}")
 
             self.analytics[num]['special_reqs_data'] = sr_data
@@ -498,76 +1081,122 @@ class NIRSpecMOSReviewer:
             # Reference Stars
             catalog_raw = mos_template.findtext(f"{{{NS['nsmos']}}}PrimaryCandidateSet", namespaces=NS)
             catalog_name = catalog_raw.split('(')[0].strip() if catalog_raw else None
-            pa_text = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS)
-            pa_val = float(pa_text.split()[0]) if pa_text else 0.0
-
-            ref_stars_list = self.findall(mos_template, 'nsmos:ReferenceStars/nsmos:ReferenceStar')
-            star_count = 0
-            quadrants = set()
-            source = "XML"
-
-            if ref_stars_list:
-                star_count = len(ref_stars_list)
-                for rs in ref_stars_list:
-                    q = rs.findtext(f"{{{NS['nsmos']}}}Quadrant", namespaces=NS)
-                    if q: quadrants.add(q)
-            else:
-                if cfg_pts and catalog_name:
-                    # print(f"DEBUG: Checking catalog '{catalog_name}' against {len(self.catalogs)} catalogs.")
-                    pt_text = cfg_pts[0].findtext(f"{{{NS['nsmos']}}}Pointing", namespaces=NS)
-                    if pt_text:
-                        m = re.match(r'(\d+ \d+ [\d\.]+)\s+([\+\-]\d+ \d+ [\d\.]+)', pt_text)
-                        if m:
-                            ra_s, dec_s = m.groups()
-                            star_count, cand_quad_count = self._get_candidate_ref_stars(catalog_name, ra_s, dec_s, pa_val)
-                            source = "Candidates in field"
-                            for qi in range(1, cand_quad_count + 1): quadrants.add(str(qi))
-
-            if star_count > 0:
-                self.stats['ref_stars'].append(star_count)
-                status = "SUCCESS" if star_count >= 7 else "WARNING"
-                if star_count < 5: status = "ERROR"
-                self.log("Reference Stars", f"Stars: {star_count} ({source})", status, num)
-                q_count = len(quadrants)
-                q_status = "SUCCESS" if q_count >= 3 else "WARNING"
-                suffix = " (candidates)" if source != "XML" else ""
-                self.log("Reference Stars", f"Quadrants: {q_count}{suffix}", q_status, num)
-            else:
-                self.log("Reference Stars", "No reference stars found in XML or candidates in field.", "ERROR", num)
-
-            # Store Technical Details for Report
-            if num not in self.analytics: self.analytics[num] = {}
+            self.analytics[num]['catalog_name'] = catalog_name
             
-            # Aperture PA Handling
-            # 1. Planned (what was set in the template or MPT)
-            xml_pa = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS)
-            if xml_pa:
-                self.analytics[num]['apa_planned'] = xml_pa
-                try:
-                    val = float(re.search(r'[\d\.]+', xml_pa).group())
-                    self.analytics[num]['apa_planned_val'] = val
+            if is_full_review and ta_method == "WATA":
+                # Check if target is MOS Catalog
+                target_info = self.stats['catalog_info'].get(target_name, {})
+                if target_info.get('type') != "MOS Catalog":
+                    self.log("TA Method", f"WATA used with target '{target_name}' (type: {target_info.get('type', 'Unknown')}), which is not a MOS Catalog. MOS Catalog target is recommended for MOS observations.", "WARNING", num)
+
+            # Aperture PA (Observation level)
+            xml_pa_text = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS)
+            planned_pa_val = 0.0
+            if xml_pa_text:
+                try: planned_pa_val = float(re.search(r'[\d\.]+', xml_pa_text).group())
                 except: pass
             
-            # 2. Assigned (what APT actually assigned in Visit Planner)
-            # Check diagnostics for "assigned an Aperture PA of XX.XXXX"
-            assigned_pa = xml_pa # Default to planned if no diagnostic found
-            assigned_pa_val = self.analytics[num].get('apa_planned_val')
+            self.analytics[num]['apa_planned'] = xml_pa_text or f"{planned_pa_val} Degrees"
+            self.analytics[num]['apa_planned_val'] = planned_pa_val
+
+            # Determine Observation-level Assigned PA
+            obs_assigned_pa = None
+            p_err = self.stats['program_metadata'].get('error_text', "")
             
-            # Find diagnosis in ToolData
-            td = self.find(obs, 'ToolData')
-            if td is not None:
-                err_text_node = td.find(".//ToolValue[@Name='ErrorText']")
-                if err_text_node is not None and err_text_node.text:
-                    for line in err_text_node.text.split('\n'):
-                        if "assigned an Aperture PA of" in line:
-                            m = re.search(r'assigned an Aperture PA of ([\d\.]+)', line)
-                            if m:
-                                assigned_pa = f"{m.group(1)} Degrees"
-                                assigned_pa_val = float(m.group(1))
-                                break
+            # 1. Check XML for AssignedAperturePA
+            obs_assigned_pa_text = mos_template.findtext(f"{{{NS['nsmos']}}}AssignedAperturePA", namespaces=NS)
+            if obs_assigned_pa_text:
+                try: obs_assigned_pa = float(re.search(r'[\d\.]+', obs_assigned_pa_text).group())
+                except: pass
             
-            self.analytics[num]['apa_assigned'] = assigned_pa
-            self.analytics[num]['apa_assigned_val'] = assigned_pa_val
+            # 2. Check Program Error Text for mismatch specific to this observation
+            if obs_assigned_pa is None:
+                # Patterns derived from APT diagnostics
+                m = re.search(rf"This observation was created with an Aperture PA of {planned_pa_val:.4f}.*assigned an Aperture PA of ([\d\.]+)", p_err)
+                if m:
+                    obs_assigned_pa = float(m.group(1))
+                else:
+                    m = re.search(rf"Observation {num}.*assigned an Aperture PA of ([\d\.]+)", p_err)
+                    if m:
+                        obs_assigned_pa = float(m.group(1))
+            
+            # 3. Check Observation ToolData for ErrorText
+            if obs_assigned_pa is None:
+                td = self.find(obs, 'ToolData')
+                if td is not None:
+                    err_node = self.find(td, "ToolValue[@Name='ErrorText']")
+                    if err_node is not None and err_node.text:
+                        for line in err_node.text.split('\n'):
+                            if "assigned an Aperture PA of" in line:
+                                m = re.search(r'assigned an Aperture PA of ([\d\.]+)', line)
+                                if m:
+                                    obs_assigned_pa = float(m.group(1))
+                                    break
+
+            # 4. If no conflict found, Assigned = Planned
+            if obs_assigned_pa is None:
+                if not self.obs_info.get(num, {}).get('unplanned'):
+                    obs_assigned_pa = planned_pa_val
+            
+            self.analytics[num]['apa_assigned_val'] = obs_assigned_pa
+            self.analytics[num]['apa_assigned'] = f"{obs_assigned_pa} Degrees" if obs_assigned_pa is not None else "Unknown"
+
+            # Now handle visits (for informational purposes and reference stars)
+            visit_stars_info = self.exports_data['ta_stars'].get(num, {})
+            self.analytics[num]['visit_info'] = {}
+            v_keys = sorted(visit_stars_info.keys(), key=int) if visit_stars_info else ['1']
+            
+            for v_key in v_keys:
+                v_data = visit_stars_info.get(v_key, {})
+                v_star_count = v_data.get('count', 0)
+                v_quad_counts = v_data.get('quad_counts', {1:0, 2:0, 3:0, 4:0})
+                v_quads = v_data.get('quads', set())
+                v_pointing_pa = v_data.get('pa')
+                v_source = f"Export ({v_data.get('file')})" if v_data.get('file') else "XML"
+                
+                # Fallback: if no visit pointing PA, assume observation level
+                if v_pointing_pa is None:
+                    v_pointing_pa = obs_assigned_pa
+
+                # Fallback star search in XML if no CSV and first visit
+                if not v_data and v_key == '1':
+                    ref_stars_list = self.findall(mos_template, 'nsmos:ReferenceStars/nsmos:ReferenceStar')
+                    if ref_stars_list:
+                        v_star_count = len(ref_stars_list)
+                        v_quads = set()
+                        v_quad_counts = {1:0, 2:0, 3:0, 4:0}
+                        for rs in ref_stars_list:
+                            q = rs.findtext(f"{{{NS['nsmos']}}}Quadrant", namespaces=NS)
+                            if q: 
+                                v_quads.add(q)
+                                try:
+                                    q_idx = int(q)
+                                    if q_idx in v_quad_counts:
+                                        v_quad_counts[q_idx] += 1
+                                except: pass
+                
+                self.analytics[num]['visit_info'][v_key] = {
+                    'stars': v_star_count,
+                    'quads': v_quads,
+                    'quad_counts': v_quad_counts,
+                    'quads': v_quads,
+                    'pointing_pa': v_pointing_pa,
+                    'source': v_source
+                }
+                
+                if is_full_review:
+                    v_label = f"Visit {num}:{v_key}: " if len(v_keys) > 1 else ""
+                    if v_star_count > 0:
+                        self.stats['ref_stars'].append(v_star_count)
+                        v_status = "SUCCESS" if v_star_count >= 8 else "WARNING"
+                        if v_star_count < 5: v_status = "ERROR"
+                        self.log("Reference Stars", f"{v_label}Stars: {v_star_count} ({v_source})", v_status, num)
+                        
+                        vq_count = len(v_quads)
+                        vq_status = "SUCCESS" if vq_count >= 3 else "WARNING"
+                        self.log("Reference Stars", f"{v_label}Quadrants: {vq_count}", vq_status, num)
+                    elif ta_method == "MSATA":
+                        self.log("Reference Stars", f"{v_label}No reference stars found.", "ERROR", num)
             
             n_mos = NS['nsmos']
             exp_spec_list = []
@@ -619,10 +1248,12 @@ class NIRSpecMOSReviewer:
                 nod_str = pt.findtext(f"{{{n_mos}}}NodPattern", namespaces=NS) or "NONE"
                 
                 # Extract spec ID from string like "1 (PRISM/CLEAR)"
+                s_gf = "Unknown"
                 try: 
                     sid = int(spec_str.split()[0])
                     s_ints = spec_ints.get(sid, 1)
                     s_dur = spec_durations.get(sid, 0.0)
+                    s_gf = next((e['gf'] for e in exp_spec_list if str(e['id']) == str(sid)), "Unknown")
                 except: 
                     s_ints = 1
                     s_dur = 0.0
@@ -643,6 +1274,7 @@ class NIRSpecMOSReviewer:
                     'id': i+1,
                     'config': config_name,
                     'spec': spec_str,
+                    'gf': s_gf,
                     'pointing': pt.findtext(f"{{{n_mos}}}Pointing", namespaces=NS),
                     'nod': nod_str,
                     'total_ints': total_ints,
@@ -664,23 +1296,27 @@ class NIRSpecMOSReviewer:
                 fillers = cfg_node.findtext(f"{{{NS['ns']}}}fillers") or ""
 
                 n_slitlets = len([s for s in slitlets.split('|') if s.strip()]) if slitlets else 0
-                n_primaries = len(primaries.split()) if primaries else 0
+                primary_ids = primaries.split()
+                n_primaries = len(primary_ids)
                 n_fillers = len(fillers.split()) if fillers else 0
                 
                 msa_configs.append({
                     'name': cfg_name,
                     'n_slitlets': n_slitlets,
                     'n_primaries': n_primaries,
-                    'n_fillers': n_fillers
+                    'n_fillers': n_fillers,
+                    'primary_ids': primary_ids
                 })
                 seen_configs.add(cfg_name)
             self.analytics[num]['msa_configs'] = msa_configs
+            self.analytics[num]['primary_candidate_set'] = mos_template.findtext(f"{{{NS['nsmos']}}}PrimaryCandidateSet", namespaces=NS) or ""
             self.analytics[num]['has_leakcal'] = has_leakcal
             # if not has_leakcal:
             #    self.log("MOS Strategy", "No Leakcal (ALLCLOSED) exposure found. (Recommended for diffuse emission)", "INFO", num)
 
             # JSON Plan Review
-            self._review_json_plan(num)
+            if is_full_review:
+                self._review_json_plan(num)
 
     def _review_json_plan(self, obs_num):
         """Search for and review extracted JSON plans for this observation."""
@@ -739,7 +1375,10 @@ class NIRSpecMOSReviewer:
 
     def print_report(self):
         output = io.StringIO()
-        icons = {'ERROR': '❌', 'WARNING': '⚠️', 'INFO': 'ℹ️', 'SUCCESS': '✅'}
+        icons = {
+            'ERROR': '❌', 'WARNING': '⚠️', 'INFO': 'ℹ️', 'SUCCESS': '✅', 'TIP': '💡',
+            'FULL': '🌕', 'MOSTLY': '🌔', 'PARTIAL': '🌓', 'FEW': '🌒', 'EMPTY': '🌑'
+        }
 
         def write(text):
             print(text)
@@ -762,6 +1401,7 @@ class NIRSpecMOSReviewer:
         # ── Section calls – reorder freely ──────────────────────────────
         self._report_header(write)                                    # Title banner
         self._report_observing_description(write)                     # Program title, PI, observing description, MAZ justification
+        self._report_observation_table(write)                         # All observations summary table
         self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
         self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
         self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
@@ -771,9 +1411,15 @@ class NIRSpecMOSReviewer:
         self._report_special_requirements(write)                      # Aperture PA ranges, background limited, other SRs
         self._report_msa_strategy(write)                              # MSA config slitlets, primaries, fillers, leakcal, conf images
         self._report_msata_ref_stars(write, icons)                    # MSATA reference star counts and quadrant coverage
+        self._report_ref_star_detail(write)                           # Per-visit ref star listing with catalog magnitudes
+        self._report_availability(write)                             # Available objects per quadrant
         self._report_target_catalogs(write)                           # Source counts, ref stars, accuracy, weight filters per catalog
+        self._report_high_priority_targets(write, icons)              # Top 20 weighted targets coverage
+        self._report_catalogs(write, icons)                           # Detailed catalog checks (s/n, accuracy, etc.)
         self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
         self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
+        self._report_files_used(write, icons)                         # Files used and modification dates
+        self._report_msa_plots_note(write)                            # Final note on plots
         # ────────────────────────────────────────────────────────────────
 
         # Save to file if requested
@@ -785,9 +1431,48 @@ class NIRSpecMOSReviewer:
     # ── Report section methods ───────────────────────────────────────────
 
     def _report_header(self, write):
+        meta = self.stats.get('program_metadata', {})
         write("\n" + "="*60)
         write("NIRSPEC MOS TECHNICAL REVIEW REPORT")
         write("="*60)
+        write(f"\nJWST {self.pid or 'Unknown'}")
+        write(f"{meta.get('title', 'Unknown Title')}")
+        write(f"PI: {meta.get('pi', 'Unknown PI')}")
+
+    def _report_observation_table(self, write):
+        write("\n" + "="*120)
+        write("OBSERVATION SUMMARY")
+        write("="*120)
+        # Sign | Obs | Mode | Parallel | Label | Target Name | Status
+        header = f"   {'Obs':<4} | {'Mode':<15} | {'Parallel':<15} | {'Label':<20} | {'Target Name':<35} | {'Status'}"
+        write(header)
+        write("-" * len(header))
+        
+        for obs_num in sorted(self.all_obs_nums):
+            info = self.obs_info.get(obs_num, {})
+            label = info.get('label', "")
+            status = info.get('status', "")
+            target = info.get('target', "")
+            mode = info.get('mode', "")
+            parallel = info.get('parallel', "")
+            sign = info.get('sign', "  ")
+            
+            # Truncate if too long for their columns
+            if len(label) > 20: label = label[:17] + "..."
+            if len(status) > 14: status = status[:11] + "..."
+            if len(mode) > 15: mode = mode[:12] + "..."
+            if len(parallel) > 15: parallel = parallel[:12] + "..."
+            if len(target) > 35: target = target[:32] + "..."
+            
+            # Note: Emojis can be double-width in some terminals
+            write(f"{sign} {obs_num:<4} | {mode:<15} | {parallel:<15} | {label:<20} | {target:<35} | {status}")
+        
+        write("-" * len(header))
+        write("   🔎 included for review")
+        write("   👷 not yet designed? angle doesn't match assigned")
+        write("   🙈 excluded")
+        write("   🤷🏻 different mode not reviewed by this code")
+        write("   ☑️  completed observation already executed")
 
     def _report_findings(self, write, icons, obs_map, general_issues):
         write("\n" + "="*80)
@@ -804,11 +1489,13 @@ class NIRSpecMOSReviewer:
                 write(f"{icons.get(status, ' ')} {msg}")
 
         # Observation-specific (Warnings/Errors only)
-        for obs_num in sorted(obs_map.keys(), key=int):
-            obs_findings = [f for f in obs_map[obs_num] if f[0] not in ['SUCCESS', 'INFO']]
+        for obs_num_str in sorted(obs_map.keys(), key=int):
+            if self.obs_info.get(obs_num_str, {}).get('sign') == "👷":
+                continue # Skip detailed findings for under construction
+            obs_findings = [f for f in obs_map[obs_num_str] if f[0] not in ['SUCCESS', 'INFO']]
             if obs_findings:
-                target = self.analytics[obs_num].get('target_name', 'Unknown')
-                write(f"\n[Observation {obs_num}: {target}]")
+                target = self.analytics[obs_num_str].get('target_name', 'Unknown')
+                write(f"\n[Observation {obs_num_str}: {target}]")
                 for status, msg in obs_findings:
                     write(f"  {icons.get(status, ' ')} {msg}")
 
@@ -817,33 +1504,38 @@ class NIRSpecMOSReviewer:
                    for o in self.analytics):
             return
         write("\n" + "="*80)
-        write("APERTURE PA SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("APERTURE PA SUMMARY")
         write("="*80)
-        write(f"{'Obs':<5} | {'Status':<10} | {'Planned PA':<20} | {'Assigned PA'}")
+        write(f"Obs   | {'Planned APA':<21} | {'Assigned APA'}")
         write("-" * 80)
         for obs_num in sorted(self.analytics.keys(), key=int):
-            planned  = self.analytics[obs_num].get('apa_planned',  "N/A")
+            planned = self.analytics[obs_num].get('apa_planned', "N/A")
+            p_val = self.analytics[obs_num].get('apa_planned_val')
+            
+            # Use Observation-level match for the icon
             assigned = self.analytics[obs_num].get('apa_assigned', "N/A")
-            p_val    = self.analytics[obs_num].get('apa_planned_val')
-            a_val    = self.analytics[obs_num].get('apa_assigned_val')
-            if p_val is not None and a_val is not None:
-                match = abs(p_val - a_val) < 0.001
-            else:
-                match = (planned == assigned)
-            status      = "SUCCESS" if match else "WARNING"
-            status_icon = icons.get(status, ' ')
-            write(f"{obs_num:<5} | {status_icon} {status:<7} | {planned:<20} | {assigned}")
+            obs_a_val = self.analytics[obs_num].get('apa_assigned_val')
+            
+            obs_match = False
+            if p_val is not None and obs_a_val is not None:
+                obs_match = abs(p_val - obs_a_val) < 0.001
+            
+            icon = icons['SUCCESS'] if obs_match else icons['ERROR']
+            write(f"{icon} {obs_num:<4} | {planned:<21} | {assigned}")
 
     def _report_exposure_specs(self, write):
         if not self.stats['all_exposure_specs']:
             return
         write("\n" + "="*80)
-        write("EXPOSURE SPECIFICATIONS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("EXPOSURE SPECIFICATIONS SUMMARY")
         write("="*80)
         write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | "
               f"{'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
         write("-" * 95)
         for s in self.stats['all_exposure_specs']:
+            obs_id = str(s['obs'])
+            if self.obs_info.get(obs_id, {}).get('sign') == "👷":
+                continue # Skip for under construction
             write(f"{s['obs']:<5} | {s['id']:<5} | {s['gf']:<18} | {s['rp']:<18} | "
                   f"{s['g']:<8} | {s['i']:<6} | {s['dur']:<11.1f}")
 
@@ -851,7 +1543,7 @@ class NIRSpecMOSReviewer:
         if not any(self.analytics[o].get('configs') for o in self.analytics):
             return
         write("\n" + "="*110)
-        write("CONFIGURATIONS / POINTINGS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("CONFIGURATIONS / POINTINGS SUMMARY")
         write("="*110)
         write(f"{'Obs':<5} | {'#':<3} | {'Config':<8} | {'Nod Pattern':<20} | "
               f"{'Total Ints':<10} | {'Total Time':<10} | {'Pointing'}")
@@ -866,11 +1558,12 @@ class NIRSpecMOSReviewer:
         if not any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
             return
         write("\n" + "="*90)
-        write("PARALLELS & DITHERS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("PARALLELS & DITHERS SUMMARY")
         write("="*90)
         write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
         write("-" * 90)
         for obs_num in sorted(self.analytics.keys(), key=int):
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             p = self.analytics[obs_num].get('parallel', "None")
             d = self.analytics[obs_num].get('dither',   "NONE")
             status = icons['SUCCESS']
@@ -882,11 +1575,12 @@ class NIRSpecMOSReviewer:
         if not any(self.analytics[o].get('special_reqs_data') for o in self.analytics):
             return
         write("\n" + "="*110)
-        write("SPECIAL REQUIREMENTS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("SPECIAL REQUIREMENTS SUMMARY")
         write("="*110)
         write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
         write("-" * 110)
         for obs_num in sorted(self.analytics.keys(), key=int):
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             d = self.analytics[obs_num].get(
                 'special_reqs_data', {'apa_range': "None", 'bg_lim': "None", 'others': []})
             others_str = ", ".join(d['others']) if d['others'] else "None"
@@ -897,7 +1591,7 @@ class NIRSpecMOSReviewer:
                    for o in self.analytics):
             return
         write("\n" + "="*140)
-        write("MSA CONFIGURATIONS & STRATEGY SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("MSA CONFIGURATIONS & STRATEGY SUMMARY")
         write("="*140)
         write(f"{'Obs':<5} | {'Config':<12} | {'Slitlets (Lengths)':<35} | {'Primaries':<12} | "
               f"{'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
@@ -919,27 +1613,197 @@ class NIRSpecMOSReviewer:
 
     def _report_msata_ref_stars(self, write, icons):
         write("\n" + "="*80)
-        write("MSATA & REFERENCE STARS SUMMARY (ALL REVIEWED OBSERVATIONS)")
+        write("MSATA & REFERENCE STARS SUMMARY")
         write("="*80)
-        write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10} | {'Status'}")
+        write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10}")
         write("-" * 80)
         for obs_num in sorted(self.analytics.keys(), key=int):
-            ref_logs = [item for item in self.results
-                        if item['category'] == "Reference Stars" and f"Obs {obs_num}:" in item['message']]
-            stars  = "None"
-            quads  = "None"
-            status = icons['ERROR']
-            for log in ref_logs:
-                if "Stars:" in log['message']:
-                    stars = re.search(r'Stars: (\d+)', log['message']).group(1)
-                    if log['status'] == 'SUCCESS':
-                        status = icons['SUCCESS']
-                    elif log['status'] == 'WARNING' and status != icons['ERROR']:
-                        status = icons['WARNING']
-                if "Quadrants:" in log['message']:
-                    quads = re.search(r'Quadrants: (\d+)', log['message']).group(1)
-            ta_method = "MSATA"
-            write(f"{obs_num:<5} | {ta_method:<8} | {stars:<10} | {quads:<10} | {status}")
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            
+            v_info_map = self.analytics[obs_num].get('visit_info', {})
+            ta_method = "MSATA" # Standard for MOS
+            
+            v_keys = sorted(v_info_map.keys(), key=int)
+            for v_key in v_keys:
+                v_data = v_info_map[v_key]
+                star_val = v_data.get('stars')
+                quad_val = len(v_data.get('quads', []))
+                
+                # Emojis
+                s_emoji = ""
+                if star_val is not None:
+                    if star_val >= 8: s_emoji = icons['FULL']
+                    elif star_val == 7: s_emoji = icons['MOSTLY']
+                    elif star_val == 6: s_emoji = icons['PARTIAL']
+                    elif star_val == 5: s_emoji = icons['WARNING']
+                    else: s_emoji = icons['ERROR']
+                q_emoji = ""
+                if quad_val is not None:
+                    if quad_val >= 4: q_emoji = icons['FULL']
+                    elif quad_val == 3: q_emoji = icons['MOSTLY']
+                    elif quad_val == 2: q_emoji = icons['PARTIAL']
+                    else: q_emoji = icons['ERROR']
+
+                stars_str = f"{star_val if star_val is not None else 'N/A'}"
+                if s_emoji: stars_str += f"  {s_emoji}"
+                quads_str = f"{quad_val if quad_val is not None else 'N/A'}"
+                if q_emoji: quads_str += f"  {q_emoji}"
+                
+                obs_label = f"{obs_num}:{v_key}" if len(v_keys) > 1 else str(obs_num)
+                write(f"{obs_label:<5} | {ta_method:<8} | {stars_str:<10} | {quads_str:<10}")
+
+    def _report_ref_star_detail(self, write):
+        """Per-visit listing of reference stars used, with magnitudes from the catalog."""
+        any_data = any(
+            self.exports_data['ta_stars'].get(obs_num, {}).get(v_key, {}).get('star_rows')
+            for obs_num in self.analytics
+            for v_key in self.analytics[obs_num].get('visit_info', {})
+        )
+        if not any_data:
+            return
+
+        write("\n" + "="*80)
+        write("REFERENCE STARS USED (from TA export)")
+        write("="*80)
+
+        mag_cols = ['NRS_F110W', 'NRS_F140W', 'NRS_CLEAR']
+
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            ta_data = self.exports_data['ta_stars'].get(obs_num, {})
+            if not ta_data: continue
+
+            # Determine the catalog for this observation (for magnitude lookup)
+            cat_name = self.analytics[obs_num].get('target_name')
+            cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
+
+            # Check which mag columns actually exist in the catalog
+            present_cols = [c for c in mag_cols
+                            if any(c in (cat_sources.get(sid) or {}).get('mags', {})
+                                   and (cat_sources.get(sid) or {}).get('mags', {}).get(c) is not None
+                                   for sid in cat_sources)]
+
+            v_keys = sorted(ta_data.keys(), key=int)
+            for v_key in v_keys:
+                v_data = ta_data[v_key]
+                star_rows = v_data.get('star_rows', [])
+                if not star_rows: continue
+
+                # Get TA parameters from XML extraction
+                ta_params = self.exports_data.get('ta_params', {}).get(str(obs_num), {}).get(str(v_key))
+                ta_note = ""
+                active_mag_col = None
+                if ta_params:
+                    # e.g. CLEAR_NRSRAPIDD6 -> Filter: CLEAR, Readout: NRSRAPIDD6
+                    parts = ta_params.split('_', 1)
+                    if len(parts) >= 2:
+                        ta_filter = parts[0]
+                        ta_readout = parts[1]
+                        ta_note = f" [Filter: {ta_filter}, Readout: {ta_readout}]"
+                        
+                        # Apply brightness range from jwst-docs
+                        # Map F140W (catalog) to F140X (docs/TA lookup)
+                        lookup_filter = "F140X" if ta_filter == "F140W" else ta_filter
+                        mag_range = TA_MAG_LIMITS.get((lookup_filter, ta_readout))
+                        if mag_range:
+                            ta_note += f" (Range: {mag_range[0]} – {mag_range[1]})"
+                        
+                        # Map TA filter to catalog column name
+                        if "CLEAR" in ta_filter.upper(): active_mag_col = "NRS_CLEAR"
+                        elif "F110W" in ta_filter.upper(): active_mag_col = "NRS_F110W"
+                        elif "F140W" in ta_filter.upper(): active_mag_col = "NRS_F140W"
+                    else:
+                        ta_note = f" [{ta_params}]"
+
+                obs_label = f"Obs {obs_num}" if len(v_keys) == 1 else f"Obs {obs_num} Visit {v_key}"
+                write(f"\n{obs_label}{ta_note}  ({len(star_rows)} stars, {v_data.get('file', '')})")
+
+                # Filter columns to only show the active magnitude if requested
+                display_cols = []
+                if active_mag_col and active_mag_col in present_cols:
+                    display_cols = [active_mag_col]
+                else:
+                    display_cols = present_cols
+
+                # Build header
+                col_w = 10
+                hdr = f"  {'ID':<10} {'Quad':>4}"
+                for c in display_cols:
+                    hdr += f"  {c:>{col_w}}"
+                write(hdr)
+                write("  " + "-" * (len(hdr) - 2))
+
+                # Sort by Active Magnitude (low to high), then ID
+                def sort_key(s):
+                    sid = s['id']
+                    val = None
+                    if active_mag_col:
+                        val = (cat_sources.get(sid) or {}).get('mags', {}).get(active_mag_col)
+                    # If no value, sort to the bottom (using 99.0 as high mag)
+                    mag_val = val if val is not None else 99.0
+                    return (mag_val, sid)
+
+                for star in sorted(star_rows, key=sort_key):
+                    sid = star['id']
+                    q   = star['quad']
+                    row_str = f"  {sid:<10} {q:>4}"
+                    src = cat_sources.get(sid)
+                    for c in display_cols:
+                        val = (src or {}).get('mags', {}).get(c)
+                        row_str += f"  {f'{val:.2f}':>{col_w}}" if val is not None else f"  {'—':>{col_w}}"
+                    write(row_str)
+
+    def _report_availability(self, write):
+        avail = self.exports_data.get('availability')
+        if not avail:
+            return
+        write("\n" + "="*60)
+        write("REFERENCE STAR AVAILABILITY")
+        write("="*60)
+        write("Counts: Used Ref / Available Ref / Available Science\n")
+        
+        # Column headers
+        header = f"{'Visit':<8} | {'Catalog':<30} | {'     Q1':<12} | {'     Q2':<12} | {'     Q3':<12} | {'     Q4'}"
+        write(header)
+        write("-" * len(header))
+        
+        for vid in sorted(self.exports_data['availability'].keys()):
+            # Format long Visit IDs (e.g. 07729001001) for readability: Obs:Visit (e.g. 1:1)
+            v_num_str = str(vid)
+            if len(v_num_str) >= 6:
+                try:
+                    o = int(v_num_str[-6:-3])
+                    v = int(v_num_str[-3:])
+                    v_str = f"{o}:{v}"
+                    obs_id = str(o)
+                    v_key = str(v)
+                except: 
+                    v_str = v_num_str
+                    obs_id = v_num_str
+                    v_key = v_num_str
+            else:
+                v_str = v_num_str
+                obs_id = v_num_str
+                v_key = v_num_str
+
+            # Exclude observations under construction
+            if self.obs_info.get(obs_id, {}).get('sign') == "👷":
+                continue
+
+            # Get used stars from analytics
+            used_counts = self.analytics.get(obs_id, {}).get('visit_info', {}).get(v_key, {}).get('quad_counts', {1:0, 2:0, 3:0, 4:0})
+
+            entry = avail[vid]
+            cat = entry['cat']
+            if len(cat) > 30: cat = cat[:27] + "..."
+            
+            c = entry['counts']
+            q1 = f"{used_counts[1]:2d}/{c[1]['ref']:2d}/{c[1]['sci']:2d}"
+            q2 = f"{used_counts[2]:2d}/{c[2]['ref']:2d}/{c[2]['sci']:2d}"
+            q3 = f"{used_counts[3]:2d}/{c[3]['ref']:2d}/{c[3]['sci']:2d}"
+            q4 = f"{used_counts[4]:2d}/{c[4]['ref']:2d}/{c[4]['sci']:2d}"
+            
+            write(f"{v_str:<8} | {cat:<30} | {q1:^12} | {q2:^12} | {q3:^12} | {q4:^12}")
 
     def _report_submission_info(self, write, icons):
         """APT version, email, submission comments, diagnostic justification, submission log."""
@@ -983,10 +1847,11 @@ class NIRSpecMOSReviewer:
                 counts[line] = 0
                 order.append(line)
             counts[line] += 1
+        n_total = len(self.analytics)
         for line in order:
             is_error = 'error' in line.lower() or 'assigned an Aperture PA of' in line
             icon  = icons['ERROR'] if is_error else icons['WARNING']
-            count = f" ({counts[line]}x)" if counts[line] > 1 else ""
+            count = f" ({counts[line]}/{n_total})" if counts[line] > 1 else ""
             write(f"  {icon} {line}{count}")
 
     def _report_target_catalogs(self, write):
@@ -997,6 +1862,7 @@ class NIRSpecMOSReviewer:
               f"{'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
         write("-" * 160)
         for obs_num in sorted(self.analytics.keys(), key=int):
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             target  = self.analytics[obs_num].get('target_name', 'Unknown')
             info    = self.stats['catalog_info'].get(target, {})
             sources = info.get('total_sources', "N/A")
@@ -1011,12 +1877,132 @@ class NIRSpecMOSReviewer:
             write(f"{obs_num:<5} | {target:<35} | {sources:<8} | {ref:<5} | "
                   f"{acc:<6} | {w_min:<10} | {w_max:<10} | {filters}")
 
+    def _report_high_priority_targets(self, write, icons):
+        """Report coverage for the top 20 weighted targets in each catalog."""
+        analysis = self.stats.get('high_priority_analysis')
+        if not analysis:
+            return
+            
+        # Group catalogs by observation usage
+        active_obs = sorted(self.analytics.keys(), key=int)
+        
+        for obs_num in active_obs:
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            raw_cat = self.analytics[obs_num].get('primary_candidate_set', "")
+            cat_name = raw_cat.split('(')[0].strip() if '(' in raw_cat else raw_cat
+            if not cat_name or cat_name not in analysis:
+                continue
+
+            # Find all GFs and their total possible exposures in this observation
+            gf_totals = {}
+            for pt in self.analytics[obs_num].get('configs', []):
+                if pt['config'] == 'ALLCLOSED': continue
+                gf = pt.get('gf', 'Unknown')
+                gf_totals[gf] = gf_totals.get(gf, 0) + pt.get('total_ints', 1)
+            
+            if not gf_totals: continue
+            
+            gfs = sorted(gf_totals.keys())
+            
+            write("\n" + "="*120)
+            write(f"HIGH PRIORITY TARGET ANALYSIS: Observation {obs_num}")
+            write(f"Catalog: {cat_name}")
+            write("="*120)
+            
+            # Header
+            header = f"{'Source ID':<12} | {'Weight':<10}"
+            for gf in gfs:
+                header += f" | {gf:<18}"
+            write(header)
+            write("-" * len(header))
+            
+            cat_results = analysis[cat_name]['results']
+            for sid_info in analysis[cat_name]['top_20']:
+                sid = sid_info['id']
+                weight = sid_info['weight']
+                
+                row = f"{str(sid):>2}          | {weight:<10.0f}"
+                for gf in gfs:
+                    res = cat_results.get(sid, {}).get(obs_num, {}).get(gf, {'n_obs': 0})
+                    n_obs = res['n_obs']
+                    n_total = gf_totals[gf]
+                    
+                    pct = (n_obs / n_total) * 100 if n_total > 0 else 0
+                    if pct >= 100:
+                        icon = icons['FULL']
+                    elif pct >= 70:
+                        icon = icons['MOSTLY']
+                    elif pct > 33.4:
+                        icon = icons['PARTIAL']
+                    elif pct > 0:
+                        icon = icons['FEW']
+                    else:
+                        icon = icons['EMPTY']
+                    
+                    row += f" | {icon} {n_obs:>2}/{n_total} ({pct:>3.0f}%)"
+                # Prepare wavelength summaries
+                target_waves = self.exports_data['wavelengths'].get(str(obs_num), {}).get(str(sid), {})
+                wave_summaries = []
+                for gf in gfs:
+                    w = target_waves.get(gf, {})
+                    if not w: continue
+                    
+                    try:
+                        n1_min = float(w.get('n1_min', 0))
+                        n1_max = float(w.get('n1_max', 0))
+                        n2_min = float(w.get('n2_min', 0))
+                        n2_max = float(w.get('n2_max', 0))
+                    except: continue
+
+                    # Status flags
+                    n1_full = (n1_min == -1 and n1_max == -2)
+                    n2_full = (n2_min == -1 and n2_max == -2)
+                    n1_gap = (n1_min == n1_max) or (n1_min == 0 and n1_max == 0)
+                    n2_gap = (n2_min == n2_max) or (n2_min == 0 and n2_max == 0)
+                    
+                    s = ""
+                    if n1_full and n2_full:
+                        s = f"{icons['FULL']} FULL"
+                    elif n1_full and n2_gap:
+                        s = f"{icons['FULL']} FULL (NRS1)"
+                    elif n2_full and n1_gap:
+                        s = f"{icons['FULL']} FULL (NRS2)"
+                    elif n1_max > 0 and n2_min > 0:
+                        s = f"{icons['PARTIAL']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
+                    elif n1_gap and n2_min > 0:
+                        s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                    elif n2_gap and n1_max > 0:
+                        s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                    elif n1_min == -1 and n1_max > 0 and n2_gap:
+                         s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                    elif n2_min > 0 and n2_max == -2 and n1_gap:
+                         s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                    
+                    if s: wave_summaries.append(s)
+
+                if wave_summaries:
+                    row += f" | {' | '.join(wave_summaries)}"
+                write(row)
+            
+            # Summary for this obs/cat
+            all_in_all = 0
+            for sid_info in analysis[cat_name]['top_20']:
+                sid = sid_info['id']
+                target_obs_res = cat_results.get(sid, {}).get(obs_num, {})
+                if target_obs_res:
+                    all_match = True
+                    for gf in gfs:
+                        n_o = target_obs_res.get(gf, {}).get('n_obs', 0)
+                        if n_o != gf_totals[gf]:
+                            all_match = False
+                            break
+                    if all_match: all_in_all += 1
+            
+            write(f"\nSummary for Obs {obs_num} ({cat_name}): {all_in_all}/20 high-priority targets observed in ALL exposures.")
+
     def _report_observing_description(self, write):
-        """Program title, PI, observing description, and MAZ justification."""
+        """Observing description and MAZ justification (Title/PI moved to SUMMARY)."""
         meta = self.stats.get('program_metadata', {})
-        write(f"\nJWST {self.pid or 'Unknown'}")
-        write(f"{meta.get('title', 'Unknown Title')}")
-        write(f"PI: {meta.get('pi', 'Unknown PI')}")
         if meta.get('observing_description') and meta['observing_description'] != "None":
             write(f"\nObserving Description:")
             write(f"{meta['observing_description'].strip()}")
@@ -1027,6 +2013,10 @@ class NIRSpecMOSReviewer:
     def _report_final_summary(self, write, icons):
         """Gold summary block: data excess, time budget, MSATA/integration/IRS2 bullets."""
         meta = self.stats.get('program_metadata', {})
+        icons = {
+            'ERROR': '❌', 'WARNING': '⚠️', 'INFO': 'ℹ️', 'SUCCESS': '✅', 'TIP': '💡',
+            'FULL': '🌕', 'MOSTLY': '🌔', 'PARTIAL': '🌓', 'FEW': '🌒', 'EMPTY': '🌑'
+        }
 
         # Repeat program identity so the flourish is self-contained
         write("\n" + "="*80)
@@ -1036,82 +2026,373 @@ class NIRSpecMOSReviewer:
         write(f"{meta.get('title', 'Unknown Title')}")
         write(f"PI: {meta.get('pi', 'Unknown PI')}")
         write('')
-
-        # Summarized warnings from ErrorText
-        err_text = meta.get('error_text', "")
-        if err_text:
-            low  = err_text.count("Data Excess over lower threshold")
-            mid  = err_text.count("Data Excess over middle threshold")
-            upp  = err_text.count("Data Excess over upper threshold")
-            items = []
-            if low: items.append(f"lower threshold ({low}x)")
-            if mid: items.append(f"middle threshold ({mid}x)")
-            if upp: items.append(f"upper threshold ({upp}x)")
-            if items:
-                write(f"{icons['WARNING']}  Data Excess over " + ", ".join(items))
-
-        # Catalog IDs warning
-        any_id_warning = any("IDs >= 1,000,000" in item['message'] for item in self.results)
-        if any_id_warning:
-            write(f"{icons['WARNING']}  Catalog sources have IDs greater than 1000000 which is not recommended")
-
-        # Time comparison
+        
+        # Total hours and general observation list
         alloc = meta.get('allocated_time', 0.0)
         charg = meta.get('charged_time',   0.0)
         if alloc > 0:
             time_status = icons['SUCCESS'] if charg <= alloc else icons['ERROR']
             write(f"{time_status} {charg:.1f} Hours Total Charged / {alloc:.1f} Hours Allocated")
+        
+        all_obs = sorted(self.all_obs_nums)
+        n_total = len(all_obs)
+        write(f"{n_total} observation{'s' if n_total > 1 else ''}: {', '.join(map(str, all_obs))}")
+        write('')
+        
+        # Separate observations by sign/status
+        reviewed_full = sorted([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"])
+        under_construction = sorted([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "👷"])
+        completed = sorted([o for o in all_obs if self.obs_status.get(o) == "COMPLETED"])
+        excl_comp = sorted([o for o in completed if o not in self.reviewed_obs_nums])
+        other_excl = sorted([o for o in all_obs if o not in self.reviewed_obs_nums and o not in completed])
+        
+        n_rev = len(reviewed_full)
+        n_uc = len(under_construction)
+        n_comp = len(excl_comp)
+        n_other = len(other_excl)
 
-        # MSATA & Reference Stars
-        if False: #self.stats['total_mos'] > 0:
-            avg_stars  = (sum(self.stats['ref_stars']) / len(self.stats['ref_stars'])
-                          if self.stats['ref_stars'] else 0)
-            star_range = (f"{min(self.stats['ref_stars'])} - {max(self.stats['ref_stars'])}"
-                          if self.stats['ref_stars'] else "unknown")
-            msata_icon = icons['SUCCESS'] if self.stats['msata_count'] == self.stats['total_mos'] else icons['WARNING']
-            write(f"{msata_icon} MSATA with {star_range} available reference stars (Average: {avg_stars:.1f})")
-
-        # Integration Times
-        if self.stats['integration_times']:
-            all_min   = min(t[0] for t in self.stats['integration_times'])
-            all_max   = max(t[1] for t in self.stats['integration_times'])
-            time_icon = icons['SUCCESS'] if self.stats['all_under_1500'] else icons['WARNING']
-            if abs(all_min - all_max) < 0.1:
-                write(f"{time_icon} Integration times all {all_min:.1f} s (< 1500 s)")
-            else:
-                write(f"{time_icon} Integration times ranged from {all_min:.1f} s - {all_max:.1f} s "
-                      f"(all < 1500 s: {self.stats['all_under_1500']})")
-
-        # IRS2 readout
-        irs2_icon = icons['SUCCESS'] if self.stats['all_irs2'] else icons['INFO']
-        write(f"{irs2_icon} IRS2 Readout used for all MOS exposures: {self.stats['all_irs2']}")
-
-        # Aperture PA: planned vs. assigned
-        if self.analytics:
-            pa_total   = len(self.analytics)
-            pa_matched = sum(
-                1 for o in self.analytics
-                if abs((self.analytics[o].get('apa_planned_val') or 0.0) -
+        # 1. Reviewed section
+        if n_rev > 0:
+            write(f"🔎 {n_rev} observation{'s' if n_rev > 1 else ''} reviewed: Obs {', '.join(map(str, reviewed_full))}")
+            
+            # Aperture PA
+            if self.analytics:
+                pa_matched = sum(
+                    1 for o in reviewed_full
+                    if o in self.analytics and
+                    abs((self.analytics[o].get('apa_planned_val') or 0.0) -
                         (self.analytics[o].get('apa_assigned_val') or 0.0)) < 0.001
-                and self.analytics[o].get('apa_planned_val') is not None
-            )
-            pa_icon = icons['SUCCESS'] if pa_matched == pa_total else icons['WARNING']
-            write(f"{pa_icon} Aperture PA Planned = Assigned for {pa_matched}/{pa_total} observations")
+                    and self.analytics[o].get('apa_planned_val') is not None
+                )
+                pa_icon = icons['SUCCESS'] if pa_matched == n_rev else icons['ERROR']
+                if pa_matched == n_rev:
+                    write(f"{pa_icon} Aperture PA Planned = Assigned")
+                else:
+                    write(f"{pa_icon} Aperture PA Planned = Assigned ({pa_matched}/{n_rev})")
 
-        # Nod pattern
-        if self.analytics:
-            nod_counts = {}
-            for o in self.analytics:
-                nod = self.analytics[o].get('nod_pattern', 'NONE')
-                nod_counts[nod] = nod_counts.get(nod, 0) + 1
-            standard = "3 Shutter Slitlet"
-            if set(nod_counts) == {standard}:
-                write(f"{icons['SUCCESS']} Nod Pattern: {standard} for all observations")
+            # MSATA Summary
+            star_counts = []
+            quad_counts = []
+            for obs_num in reviewed_full:
+                pat = re.compile(rf'Obs {int(obs_num)}: ')
+                ref_logs = [item for item in self.results
+                            if item['category'] == "Reference Stars" and pat.match(item['message'])]
+                for log in ref_logs:
+                    if "Stars:" in log['message']:
+                        m = re.search(r'Stars: (\d+)', log['message'])
+                        if m: star_counts.append(int(m.group(1)))
+                    if "Quadrants:" in log['message']:
+                        m = re.search(r'Quadrants: (\d+)', log['message'])
+                        if m: quad_counts.append(int(m.group(1)))
+            
+            if star_counts and quad_counts:
+                min_s, max_s = min(star_counts), max(star_counts)
+                min_q, max_q = min(quad_counts), max(quad_counts)
+                s_range = f"{min_s}-{max_s}" if min_s != max_s else f"{min_s}"
+                q_range = f"{min_q}-{max_q}" if min_q != max_q else f"{min_q}"
+                write(f"{icons['MOSTLY']} MSATA: {s_range} stars in {q_range} quads")
+
+            # Catalogs
+            active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
+            cat_names = sorted(active_catalogs)
+            if cat_names:
+                c_sum = f"{len(cat_names)} catalogs: " + ", ".join(cat_names)
+                if len(c_sum) > 80: c_sum = c_sum[:77] + "..."
+                write(f"{icons['SUCCESS']} Catalogs: {c_sum}")
+            
+            # Catalog ID Warning (if any)
+            max_id_overall = 0
+            cat_info = self.stats.get('catalog_info', {})
+            for name in cat_names:
+                if name in cat_info:
+                    m_id = cat_info[name].get('max_id', 0)
+                    if m_id > max_id_overall:
+                        max_id_overall = m_id
+            if max_id_overall >= 1000000:
+                write(f"{icons['WARNING']} Catalog max ID = {max_id_overall:,} (> 1,000,000)")
+
+            # IRS2 readout
+            non_irs2 = sorted({s['obs'] for s in self.stats.get('all_exposure_specs', [])
+                              if "IRS2" not in (s['rp'] or "") and self.obs_info.get(str(s['obs']), {}).get('sign') == "🔎"})
+            if not non_irs2:
+                write(f"{icons['SUCCESS']} IRS2 Readout used for all MOS exposures")
             else:
-                others = ", ".join(f"{n} ({c}x)" for n, c in nod_counts.items() if n != standard)
-                std_count = nod_counts.get(standard, 0)
-                note = f"{standard} ({std_count}x)" if std_count else "no standard nod"
-                write(f"{icons['WARNING']}  Nod Pattern: {note}; non-standard: {others}")
+                obs_list = ", ".join(map(str, non_irs2))
+                write(f"{icons['WARNING']} IRS2 Readout NOT used in Obs {obs_list}")
+
+            # Integration Times
+            if self.stats['integration_times']:
+                all_min   = min(t[0] for t in self.stats['integration_times'])
+                all_max   = max(t[1] for t in self.stats['integration_times'])
+                time_icon = icons['SUCCESS'] if self.stats['all_under_1500'] else icons['WARNING']
+                if abs(all_min - all_max) < 0.1:
+                    write(f"{time_icon} Integration times all {all_min:.1f} s (< 1500 s)")
+                else:
+                    write(f"{time_icon} Integration times ranged from {all_min:.1f} s - {all_max:.1f} s")
+
+            # Nod pattern
+            if self.analytics:
+                nod_counts = {}
+                for o in reviewed_full:
+                    if o in self.analytics:
+                        nod = self.analytics[o].get('nod_pattern', 'NONE')
+                        nod_counts[nod] = nod_counts.get(nod, 0) + 1
+                standard = "3 Shutter Slitlet"
+                if nod_counts:
+                    if set(nod_counts) == {standard}:
+                        write(f"{icons['SUCCESS']} Nod Pattern: {standard}")
+                    else:
+                        others = ", ".join(f"{n}" for n in nod_counts if n != standard)
+                        write(f"{icons['WARNING']} Nod Pattern: non-standard detected ({others})")
+            
+            # Extra Data Excess warnings (if any)
+            err_text = meta.get('error_text', "")
+            if err_text:
+                low  = err_text.count("Data Excess over lower threshold")
+                mid  = err_text.count("Data Excess over middle threshold")
+                upp  = err_text.count("Data Excess over upper threshold")
+                items = []
+                if low: items.append(f"lower threshold ({low}/{n_rev})")
+                if mid: items.append(f"middle threshold ({mid}/{n_rev})")
+                if upp: items.append(f"upper threshold ({upp}/{n_rev})")
+                if items:
+                    write(f"{icons['WARNING']} Data Excess over " + ", ".join(items))
+            
+            write('')
+
+        # 2. Under Construction section
+        if n_uc > 0:
+            write(f"👷 {n_uc} observation{'s' if n_uc > 1 else ''} under construction: Obs {', '.join(map(str, under_construction))}")
+        
+        # 3. Completed section
+        if n_comp > 0:
+            write(f"☑️  {n_comp} observation{'s' if n_comp > 1 else ''} COMPLETE: Obs {', '.join(map(str, excl_comp))}")
+            
+        # 4. Excluded section
+        if n_other > 0:
+            write(f"🙈 {n_other} observation{'s' if n_other > 1 else ''} excluded: Obs {', '.join(map(str, other_excl))}")
+
+        # Strategy Flags at the very bottom
+        strategy_msgs = [item['message'] for item in self.results if item['category'] == "Strategy"]
+        clustering_msgs = [item['message'] for item in self.results if item['category'] == "Clustering"]
+        
+        if strategy_msgs or clustering_msgs:
+            write('')
+            if strategy_msgs:
+                write(f"{icons['INFO']}  Strategy Flags (FS/MOS/NIRCam coordination check):")
+                for msg in sorted(set(strategy_msgs)):
+                    write(f"     - {msg}")
+            if clustering_msgs:
+                write(f"{icons['WARNING']}  Clustering Flags (Field/Angle efficiency check):")
+                for msg in sorted(set(clustering_msgs)):
+                    write(f"     - {msg}")
+
+
+    def _report_catalogs(self, write, icons):
+        write("\n" + "-"*30)
+        write("CATALOGS")
+        write("-"*30)
+        active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
+        any_cat = False
+        for target, info in self.stats['catalog_info'].items():
+            if target not in active_catalogs: continue
+            any_cat = True
+            sources = info.get('total_sources', 0)
+            acc = info.get('accuracy', 0)
+            weight_range = info.get('weight_range', (0, 0))
+            
+            s_icon = icons['SUCCESS'] if sources > 20 else icons['WARNING']
+            a_icon = icons['SUCCESS'] if 5 <= acc <= 15 else icons['WARNING']
+            
+            write(f"{s_icon} Catalog '{target}': {sources} sources (> 20 recommended)")
+            write(f"{a_icon} Catalog '{target}': Astrometric Accuracy {acc} mas (5-15 mas recommended)")
+            if weight_range[1] >= 1e9:
+                write(f"{icons['WARNING']} Catalog '{target}': Weights >= 1e9 found (not recommended)")
+        if not any_cat:
+            write(f"{icons['INFO']} No MOS catalogs detected.")
+
+    def _load_wavelength_exports(self):
+        """Parse identified CSV files for wavelength information for top targets."""
+        top_targets = set()
+        for cat in self.stats.get('high_priority_analysis', {}).values():
+            for t in cat['top_20']:
+                top_targets.add(str(t['id']))
+
+        if not top_targets: return
+
+        for file_path in self.potential_csv_files:
+            m_obs = re.search(r'obs(\d+)', file_path.name)
+            m_gf = re.search(r'((?:PRISM|G\d+[HM])-(?:CLEAR|F\d+[LMNW]P))', file_path.name)
+            if not m_gf: # Fallback for other patterns
+                m_gf = re.search(r'([A-Z0-9]+-[A-Z0-9]+)\.csv$', file_path.name)
+            
+            if m_obs and m_gf:
+                obs_num = str(int(m_obs.group(1))) # Normalize (e.g. '07' -> '7')
+                gf = m_gf.group(1).replace('-', '/')
+                if self._parse_wavelength_csv(file_path, obs_num, gf, top_targets):
+                    self._record_file_used(file_path)
+
+    def _parse_wavelength_csv(self, file_path, obs_num, gf, top_targets):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                if not reader.fieldnames: return False
+                col_map = {h.strip().upper(): h for h in reader.fieldnames}
+                id_col = col_map.get('ID')
+                nw1_min, nw1_max = col_map.get('NRS1 MIN WAVE'), col_map.get('NRS1 MAX WAVE')
+                nw2_min, nw2_max = col_map.get('NRS2 MIN WAVE'), col_map.get('NRS2 MAX WAVE')
+                
+                if not id_col or not any([nw1_min, nw1_max, nw2_min, nw2_max]): return False
+                
+                if obs_num not in self.exports_data['wavelengths']:
+                    self.exports_data['wavelengths'][obs_num] = {}
+                
+                obs_waves = self.exports_data['wavelengths'][obs_num]
+                found_any = False
+                for row in reader:
+                    sid = row.get(id_col)
+                    if sid in top_targets:
+                        if sid not in obs_waves: obs_waves[sid] = {}
+                        waves = {}
+                        def raw_val(v):
+                            if not v: return "Gap"
+                            try: return float(v)
+                            except: return "Gap"
+                        
+                        waves['n1_min'] = raw_val(row.get(nw1_min))
+                        waves['n1_max'] = raw_val(row.get(nw1_max))
+                        waves['n2_min'] = raw_val(row.get(nw2_min))
+                        waves['n2_max'] = raw_val(row.get(nw2_max))
+                        obs_waves[sid][gf] = waves
+                        found_any = True
+                return found_any
+        except: pass
+        return False
+
+    def _report_files_used(self, write, icons):
+        write("\n" + "="*110)
+        write("FILES USED IN THIS REVIEW")
+        write("="*110)
+        
+        cwd = Path.cwd()
+        apt_path_abs = str(self.input_path.absolute())
+        apt_mtime = self.files_used.get(apt_path_abs, 0)
+        
+        # 1. Main APT/XML file
+        apt_date = datetime.fromtimestamp(apt_mtime).strftime('%Y-%m-%d %H:%M:%S')
+        try:
+            display_apt = str(self.input_path.relative_to(cwd))
+        except ValueError:
+            display_apt = apt_path_abs
+        write(f"📄 {display_apt}\n   Modified: {apt_date}")
+        
+        # 2. Categorize other files
+        other_files = [p for p in self.files_used.keys() if p != apt_path_abs]
+        if not other_files: return
+        
+        groups = {
+            'TA Exports': {'files': [], 'pattern': '*-TA.csv'},
+            'Observation Exports': {'files': [], 'pattern': '*-obs*.csv'},
+            'Catalogs': {'files': [], 'pattern': '*msa.csv'}
+        }
+        
+        for p in other_files:
+            lower_p = p.lower()
+            if p.endswith('-TA.csv'):
+                groups['TA Exports']['files'].append(p)
+            elif 'msa.csv' in lower_p:
+                groups['Catalogs']['files'].append(p)
+            elif '-obs' in lower_p:
+                groups['Observation Exports']['files'].append(p)
+            else:
+                # Any other CSVs likely catalogs or related
+                groups['Catalogs']['files'].append(p)
+                groups['Catalogs']['pattern'] = '*.csv'
+                
+        for name, data in groups.items():
+            files = data['files']
+            if not files: continue
+            
+            mtimes = [self.files_used[f] for f in files]
+            min_mtime, max_mtime = min(mtimes), max(mtimes)
+            
+            min_date = datetime.fromtimestamp(min_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            max_date = datetime.fromtimestamp(max_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            date_range = min_date if min_date == max_date else f"{min_date} to {max_date}"
+            
+            warning = ""
+            if any(m < apt_mtime - 60 for m in mtimes):
+                warning = f" {icons['WARNING']} (Older than APTX!)"
+            
+            # Find common directory relative to CWD
+            common_dir = ""
+            try:
+                rel_parts = [Path(f).relative_to(cwd).parts[:-1] for f in files]
+                if rel_parts:
+                    common = rel_parts[0]
+                    for p in rel_parts[1:]:
+                        new_common = []
+                        for i in range(min(len(common), len(p))):
+                            if common[i] == p[i]: new_common.append(common[i])
+                            else: break
+                        common = tuple(new_common)
+                    if common:
+                        common_dir = "/".join(common) + "/"
+            except: pass
+            
+            write(f"\n📄 {name}: {common_dir}{data['pattern']} ({len(files)} files)")
+            write(f"   Modified: {date_range}{warning}")
+
+        # 3. Check for MSA Coverage Plots
+        plot_files = []
+        for p in other_files:
+            if "_visits.csv" in p:
+                p_dir = Path(p).parent
+                plot_files.extend(list(p_dir.glob("msa_coverage_*.png")))
+        
+        if plot_files:
+            plot_files = sorted(list(set(plot_files)))
+            mtimes = [f.stat().st_mtime for f in plot_files]
+            min_date = datetime.fromtimestamp(min(mtimes)).strftime('%Y-%m-%d %H:%M:%S')
+            max_date = datetime.fromtimestamp(max(mtimes)).strftime('%Y-%m-%d %H:%M:%S')
+            date_range = min_date if min_date == max_date else f"{min_date} to {max_date}"
+            
+            write(f"\n🖼️ MSA Coverage Plots ({len(plot_files)} files)")
+            write(f"   Modified: {date_range}")
+            for f in plot_files:
+                try:
+                    display_f = f.relative_to(cwd)
+                except: display_f = f
+                write(f"     - {display_f}")
+
+    def _report_msa_plots_note(self, write):
+        """Final note on generated MSA coverage plots."""
+        plot_dir = None
+        for p in self.files_used.keys():
+            if "_visits.csv" in p:
+                plot_dir = Path(p).parent
+                break
+        
+        if plot_dir:
+            write(f"\nℹ️ MSA Coverage Plots generated in: {plot_dir}")
+            
+            avail = self.exports_data.get('availability', {})
+            obs_ids = set()
+            for vid in avail.keys():
+                v_num_str = str(vid)
+                if len(v_num_str) >= 6:
+                    o = int(v_num_str[-6:-3])
+                    obs_ids.add(str(o))
+                else:
+                    obs_ids.add(v_num_str)
+                    
+            for obs_id in sorted(obs_ids, key=int):
+                # Exclude observations under construction
+                if self.obs_info.get(obs_id, {}).get('sign') == "👷":
+                    continue
+                plot_file = plot_dir / f"msa_coverage_obs{obs_id}.png"
+                if plot_file.exists():
+                    write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
@@ -1120,6 +2401,7 @@ if __name__ == "__main__":
     parser.add_argument("--obs", help="Observations to review (e.g. '3' or '1,3-5,10'). Alias for --include.")
     parser.add_argument("--include", "-i", help="Observations to include (e.g. '1,3-5,10')")
     parser.add_argument("--exclude", "-e", help="Observations to exclude (e.g. '2,6-8')")
+    parser.add_argument("--exports", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
     args = parser.parse_args()
 
     # --obs is a friendly alias for --include
@@ -1132,6 +2414,7 @@ if __name__ == "__main__":
         args.apt_file,
         output_file=output,
         include=include,
-        exclude=args.exclude
+        exclude=args.exclude,
+        exports_dir=args.exports
     )
     reviewer.print_report()

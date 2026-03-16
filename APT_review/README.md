@@ -12,12 +12,42 @@
 
 ## Example Report
 
-`python3 APT_review.py JWST7417.aptx  --include "3-8, 10-15, 19"`
+`python3 APT_review.py JWST7729.aptx`
 
 generates:
 
-[`JWST7417_review.txt`](JWST7417_review.txt)
+* report: [**JWST7729_review.txt**](docs/JWST7729_review.txt)
+* plots: [**msa_coverage_*.png**](docs/JWST7729_msa_coverage.png)
 
+![MSA Coverage Plot](docs/JWST7729_msa_coverage.png)
+
+
+### Example Report Excerpts
+
+from [**JWST7729_review.txt**](docs/JWST7729_review.txt)
+
+```
+================================================================================
+SUMMARY
+================================================================================
+
+JWST 7729
+Unveiling Early Cosmic Enrichment: Direct Metallicities in z>6 Galaxies from Deep JWST Spectroscopy
+PI: Guido Roberts-Borsani
+
+✅ 67.0 Hours Total Charged / 67.6 Hours Allocated
+2 observations: 1, 2
+
+🔎 1 observation reviewed: Obs 1
+✅ Aperture PA Planned = Assigned
+🌔 MSATA: 6-8 stars in 2-3 quads
+✅ Catalogs: 2 catalogs: gdn_targets_final, msa_targets_gds
+⚠️ IRS2 Readout NOT used in Obs 1
+✅ Integration times all 429.5 s (< 1500 s)
+✅ Nod Pattern: 3 Shutter Slitlet
+
+👷 1 observation under construction: Obs 2
+```
 ---
 
 ## Documentation
@@ -26,7 +56,31 @@ generates:
 |------|---------|
 | `docs/APT_report.md` | Full technical reference describing every metric extracted, where it comes from, and how the report is structured. |
 | `docs/APT_XML.md` | Reference for the APT XML schema — where specific data lives in the XML tree. |
+| `docs/APT_exports.md` | Guide to the supplementary CSV exports (MSATA, Wavelengths) and how the script finds them. |
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
+
+---
+
+## Files and Dependencies
+
+### Core Files
+*   **`APT_review.py`**: The primary script. It handles XML parsing, catalog checks, and report generation using only the **Python Standard Library**.
+
+### OPTIONAL
+*   **`msa_coverage_plot.py`**: Plots NIRSpec MSA quadrants overlaid on catalogs.
+
+To enable **(OPTIONAL) plot generation**, you need the following:
+
+| Package | Purpose |
+|---------|---------|
+| `pysiaf` | Plotting NIRSpec MSA quadrants. |
+| `numpy` | Coordinate calculations (required by PySIAF). |
+| `matplotlib` | Creating the `msa_coverage_*.png` plots. |
+| `pandas` | Data handling for CSV plotting. |
+
+```bash
+pip install numpy matplotlib pandas pysiaf
+```
 
 ---
 
@@ -40,7 +94,15 @@ python APT_review.py /path/to/program.aptx
 
 The report is output to the Terminal and saved to `<filename>_review.txt` in the same directory (e.g., `program_review.txt`).
 
-### 2. Override the output path
+### 2. Supplement with CSV exports
+
+The script automatically finds relevant CSV files (MSATA Target Info, Wavelength Coverage) if they are in a subfolder next to the APT file or in your current directory. You can also specify a directory explicitly:
+
+```bash
+python APT_review.py program.aptx --exports ./my_exports/
+```
+
+### 3. Override the output path
 
 ```bash
 python APT_review.py /path/to/program.aptx --output my_report.txt
@@ -48,14 +110,16 @@ python APT_review.py /path/to/program.aptx --output my_report.txt
 
 ### 3. Review only specific observations
 
+By default, the script **excludes observations with a `COMPLETED` status** in APT.
+
 ```bash
-# Single observation
+# Review only observation 3 (even if COMPLETED)
 python APT_review.py program.aptx --obs 3
 
-# Range / list
+# Review a specific list/range
 python APT_review.py program.aptx --obs "1,3-5,10"
 
-# Exclude observations 2 and 6 through 8
+# Exclude specific observations from the active set
 python APT_review.py program.aptx --exclude "2,6-8"
 ```
 
@@ -63,19 +127,34 @@ python APT_review.py program.aptx --exclude "2,6-8"
 
 ## What the Report Covers
 
-The report is organized into sections that are printed in sequence:
+The report is organized into 16 sections that are printed in sequence:
 
-1. **Detailed Findings** — observation-specific warnings and errors (e.g. TA method, exposure duration, non-IRS2 readout).
-2. **Aperture PA Summary** — compares the Planned PA (from the MPT JSON) against the Assigned PA (from the Visit Planner diagnostics).
-3. **Exposure Specifications** — all grating/filter, readout, and group/integration settings.
-4. **Configurations / Pointings** — every telescope pointing, nod pattern, and total time on sky.
-5. **Parallels & Dithers** — which observations are coordinated parallels and whether dithering is compatible.
-6. **Special Requirements** — orientation constraints, background limits, and any other flags.
-7. **MSA Configurations & Strategy** — slitlet counts (from XML), slitlet length distribution (from MPT JSON), primary/filler breakdown, and whether Leakcal and Confirmation Images are enabled.
-8. **MSATA & Reference Stars** — number of committed reference stars and their quadrant coverage.
-9. **Program Metadata & Submission** — APT version, submission status, comments, and error log.
-10. **Target Catalog** — source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
-11. **Final Summary** — one-page digest: program title, PI, allocated vs. charged time, MSATA status, integration time range, and IRS2 readout compliance.
+1.  **Review Header** — Program title, PI, and PID.
+2.  **Observing Description** — High-level summary from the proposal.
+3.  **Observation Summary Table** — A program-wide status list using emojis to indicate:
+    - 🔎 Included for review
+    - 👷 Not yet designed? (Aperture PA mismatch)
+    - ☑️  COMPLETED (finished in APT)
+    - 🙈 Excluded (filtered or skipped)
+    - 🤷🏻 Not reviewed (different instrument mode)
+4.  **Submission Details** — APT version, submission comments, diagnostic justifications, and submission log.
+5.  **Detailed Findings** — Observation-specific warnings and errors (e.g. TA method, exposure duration, non-IRS2 readout).
+6.  **Aperture PA Summary** — Compares the Planned PA (from the MPT JSON) against the Assigned PA (from the Visit Planner diagnostics).
+7.  **Exposure Specifications** — All grating/filter, readout, and group/integration settings.
+8.  **Configurations / Pointings** — Every telescope pointing, nod pattern, and total time on sky.
+9.  **Parallels & Dithers** — Which observations are coordinated parallels and whether dithering is compatible.
+10. **Special Requirements** — Orientation constraints, background limits, and other flags.
+11. **MSA Configurations & Strategy** — Slitlet counts, primary/filler breakdown, and whether Leakcal and Confirmation Images are enabled.
+12. **MSATA & Reference Stars** — Detailed breakdown of reference stars *used* (from TA CSV) and *available* (calculated via **PySIAF**), including quadrant coverage.
+13. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
+14. **High Priority Targets** — Coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
+15. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
+16. **Final Summary** — A concise technical sign-off including:
+    - Counts of **Reviewed**, **COMPLETE** (excluded), and **Excluded** observations.
+    - **Strategy Flags**: Spotlight checks for FS/MOS angle requirements and NIRCam/MOS timing links.
+    - **Clustering Flags**: Identifies observations within 1.5° that could be planned together for efficiency.
+    - Time budget (Allocated vs. Charged) and program-wide compliance for MSATA, Integration Times, and IRS2.
+    - **Files Used**: A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
 
 ---
 
@@ -85,8 +164,15 @@ The report is organized into sections that are printed in sequence:
 |--------|-------|
 | `.aptx` | Standard APT export (ZIP archive containing XML + JSON files). **Recommended.** |
 | `.xml` | Raw XML only. MPT JSON plans will not be found unless placed in a `json_temp/` subfolder next to the XML. |
+| `.csv` | **Supplementary.** Exported via APT (File -> Export -> MSA Target Info, Wavelength Coverage, or Visits). Used for TA ref star, detector gap, and quadrant geometry analysis. |
 
-MPT JSON plan files (from the MSA Planning Tool) should be placed in a `json_temp/` directory adjacent to the APT file. The script automatically finds the most recent version (e.g. `_v3.json`) for each observation.
+### Automatic Supplementary File Search
+The script automatically searches for supplementary files to enhance its analysis:
+
+*   **MPT JSON Plans (`.json`)**: Searched for specifically in a `json_temp/` directory adjacent to the APT file (or inside `[program_name]/json_temp/`).
+*   **CSV Exports (`*-TA.csv`, `*-obs*.csv`, `*_visits.csv`)**: Searched for in `exports/`, the current directory, and **any immediate subdirectory** of either the APT parent folder or the current directory.
+
+You can override the search path for CSVs using the `--exports` flag.
 
 ---
 
@@ -96,13 +182,15 @@ MPT JSON plan files (from the MSA Planning Tool) should be placed in a `json_tem
 |-------|------------------------|
 | TA Method | Should be `MSATA` |
 | Reference Stars | ≥ 7 committed stars (WARNING < 7, ERROR < 5) |
-| Quadrant Coverage | ≥ 3 quadrants preferred |
+| Quadrant Coverage | ≥ 3 quadrants preferred (Calculated via **PySIAF** from `visits.csv`) |
 | Integration Time | < 1500 s per integration recommended |
 | Readout Pattern | IRS2 (`NRSIRS2RAPID`) preferred for all MOS exposures |
 | Astrometric Accuracy | < 15 mas recommended |
 | Catalog IDs | IDs ≥ 1,000,000 may cause MPT issues |
+| Clustering | Observations within 1.5° should be checked for field/angle shared efficiency |
+| Cross-Instrument Links | FS+MOS Requires Angle SR; MOS+NIRCam Requires Timing SR |
 | Parallels | Parallel observations should use `JOINT` dither types |
-| Aperture PA | Planned (JSON) vs. Assigned (VP) values should agree |
+| Aperture PA | Planned (JSON) vs. Assigned (VP) values should agree at the observation level |
 
 ---
 
@@ -119,7 +207,6 @@ The script automates the tedious data extraction, but it is **not a substitute f
 
 | | Item |
 |-|------|
-| 👁️ | **Reference stars** — numbers of stars selected for each observation (ideally 8) and quadrant coverage (ideally 4); the script only identifies available candidates)|
 | 👁️ | **Bright sources** — visually inspect the field with Aladin |
 | 👁️ | **MSA well filled?** — assess whether the MPT plan makes efficient use of the MSA field; the script does report how many targets are observed |
 | 👁️ | **Exposure depth on primary targets** — ensure those get full depth |
@@ -131,4 +218,6 @@ The script automates the tedious data extraction, but it is **not a substitute f
 
 *   **[APT_report.md](docs/APT_report.md)** — detailed mapping of every extracted field to its XML/JSON source.
 *   **[APT_XML.md](docs/APT_XML.md)** — APT XML schema reference.
+*   **[APT_exports.md](docs/APT_exports.md)** — Guide to the supplementary CSV exports and PySIAF integration.
 *   **[ReviewChecklist.md](docs/ReviewChecklist.md)** — the full manual review checklist.
+*   **[SpotlightChecklist.md](docs/SpotlightChecklist.md)** — technical checklist focused on modern MOS bottlenecks (clustering, timing, strategy).

@@ -1,0 +1,278 @@
+
+============================================================
+NIRSPEC MOS TECHNICAL REVIEW REPORT
+============================================================
+
+JWST 7729
+Unveiling Early Cosmic Enrichment: Direct Metallicities in z>6 Galaxies from Deep JWST Spectroscopy
+PI: Guido Roberts-Borsani
+
+Observing Description:
+Pinpointing the onset and evolution of chemical enrichment over the first billion years represents a major goal of extragalactic astronomy and a key tracer of ISM evolution in primordial sources. Strong-line indices (e.g., R23 =[O III]4960,5008+[O II]3727,3729 / Hbeta, O32 =[O III]5008 / [O II]3727,3729) represent the most practical and realistic path towards obtaining a census of galaxy metallicities at z>6, given the strength and detection rates of the relevant lines in JWST spectra. However, even the latest JWST calibrations benefit from only a handful of gold standard, temperature-based ("direct") metallicities, owing to the dearth of auroral emission line measurements at z>6 (17 sources with [OIII]4364 to date). As such, current high-z calibrations suffer from significant scatter given small sample sizes (typically 15-20 sources) that extend over large redshift ranges (2<z<9) and trace varying ISM conditions.
+
+In this proposal we target a large sample (>75) of confirmed z>6 galaxies in the GOODS-N and GOODS-S fields, where [O III]4364 (and [O II]3727,3729) detections are enabled for accurate Oxygen abundances using direct-method measurements. Each of the sources already benefit from strong-line measurements allowing us to make predictions on expected [O III]4364 line flux using realistic metallicity assumptions. We will obtain ~12.6 hrs of deep NIRSpec G395M/F290LP MSA spectroscopy for four independent pointings, two in each GOODS field amount to a total of 50.3 hrs science time, or 67.2 hrs including overhead. The chosen setup of an NRS readout pattern, 39 grps/int, 1 int/exp, and 27 exposures with a 3-shutter dither pattern allows us to achieve a peak S/N ratio >3sigma for integrated fluxes down to 1E-19 erg/s/cm2. The observations proposed here represents a unique, optimized, and sorely needed data set to achieve a census of galaxy metallicities within the first billion years.
+
+========================================================================================================================
+OBSERVATION SUMMARY
+========================================================================================================================
+   Obs  | Mode            | Parallel        | Label                | Target Name                         | Status
+-----------------------------------------------------------------------------------------------------------------
+🔎 1    | NIRSpec MOS     |                 | gdn-final            | gdn_targets_final                   | IMPLEMENTATION
+👷 2    | NIRSpec MOS     |                 | GOODS-S              | msa_targets_gds                     | IMPLEMENTATION
+-----------------------------------------------------------------------------------------------------------------
+   🔎 included for review
+   👷 not yet designed? angle doesn't match assigned
+   🙈 excluded
+   🤷🏻 different mode not reviewed by this code
+   ☑️  completed observation already executed
+
+================================================================================
+PROGRAM METADATA & SUBMISSION DETAILS
+================================================================================
+APT Version: Version 2025.7.2
+Has Errors:  true
+
+[Submission Log]
+----- Attempting Submission 5 (Wed Mar 11 11:40:41 GMT 2026) -----
+
+================================================================================
+DETAILED FINDINGS & RECOMMENDATIONS
+================================================================================
+
+[Observation 1: gdn_targets_final]
+  ⚠️ Reference Stars: Visit 1:2: Stars: 6 (Export (7729-obs1-2-TA.csv))
+  ⚠️ Reference Stars: Visit 1:2: Quadrants: 2
+
+================================================================================
+APERTURE PA SUMMARY
+================================================================================
+Obs   | Planned APA           | Assigned APA
+--------------------------------------------------------------------------------
+✅ 1    | 275.1662 Degrees      | 275.1662 Degrees
+❌ 2    | 40. Degrees           | 48.7734 Degrees
+
+================================================================================
+EXPOSURE SPECIFICATIONS SUMMARY
+================================================================================
+Obs   | Spec  | Grating/Filter     | Readout Pattern    | Groups   | Ints   | Duration(s)
+-----------------------------------------------------------------------------------------------
+1     | 1     | G395M/F290LP       | NRS                | 39       | 1      | 429.5      
+
+==============================================================================================================
+CONFIGURATIONS / POINTINGS SUMMARY
+==============================================================================================================
+Obs   | #   | Config   | Nod Pattern          | Total Ints | Total Time | Pointing
+--------------------------------------------------------------------------------------------------------------
+1     | 1   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 2   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 3   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 4   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 5   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 6   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 7   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 8   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 9   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
+1     | 10  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 11  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 12  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 13  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 14  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 15  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 16  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 17  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+1     | 18  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
+2     | 1   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 2   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 3   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 4   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 5   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 6   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 7   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 8   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 9   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
+2     | 10  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 11  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 12  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 13  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 14  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 15  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 16  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 17  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+2     | 18  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+
+==============================================================================================================
+SPECIAL REQUIREMENTS SUMMARY
+==============================================================================================================
+Obs   | Aperture PA Range                   | Background Limited   | Other Requirements
+--------------------------------------------------------------------------------------------------------------
+1     | None                                | None                 | GroupVisitsWithin: 
+                        , SamePAVisits: active
+
+============================================================================================================================================
+MSA CONFIGURATIONS & STRATEGY SUMMARY
+============================================================================================================================================
+Obs   | Config       | Slitlets (Lengths)                  | Primaries    | Fillers    | Nod Pattern          | Conf   | Leakcal 
+--------------------------------------------------------------------------------------------------------------------------------------------
+1     | c1           | 44                                  | 19           | 24         | 3 Shutter Slitlet    | No     | No      
+1     | c2           | 46                                  | 24           | 20         | 3 Shutter Slitlet    | No     | No      
+2     | c1           | 43                                  | 39           | 0          | 3 Shutter Slitlet    | No     | No      
+2     | c2           | 27                                  | 23           | 0          | 3 Shutter Slitlet    | No     | No      
+
+================================================================================
+MSATA & REFERENCE STARS SUMMARY
+================================================================================
+Obs   | Method   | Stars      | Quads     
+--------------------------------------------------------------------------------
+1:1   | MSATA    | 8  🌕       | 3  🌔      
+1:2   | MSATA    | 6  🌓       | 2  🌓      
+
+================================================================================
+REFERENCE STARS USED (from TA export)
+================================================================================
+
+Obs 1 Visit 1 [Filter: CLEAR, Readout: NRSRAPIDD6] (Range: 23.1 – 25.7)  (8 stars, 7729-obs1-1-TA.csv)
+  ID         Quad   NRS_CLEAR
+  ---------------------------
+  10100         2       23.11
+  10081         4       23.19
+  10075         2       23.41
+  10106         1       23.80
+  10076         2       23.97
+  10084         4       24.70
+  10162         4       24.91
+  10332         4       25.57
+
+Obs 1 Visit 2 [Filter: CLEAR, Readout: NRSRAPIDD6] (Range: 23.1 – 25.7)  (6 stars, 7729-obs1-2-TA.csv)
+  ID         Quad   NRS_CLEAR
+  ---------------------------
+  10081         1       23.19
+  10117         2       24.54
+  10084         1       24.70
+  10158         2       24.77
+  10171         2       24.91
+  10307         1       25.57
+
+============================================================
+REFERENCE STAR AVAILABILITY
+============================================================
+Counts: Used Ref / Available Ref / Available Science
+
+Visit    | Catalog                        |      Q1      |      Q2      |      Q3      |      Q4
+------------------------------------------------------------------------------------------------
+1:1      | gdn_targets_final              |    1/14/51   |    3/11/35   |    0/14/42   |    4/11/40  
+1:2      | gdn_targets_final              |    3/18/34   |    3/14/62   |    0/11/41   |    0/ 7/31  
+
+================================================================================================================================================================
+TARGET CATALOG PER OBSERVATION
+================================================================================================================================================================
+Obs   | Target Catalog Name                 | Sources  | Ref   | Acc    | W_Min      | W_Max      | Filters
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1     | gdn_targets_final                   | 1262     | 334   | 10.0   | 0.0        | 75000.0    | 
+
+========================================================================================================================
+HIGH PRIORITY TARGET ANALYSIS: Observation 1
+Catalog: Primary
+========================================================================================================================
+Source ID    | Weight     | G395M/F290LP      
+----------------------------------------------
+ 1          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
+ 2          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS2)
+ 3          | 1000000    | 🌑  0/54 (  0%)
+ 4          | 1000000    | 🌑  0/54 (  0%)
+ 5          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.46 – 4.74 µm
+ 6          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.61 – 4.89 µm
+ 7          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 2.95 – 3.23 µm
+ 8          | 1000000    | 🌑  0/54 (  0%)
+ 9          | 1000000    | 🌑  0/54 (  0%)
+10          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.43 – 4.71 µm
+11          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
+12          | 1000000    | 🌑  0/54 (  0%)
+13          | 1000000    | 🌑  0/54 (  0%)
+14          | 1000000    | 🌑  0/54 (  0%)
+15          | 1000000    | 🌓 27/54 ( 50%) | 🌓 CUTOFF: (NRS2) – 5.00 µm
+16          | 1000000    | 🌑  0/54 (  0%)
+17          | 1000000    | 🌑  0/54 (  0%)
+18          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
+19          | 1000000    | 🌑  0/54 (  0%)
+20          | 1000000    | 🌑  0/54 (  0%)
+
+Summary for Obs 1 (Primary): 0/20 high-priority targets observed in ALL exposures.
+
+------------------------------
+CATALOGS
+------------------------------
+✅ Catalog 'msa_targets_gds': 207 sources (> 20 recommended)
+⚠️ Catalog 'msa_targets_gds': Astrometric Accuracy 0.01 mas (5-15 mas recommended)
+✅ Catalog 'gdn_targets_final': 1262 sources (> 20 recommended)
+✅ Catalog 'gdn_targets_final': Astrometric Accuracy 10.0 mas (5-15 mas recommended)
+
+================================================================================
+SUBMISSION ERRORS / WARNINGS
+================================================================================
+  ⚠️ The recommended value is 8 Reference Stars for this template.
+  ⚠️ Config c1 (#1) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#2) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#3) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#4) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#5) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#6) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#7) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#8) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c1 (#9) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#10) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#11) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#12) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#13) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#14) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#15) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#16) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#17) has 1 master background shutters affected by failed open or closed shutters.
+  ⚠️ Config c2 (#18) has 1 master background shutters affected by failed open or closed shutters.
+  ❌ This observation was created with an Aperture PA of 40.0000 but it has been assigned an Aperture PA of 48.7734
+  ⚠️ Reference stars are required but none were found for this visit (2/2)
+
+================================================================================
+SUMMARY
+================================================================================
+
+JWST 7729
+Unveiling Early Cosmic Enrichment: Direct Metallicities in z>6 Galaxies from Deep JWST Spectroscopy
+PI: Guido Roberts-Borsani
+
+✅ 67.0 Hours Total Charged / 67.6 Hours Allocated
+2 observations: 1, 2
+
+🔎 1 observation reviewed: Obs 1
+✅ Aperture PA Planned = Assigned
+🌔 MSATA: 6-8 stars in 2-3 quads
+✅ Catalogs: 2 catalogs: gdn_targets_final, msa_targets_gds
+⚠️ IRS2 Readout NOT used in Obs 1
+✅ Integration times all 429.5 s (< 1500 s)
+✅ Nod Pattern: 3 Shutter Slitlet
+
+👷 1 observation under construction: Obs 2
+
+==============================================================================================================
+FILES USED IN THIS REVIEW
+==============================================================================================================
+📄 JWST7729.aptx
+   Modified: 2026-03-13 14:19:08
+
+📄 TA Exports: msatargets/*-TA.csv (2 files)
+   Modified: 2026-03-13 14:39:29
+
+📄 Observation Exports: msatargets/*-obs*.csv (54 files)
+   Modified: 2026-03-13 14:39:29
+
+📄 Catalogs: visits/*.csv (1 files)
+   Modified: 2026-03-14 14:03:51
+
+🖼️ MSA Coverage Plots (4 files)
+   Modified: 2026-03-15 20:34:26 to 2026-03-15 20:34:39
+     - visits/msa_coverage_catalog_gdn_targets_final.png
+     - visits/msa_coverage_catalog_msa_targets_gds.png
+     - visits/msa_coverage_obs1.png
+     - visits/msa_coverage_obs2.png
+
+ℹ️ MSA Coverage Plots generated in: /Users/dcoe/NIRSpec/reviews/7729/visits
+   🖼️ Obs 1: msa_coverage_obs1.png
