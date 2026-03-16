@@ -1,9 +1,10 @@
 # NIRSpec MOS APT Review Assistant
 
-`APT_review.py` aids Instrument Scientists in reviewing NIRSpec MOS programs by extracting information from an APT file `.aptx` and generating an ASCII report `.txt`, including:
-* List of observations
+`APT_review.py` aids Instrument Scientists in reviewing NIRSpec MOS programs by extracting information from an APT file `.aptx` and generating an ASCII report `.txt` and optional plots `.png`, including:
+* APT warnings and errors
+* MSATA reference stars used and quads covered (reported and plotted)
+* Depth and wavelength coverage of high-priority targets
 * Exposure specifications (gratings, integration times, readout patterns, etc.)
-* Warnings and errors
 * Aperture PA planned vs. assigned
 * Total Charged Time vs. Allocated
 * and more...
