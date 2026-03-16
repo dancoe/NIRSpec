@@ -19,22 +19,11 @@ generates:
 * report: [**JWST7729_review.txt**](docs/JWST7729_review.txt)
 * plots: [**msa_coverage_*.png**](docs/JWST7729_msa_coverage.png)
 
-![MSA Coverage Plot](docs/JWST7729_msa_coverage.png)
-
-
 ### Example Report Excerpts
 
-from [**JWST7729_review.txt**](docs/JWST7729_review.txt)
+from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more details
 
 ```
-================================================================================
-SUMMARY
-================================================================================
-
-JWST 7729
-Unveiling Early Cosmic Enrichment: Direct Metallicities in z>6 Galaxies from Deep JWST Spectroscopy
-PI: Guido Roberts-Borsani
-
 ✅ 67.0 Hours Total Charged / 67.6 Hours Allocated
 2 observations: 1, 2
 
@@ -48,6 +37,9 @@ PI: Guido Roberts-Borsani
 
 👷 1 observation under construction: Obs 2
 ```
+
+![MSA Coverage Plot](docs/JWST7729_msa_coverage.png)
+
 ---
 
 ## Documentation
