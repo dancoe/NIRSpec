@@ -212,8 +212,7 @@ def main():
             all_ras.extend(poly[:, 0])
             all_decs.extend(poly[:, 1])
             
-            # Plot full MSA (from s_region) as faint background
-            plt.fill(poly[:, 0], poly[:, 1], alpha=0.03, color='gray', linestyle=':')
+            # Do not plot full MSA as faint background to avoid white haze
             
             # Calculate PySIAF quadrants
             main_ap_name = row.get('Aperture', 'NRS_FULL_MSA')
@@ -224,12 +223,13 @@ def main():
                 continue
 
             # Draw quadrant boundaries
+            v_label_str = v_label.replace('.', ':')
             for q_idx, q_poly in quads.items():
                 plt.plot(np.append(q_poly[:, 0], q_poly[0,0]), np.append(q_poly[:,1], q_poly[0,1]), 
-                         color=color, linewidth=1.5, alpha=0.8, label=f"Visit {v_label}" if q_idx == 1 else "")
+                         color='black', linewidth=0.5, alpha=1.0)
                 # Label quads
                 q_center = np.mean(q_poly, axis=0)
-                plt.text(q_center[0], q_center[1], f"Q{q_idx}", color=color, alpha=0.5,
+                plt.text(q_center[0], q_center[1], f"{v_label_str}\nQ{q_idx}", color='black', alpha=1.0,
                          fontsize=10, fontweight='bold', ha='center', va='center')
 
             quad_counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
@@ -265,24 +265,25 @@ def main():
                 pt_alpha = 0.2 + 0.8 * norm_wt
 
                 if src['is_ref']:
-                    plt.scatter(src['ra'], src['dec'], marker='*', s=150, color='gold', 
-                                edgecolors='black', alpha=0.6, zorder=-1)
+                    plt.scatter(src['ra'], src['dec'], marker='*', s=50, color='0.50', 
+                                edgecolors='black', linewidths=0.5, alpha=0.3, zorder=-1)
                 else:
                     is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                     if is_highest:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                    color=pt_color, edgecolors='black', linewidths=2, zorder=6)
+                                    color=pt_color, edgecolors='black', linewidths=1, zorder=6)
                     else:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                    color=pt_color, edgecolors='none', zorder=4)
+                                    color=pt_color, edgecolors='0.50', linewidths=0.5, zorder=4)
 
             # Record availability for report
-            availability_report.append({
-                'vid': vid,
-                'v_label': v_label,
-                'cat': cat_name,
-                'counts': quad_counts
-            })
+            if 0:
+                availability_report.append({
+                    'vid': vid,
+                    'v_label': v_label,
+                    'cat': cat_name,
+                    'counts': quad_counts
+                })
 
         if not all_ras: 
             plt.close()
@@ -304,29 +305,25 @@ def main():
         custom_labels.extend(labels)
 
         # Symbols
-        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='gold', 
-                                   markeredgecolor='black', markersize=12, linestyle='None'))
+        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                   markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
+                                   alpha=0.3, linestyle='None'))
         custom_labels.append('Reference Object')
 
         if HAS_PYSIAF:
-            custom_lines.append(Line2D([0], [0], color='gray', linewidth=1.5))
+            custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
             custom_labels.append('MSA Quadrant Boundaries')
 
         # Weight scale
-        weights_to_show = [1, 1000, 1000000]
-        if global_max_wt > 1000000 and global_max_wt not in weights_to_show:
-            weights_to_show.append(int(global_max_wt))
-            
-        for w in weights_to_show:
-            log_w = np.log10(max(1, w))
-            norm_wt = log_w / global_max_log_wt if global_max_log_wt > 0 else 0
-            norm_wt = max(0.0, min(1.0, norm_wt))
+        for frac in [0.0, 0.25, 0.5, 0.75, 1.0]:
+            log_w = frac * global_max_log_wt
+            w = 10**log_w
             sz = 5 + 5 * log_w
-            pt_color = plt.cm.rainbow(norm_wt)
-            pt_alpha = 0.2 + 0.8 * norm_wt
+            pt_color = plt.cm.rainbow(frac)
+            pt_alpha = 0.2 + 0.8 * frac
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
                                        alpha=pt_alpha, markersize=np.sqrt(sz), linestyle='None'))
-            custom_labels.append(f'Weight: {w:,}')
+            custom_labels.append(f'Weight: {w:,.0f}')
             
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
                                    markeredgecolor='black', markeredgewidth=2, markersize=10, linestyle='None'))
@@ -334,7 +331,7 @@ def main():
         
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
-        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.grid(False)
         plt.tight_layout()
         
         save_path = output_dir / f"{filename_prefix}.png"
@@ -347,14 +344,15 @@ def main():
     for obs_id, rows in sorted(obs_groups.items()):
         plot_group(rows, f"MSA Coverage: Observation {obs_id}", f"{xml_stem}_Obs{obs_id}")
     
-    # Print availability summary
-    print("\nAVAILABILITY SUMMARY PER QUADRANT (Available In Field):")
-    print("-" * 60)
-    for entry in sorted(availability_report, key=lambda x: str(x['vid'])):
-        print(f"Visit {entry['v_label']} (Catalog: {entry['cat']})")
-        for q, counts in entry['counts'].items():
-            print(f"  Quad {q}: {counts['ref']} Ref Stars, {counts['sci']} Science Targets")
+    if 0:
+        # Print availability summary
+        print("\nAVAILABILITY SUMMARY PER QUADRANT (Available In Field):")
         print("-" * 60)
+        for entry in sorted(availability_report, key=lambda x: str(x['vid'])):
+            print(f"Visit {entry['v_label']} (Catalog: {entry['cat']})")
+            for q, counts in entry['counts'].items():
+                print(f"  Quad {q}: {counts['ref']} Ref Stars, {counts['sci']} Science Targets")
+            print("-" * 60)
 
 if __name__ == "__main__":
     main()
