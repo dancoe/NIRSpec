@@ -409,10 +409,13 @@ def main():
                         scale = 0.05 * (max(x_min, x_max) - min(x_min, x_max))
                         dx, dy = unit_disp * scale
                         
-                        plt.arrow(arrow_x, arrow_y, dx, dy, color='red', head_width=0.01*scale, 
-                                  head_length=0.02*scale, width=0.005*scale, zorder=10)
-                        plt.text(arrow_x + dx/2, arrow_y - 0.02*scale, "Dispersion", color='red', 
-                                 ha='center', va='top', fontsize=8, fontweight='bold', zorder=10)
+                        # Use black color, larger arrowhead
+                        plt.arrow(arrow_x, arrow_y, dx, dy, color='black', head_width=0.015*scale, 
+                                  head_length=0.03*scale, width=0.005*scale, zorder=10, 
+                                  length_includes_head=True)
+                        # Text above the arrow
+                        plt.text(arrow_x + dx/2, arrow_y + max(0, dy) + 0.01*scale, "Dispersion", color='black', 
+                                 ha='center', va='bottom', fontsize=8, fontweight='bold', zorder=10)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
 
@@ -468,7 +471,7 @@ def main():
             custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
             custom_labels.append('MSA Quadrants')
             
-        custom_lines.append(Line2D([0], [0], color='red', linewidth=1.5))
+        custom_lines.append(Line2D([0], [0], color='black', linewidth=1.5))
         custom_labels.append('Dispersion Direction')
             
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
