@@ -51,6 +51,7 @@ from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more
 | `docs/APT_XML.md` | Reference for the APT XML schema — where specific data lives in the XML tree. |
 | `docs/APT_exports.md` | Guide to the supplementary CSV exports (MSATA, Wavelengths) and how the script finds them. |
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
+| `docs/ChangeLog.md` | Historical log of updates and new features added to the tool. |
 
 ---
 
@@ -140,7 +141,7 @@ The report is organized into 16 sections that are printed in sequence:
 11. **MSA Configurations & Strategy** — Slitlet counts, primary/filler breakdown, and whether Leakcal and Confirmation Images are enabled.
 12. **MSATA & Reference Stars** — Detailed breakdown of reference stars *used* (from TA CSV) and *available* (calculated via **PySIAF**), including quadrant coverage.
 13. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
-14. **High Priority Targets** — Coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
+14. **High Priority Targets** — Per-visit coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
 15. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
 16. **Final Summary** — A concise technical sign-off including:
     - Counts of **Reviewed**, **COMPLETE** (excluded), and **Excluded** observations.

@@ -825,7 +825,7 @@ class NIRSpecMOSReviewer:
             
             analysis[cat_name] = {
                 'top_20': [],
-                'results': {} # source_id -> {obs_num: {n_obs: count, n_total: count}}
+                'results': {} # source_id -> {obs_num: {v_key: {gf: {n_obs, n_total}}}}
             }
             
             for sid, val in top_20:
@@ -835,36 +835,49 @@ class NIRSpecMOSReviewer:
 
         # Scan observations
         for obs_num, data in self.analytics.items():
-            raw_cat = data.get('primary_candidate_set', "")
-            # Extract name from "Name (N sources)"
-            cat_name = raw_cat.split('(')[0].strip() if '(' in raw_cat else raw_cat
-            
-            if cat_name not in analysis: continue
+            cat_name = data.get('target_name')
+            if not cat_name or cat_name not in analysis:
+                continue
             
             # Configurations used in Pointings (excluding ALLCLOSED)
             pointings = data.get('configs', [])
             # Map Config Name -> set of Primary IDs
             cfg_id_map = {c['name']: set(c['primary_ids']) for c in data.get('msa_configs', [])}
             
-            for sid_info in analysis[cat_name]['top_20']:
-                sid = sid_info['id']
-                # Store breakdown by gf (Grating/Filter)
-                # results[sid][obs_num] = { gf: {n_obs, n_total}, ... }
-                if obs_num not in analysis[cat_name]['results'][sid]:
-                    analysis[cat_name]['results'][sid][obs_num] = {}
+            # Split pointings into visits
+            v_info = data.get('visit_info', {})
+            v_keys = sorted(v_info.keys(), key=int) if v_info else ['1']
+            num_visits = len(v_keys)
+            num_pts = len(pointings)
+            
+            # Simple division for now. Correct for many APT scenarios.
+            pts_per_visit = num_pts // num_visits if num_visits > 0 else num_pts
+            
+            for v_idx, v_key in enumerate(v_keys):
+                start_p = v_idx * pts_per_visit
+                end_p   = (v_idx + 1) * pts_per_visit if v_idx < num_visits-1 else num_pts
+                v_pointings = pointings[start_p:end_p]
                 
-                obs_res = analysis[cat_name]['results'][sid][obs_num]
-                
-                for pt in pointings:
-                    if pt['config'] == 'ALLCLOSED': continue
-                    gf = pt.get('gf', 'Unknown')
-                    if gf not in obs_res:
-                        obs_res[gf] = {'n_obs': 0, 'n_total': 0}
+                for sid_info in analysis[cat_name]['top_20']:
+                    sid = sid_info['id']
+                    if obs_num not in analysis[cat_name]['results'][sid]:
+                        analysis[cat_name]['results'][sid][obs_num] = {}
                     
-                    cnt = pt.get('total_ints', 1)
-                    obs_res[gf]['n_total'] += cnt
-                    if sid in cfg_id_map.get(pt['config'], set()):
-                        obs_res[gf]['n_obs'] += cnt
+                    if v_key not in analysis[cat_name]['results'][sid][obs_num]:
+                                analysis[cat_name]['results'][sid][obs_num][v_key] = {}
+                    
+                    v_res = analysis[cat_name]['results'][sid][obs_num][v_key]
+                    
+                    for pt in v_pointings:
+                        if pt['config'] == 'ALLCLOSED': continue
+                        gf = pt.get('gf', 'Unknown')
+                        if gf not in v_res:
+                            v_res[gf] = {'n_obs': 0, 'n_total': 0}
+                        
+                        cnt = pt.get('total_ints', 1)
+                        v_res[gf]['n_total'] += cnt
+                        if sid in cfg_id_map.get(pt['config'], set()):
+                            v_res[gf]['n_obs'] += cnt
         
         self.stats['high_priority_analysis'] = analysis
 
@@ -1042,7 +1055,8 @@ class NIRSpecMOSReviewer:
                 # 2. Background Limited
                 bg_lim = self.find(sr_node, 'BackgroundLimited')
                 if bg_lim is not None:
-                    pct = bg_lim.text or "active"
+                    # Strip to avoid newlines botched summary table
+                    pct = (bg_lim.text or "").strip() or "active"
                     sr_data['bg_lim'] = pct
                 
                 # 3. No Parallel
@@ -1054,7 +1068,15 @@ class NIRSpecMOSReviewer:
                 for child in sr_node:
                     tag = child.tag.split('}')[-1]
                     if tag not in ['OrientRange', 'BackgroundLimited', 'NoParallel']:
-                        sr_data['others'].append(f"{tag}: {child.text or 'active'}")
+                        # Get all text inside recursively, joined by spaces, then stripped
+                        text = " ".join([t.strip() for t in child.itertext() if t.strip()])
+                        val = text if text else "active"
+                        
+                        # Make tag more readable (e.g. SamePAVisits -> Visits Same PA)
+                        readable_tag = re.sub(r'([a-z])([A-Z])', r'\1 \2', tag)
+                        if readable_tag == "Same PA Visits": readable_tag = "Visits Same PA"
+                        
+                        sr_data['others'].append(f"{readable_tag}: {val}")
 
             self.analytics[num]['special_reqs_data'] = sr_data
             
@@ -1876,129 +1898,150 @@ class NIRSpecMOSReviewer:
             filters = ", ".join(info.get('weight_filters', []))
             write(f"{obs_num:<5} | {target:<35} | {sources:<8} | {ref:<5} | "
                   f"{acc:<6} | {w_min:<10} | {w_max:<10} | {filters}")
-
     def _report_high_priority_targets(self, write, icons):
-        """Report coverage for the top 20 weighted targets in each catalog."""
+        """Report coverage for the top 20 weighted targets in each catalog, split by visit."""
         analysis = self.stats.get('high_priority_analysis')
         if not analysis:
             return
+
+        write("\n" + "="*60)
+        write("HIGH PRIORITY TARGET ANALYSIS")
+        write("="*60)
             
         # Group catalogs by observation usage
         active_obs = sorted(self.analytics.keys(), key=int)
         
         for obs_num in active_obs:
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
-            raw_cat = self.analytics[obs_num].get('primary_candidate_set', "")
-            cat_name = raw_cat.split('(')[0].strip() if '(' in raw_cat else raw_cat
+            cat_name = self.analytics[obs_num].get('target_name')
             if not cat_name or cat_name not in analysis:
                 continue
 
-            # Find all GFs and their total possible exposures in this observation
-            gf_totals = {}
-            for pt in self.analytics[obs_num].get('configs', []):
-                if pt['config'] == 'ALLCLOSED': continue
-                gf = pt.get('gf', 'Unknown')
-                gf_totals[gf] = gf_totals.get(gf, 0) + pt.get('total_ints', 1)
+            analysis_data = analysis[cat_name]['results']
+            v_keys = sorted(self.analytics[obs_num].get('visit_info', {}).keys(), key=int)
+            if not v_keys: v_keys = ['1']
             
-            if not gf_totals: continue
-            
-            gfs = sorted(gf_totals.keys())
-            
-            write("\n" + "="*120)
-            write(f"HIGH PRIORITY TARGET ANALYSIS: Observation {obs_num}")
-            write(f"Catalog: {cat_name}")
-            write("="*120)
-            
-            # Header
-            header = f"{'Source ID':<12} | {'Weight':<10}"
-            for gf in gfs:
-                header += f" | {gf:<18}"
-            write(header)
-            write("-" * len(header))
-            
-            cat_results = analysis[cat_name]['results']
-            for sid_info in analysis[cat_name]['top_20']:
-                sid = sid_info['id']
-                weight = sid_info['weight']
+            for v_key in v_keys:
+                # Find all GFs and their total possible exposures in this visit
+                # We can derive this from the analysis results of any target
+                top_20 = analysis[cat_name]['top_20']
+                if not top_20: continue
                 
-                row = f"{str(sid):>2}          | {weight:<10.0f}"
+                first_sid = top_20[0]['id']
+                visit_res_sample = analysis_data.get(first_sid, {}).get(obs_num, {}).get(v_key, {})
+                if not visit_res_sample: continue
+                
+                gf_totals = {gf: res['n_total'] for gf, res in visit_res_sample.items() if res['n_total'] > 0}
+                if not gf_totals: continue
+                
+                gfs = sorted(gf_totals.keys())
+                
+                # Pre-calculate summary and column widths
+                all_in_all = 0
+                max_id_w = len("ID")
+                max_weight_w = len("Weight")
+                
+                for sid_info in top_20:
+                    sid = sid_info['id']
+                    max_id_w = max(max_id_w, len(str(sid)))
+                    max_weight_w = max(max_weight_w, len(f"{sid_info['weight']:.0f}"))
+                    
+                    visit_target_res = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {})
+                    if visit_target_res:
+                        all_match = True
+                        for gf in gfs:
+                            n_o = visit_target_res.get(gf, {}).get('n_obs', 0)
+                            if n_o != gf_totals[gf]:
+                                all_match = False
+                                break
+                        if all_match: 
+                            all_in_all += 1
+                
+                write(f"\nVisit {obs_num}:{v_key}")
+                write(f"Catalog: {cat_name}")
+                write(f"{all_in_all}/{len(top_20)} high-priority targets observed in ALL exposures")
+                write("-" * 60)
+                
+                # Header
+                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}}"
                 for gf in gfs:
-                    res = cat_results.get(sid, {}).get(obs_num, {}).get(gf, {'n_obs': 0})
-                    n_obs = res['n_obs']
-                    n_total = gf_totals[gf]
+                    header += f" | {gf:<18}"
+                header += " | Wavelength Coverage"
+                write(header)
+                write("-" * len(header))
+                
+                for sid_info in top_20:
+                    sid = sid_info['id']
+                    weight = sid_info['weight']
                     
-                    pct = (n_obs / n_total) * 100 if n_total > 0 else 0
-                    if pct >= 100:
-                        icon = icons['FULL']
-                    elif pct >= 70:
-                        icon = icons['MOSTLY']
-                    elif pct > 33.4:
-                        icon = icons['PARTIAL']
-                    elif pct > 0:
-                        icon = icons['FEW']
-                    else:
-                        icon = icons['EMPTY']
-                    
-                    row += f" | {icon} {n_obs:>2}/{n_total} ({pct:>3.0f}%)"
-                # Prepare wavelength summaries
-                target_waves = self.exports_data['wavelengths'].get(str(obs_num), {}).get(str(sid), {})
-                wave_summaries = []
-                for gf in gfs:
-                    w = target_waves.get(gf, {})
-                    if not w: continue
-                    
-                    try:
-                        n1_min = float(w.get('n1_min', 0))
-                        n1_max = float(w.get('n1_max', 0))
-                        n2_min = float(w.get('n2_min', 0))
-                        n2_max = float(w.get('n2_max', 0))
-                    except: continue
-
-                    # Status flags
-                    n1_full = (n1_min == -1 and n1_max == -2)
-                    n2_full = (n2_min == -1 and n2_max == -2)
-                    n1_gap = (n1_min == n1_max) or (n1_min == 0 and n1_max == 0)
-                    n2_gap = (n2_min == n2_max) or (n2_min == 0 and n2_max == 0)
-                    
-                    s = ""
-                    if n1_full and n2_full:
-                        s = f"{icons['FULL']} FULL"
-                    elif n1_full and n2_gap:
-                        s = f"{icons['FULL']} FULL (NRS1)"
-                    elif n2_full and n1_gap:
-                        s = f"{icons['FULL']} FULL (NRS2)"
-                    elif n1_max > 0 and n2_min > 0:
-                        s = f"{icons['PARTIAL']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
-                    elif n1_gap and n2_min > 0:
-                        s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
-                    elif n2_gap and n1_max > 0:
-                        s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
-                    elif n1_min == -1 and n1_max > 0 and n2_gap:
-                         s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
-                    elif n2_min > 0 and n2_max == -2 and n1_gap:
-                         s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
-                    
-                    if s: wave_summaries.append(s)
-
-                if wave_summaries:
-                    row += f" | {' | '.join(wave_summaries)}"
-                write(row)
-            
-            # Summary for this obs/cat
-            all_in_all = 0
-            for sid_info in analysis[cat_name]['top_20']:
-                sid = sid_info['id']
-                target_obs_res = cat_results.get(sid, {}).get(obs_num, {})
-                if target_obs_res:
-                    all_match = True
+                    row = f"{str(sid):>{max_id_w}} | {weight:>{max_weight_w}.0f}"
                     for gf in gfs:
-                        n_o = target_obs_res.get(gf, {}).get('n_obs', 0)
-                        if n_o != gf_totals[gf]:
-                            all_match = False
-                            break
-                    if all_match: all_in_all += 1
-            
-            write(f"\nSummary for Obs {obs_num} ({cat_name}): {all_in_all}/20 high-priority targets observed in ALL exposures.")
+                        res = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {}).get(gf, {'n_obs': 0})
+                        n_obs = res['n_obs']
+                        n_total = gf_totals[gf]
+                        
+                        pct = (n_obs / n_total) * 100 if n_total > 0 else 0
+                        if pct >= 100:
+                            icon = icons['FULL']
+                        elif pct >= 70:
+                            icon = icons['MOSTLY']
+                        elif pct > 33.4:
+                            icon = icons['PARTIAL']
+                        elif pct > 0:
+                            icon = icons['FEW']
+                        else:
+                            icon = icons['EMPTY']
+                        
+                        row += f" | {icon} {n_obs:>2}/{n_total} ({pct:>3.0f}%)"
+                    
+                    # Prepare wavelength summaries
+                    target_waves = self.exports_data['wavelengths'].get(str(obs_num), {}).get(str(sid), {})
+                    wave_summaries = []
+                    for gf in gfs:
+                        w = target_waves.get(gf, {})
+                        if not w: continue
+                        
+                        # Only show if there were exposures for this GF in this visit
+                        n_obs_gf = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {}).get(gf, {}).get('n_obs', 0)
+                        if n_obs_gf == 0: continue
+
+                        try:
+                            n1_min = float(w.get('n1_min', 0))
+                            n1_max = float(w.get('n1_max', 0))
+                            n2_min = float(w.get('n2_min', 0))
+                            n2_max = float(w.get('n2_max', 0))
+                        except: continue
+
+                        # Status flags
+                        n1_full = (n1_min == -1 and n1_max == -2)
+                        n2_full = (n2_min == -1 and n2_max == -2)
+                        n1_gap = (n1_min == n1_max) or (n1_min == 0 and n1_max == 0)
+                        n2_gap = (n2_min == n2_max) or (n2_min == 0 and n2_max == 0)
+                        
+                        s = ""
+                        if n1_full and n2_full:
+                            s = f"{icons['FULL']} FULL"
+                        elif n1_full and n2_gap:
+                            s = f"{icons['FULL']} FULL (NRS1)"
+                        elif n2_full and n1_gap:
+                            s = f"{icons['FULL']} FULL (NRS2)"
+                        elif n1_max > 0 and n2_min > 0:
+                            s = f"{icons['PARTIAL']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
+                        elif n1_gap and n2_min > 0:
+                            s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                        elif n2_gap and n1_max > 0:
+                            s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                        elif n1_min == -1 and n1_max > 0 and n2_gap:
+                             s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                        elif n2_min > 0 and n2_max == -2 and n1_gap:
+                             s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                        
+                        if s: wave_summaries.append(s)
+
+                    if wave_summaries:
+                        row += f" | {' | '.join(wave_summaries)}"
+                    write(row)
+                
 
     def _report_observing_description(self, write):
         """Observing description and MAZ justification (Title/PI moved to SUMMARY)."""
