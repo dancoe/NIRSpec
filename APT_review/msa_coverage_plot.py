@@ -381,12 +381,16 @@ def main():
 
         # Draw dispersion arrow (Q3 -> Q1 direction) with gradient
         try:
-            x_min, x_max = plt.xlim()
-            y_min, y_max = plt.ylim()
             # RA is inverted: Large on left, Small on right
             # Bottom right is near x_max (small RA) and y_min (small Dec)
+            orig_xlim = plt.xlim()
+            orig_ylim = plt.ylim()
+            x_min, x_max = orig_xlim
+            y_min, y_max = orig_ylim
+            
+            # Position safely within the plot area
             arrow_x = x_min + 0.90 * (x_max - x_min)
-            arrow_y = y_min + 0.10 * (y_max - y_min)
+            arrow_y = y_min + 0.15 * (y_max - y_min)
             
             if HAS_PYSIAF:
                 v3_c, v1_c = None, None
@@ -407,9 +411,6 @@ def main():
                         # Rainbow gradient for 80% of the length
                         shaft_len = 0.8 * total_len
                         # Head for the remaining 20%
-                        head_start = shaft_len
-                        head_end = total_len
-                        
                         dx_shaft, dy_shaft = unit_disp * shaft_len
                         dx_total, dy_total = unit_disp * total_len
                         
@@ -434,9 +435,13 @@ def main():
                         # Text "Dispersion" positioned above the entire arrow structure
                         tip_x, tip_y = arrow_x + dx_total, arrow_y + dy_total
                         text_x = (arrow_x + tip_x) / 2
-                        text_y = max(arrow_y, tip_y) - 0.0 * abs(y_max - y_min)
+                        text_y = max(arrow_y, tip_y)
                         plt.text(text_x, text_y, "Dispersion", color='black', 
                                  ha='center', va='bottom', fontsize=9, zorder=12)
+            
+            # Ensure the arrow hasn't expanded our plot box
+            plt.xlim(orig_xlim)
+            plt.ylim(orig_ylim)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
         
@@ -486,9 +491,6 @@ def main():
         if HAS_PYSIAF:
             custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
             custom_labels.append('MSA Quadrants')
-            
-        custom_lines.append(Line2D([0], [0], color='black', linewidth=1.5))
-        custom_labels.append('Dispersion Direction')
             
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
