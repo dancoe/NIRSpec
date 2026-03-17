@@ -401,30 +401,32 @@ def main():
                     disp_len = np.sqrt(np.sum(disp_vec**2))
                     if disp_len > 0:
                         unit_disp = disp_vec / disp_len
-                        # Make it 12% of plot width for better visibility
-                        arrow_len = 0.12 * abs(x_max - x_min)
+                        # Make it 6% of plot width (half as long)
+                        arrow_len = 0.06 * abs(x_max - x_min)
                         dx, dy = unit_disp * arrow_len
                         
-                        # Draw gradient line with higher density and thickness
-                        n_segments = 100
+                        # Draw gradient line with rainbow colormap (0.2 to 1.0)
+                        n_segments = 50
                         for i in range(n_segments):
                             frac = i / n_segments
                             p1 = (arrow_x + dx * frac, arrow_y + dy * frac)
                             p2 = (arrow_x + dx * (i + 1) / n_segments, arrow_y + dy * (i + 1) / n_segments)
-                            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=plt.cm.jet(frac), 
+                            # Start at 0.2 to skip purple and start at blue
+                            rainbow_color = plt.cm.rainbow(0.2 + 0.8 * frac)
+                            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=rainbow_color, 
                                      lw=3.5, zorder=10, solid_capstyle='butt')
                         
-                        # Prominent black arrowhead at the tip
+                        # Smaller black arrowhead at the tip
                         plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), 
-                                     xytext=(arrow_x + dx * 0.9, arrow_y + dy * 0.9),
-                                     arrowprops=dict(arrowstyle='simple,head_width=1.5,head_length=2.0', 
+                                     xytext=(arrow_x + dx * 0.85, arrow_y + dy * 0.85),
+                                     arrowprops=dict(arrowstyle='simple,head_width=0.8,head_length=1.2', 
                                                      color='black', lw=0.5),
                                      zorder=11)
                                      
-                        # Text "Dispersion" clearly above the arrow
-                        plt.text(arrow_x + dx/2, arrow_y + dy/2 + 0.04 * abs(y_max - y_min), 
-                                 "Dispersion", color='black', ha='center', va='bottom', 
-                                 fontsize=9, fontweight='bold', zorder=12)
+                        # Text "Dispersion" positioned above the arrow
+                        text_y = max(arrow_y, arrow_y + dy) + 0.02 * abs(y_max - y_min)
+                        plt.text(arrow_x + dx/2, text_y, "Dispersion", color='black', 
+                                 ha='center', va='bottom', fontsize=9, fontweight='bold', zorder=12)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
         
