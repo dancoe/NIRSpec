@@ -2707,6 +2707,7 @@ if __name__ == "__main__":
     parser.add_argument("--include", "-i", help="Observations to include (e.g. '1,3-5,10')")
     parser.add_argument("--exclude", "-e", help="Observations to exclude (e.g. '2,6-8')")
     parser.add_argument("--exports", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
+    parser.add_argument("--noplots", action="store_true", help="Do not generate MSA coverage plots")
     args = parser.parse_args()
 
     # --obs is a friendly alias for --include
@@ -2723,4 +2724,5 @@ if __name__ == "__main__":
         exports_dir=args.exports
     )
     reviewer.print_report()
-    reviewer.generate_plots()
+    if not args.noplots:
+        reviewer.generate_plots()

@@ -54,6 +54,7 @@ Visit 1:1
   76 |  75000 | 🌕 27/27 (100%) | 🌔 GAP: 3.20 – 3.48 µm
   77 |  75000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
  104 |  75000 | 🌕 27/27 (100%) | 🌓 CUTOFF: 3.06 µm – (NRS1)
+ 132 |  50000 | 🌕 27/27 (100%) | 🌗 CUTOFF: (NRS2) – 3.52 µm 
 ```
 
 
@@ -126,10 +127,13 @@ The script automatically finds relevant CSV files (MSATA Target Info, Wavelength
 python APT_review.py program.aptx --exports ./my_exports/
 ```
 
-### 3. Override the output path
+### 3. Override the output path or suppress plots
 
 ```bash
 python APT_review.py /path/to/program.aptx --output my_report.txt
+
+# Do not generate MSA coverage plots
+python APT_review.py program.aptx --noplots
 ```
 
 ### 3. Review only specific observations
