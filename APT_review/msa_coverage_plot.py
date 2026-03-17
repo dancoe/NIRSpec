@@ -405,27 +405,32 @@ def main():
                         arrow_len = 0.06 * abs(x_max - x_min)
                         dx, dy = unit_disp * arrow_len
                         
-                        # Draw gradient line with rainbow colormap (0.2 to 1.0)
+                        # Draw gradient line with rainbow colormap (0.15 to 1.0)
                         n_segments = 50
                         for i in range(n_segments):
                             frac = i / n_segments
                             p1 = (arrow_x + dx * frac, arrow_y + dy * frac)
                             p2 = (arrow_x + dx * (i + 1) / n_segments, arrow_y + dy * (i + 1) / n_segments)
-                            # Start at 0.2 to skip purple and start at blue
-                            rainbow_color = plt.cm.rainbow(0.2 + 0.8 * frac)
+                            # Start at 0.15 to skip deep purple
+                            rainbow_color = plt.cm.rainbow(0.15 + 0.85 * frac)
                             plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=rainbow_color, 
                                      lw=3.5, zorder=10, solid_capstyle='butt')
                         
-                        # Smaller black arrowhead at the tip
-                        plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), 
-                                     xytext=(arrow_x + dx * 0.85, arrow_y + dy * 0.85),
+                        # Black arrowhead starting exactly at the end of red path
+                        # Extend the total length slightly for the head itself
+                        head_scale = 0.2 # Head length relative to shaft
+                        plt.annotate("", xy=(arrow_x + dx * (1 + head_scale), arrow_y + dy * (1 + head_scale)), 
+                                     xytext=(arrow_x + dx, arrow_y + dy),
                                      arrowprops=dict(arrowstyle='simple,head_width=0.8,head_length=1.2', 
                                                      color='black', lw=0.5),
                                      zorder=11)
                                      
-                        # Text "Dispersion" positioned above the arrow
-                        text_y = max(arrow_y, arrow_y + dy) + 0.02 * abs(y_max - y_min)
-                        plt.text(arrow_x + dx/2, text_y, "Dispersion", color='black', 
+                        # Text "Dispersion" positioned above the entire arrow structure
+                        tip_x = arrow_x + dx * (1 + head_scale)
+                        tip_y = arrow_y + dy * (1 + head_scale)
+                        text_x = (arrow_x + tip_x) / 2
+                        text_y = max(arrow_y, tip_y) + 0.02 * abs(y_max - y_min)
+                        plt.text(text_x, text_y, "Dispersion", color='black', 
                                  ha='center', va='bottom', fontsize=9, fontweight='bold', zorder=12)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
