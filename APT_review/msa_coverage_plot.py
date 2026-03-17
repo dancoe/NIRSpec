@@ -123,11 +123,12 @@ def load_catalogs(xml_path):
             sources = []
             for row in reader:
                 try:
+                    s_id = row.get(id_col, '')
                     w = float(row.get(weight_col, 0))
                     is_ref = str(row.get(ref_col, '')).lower() == 'true'
                     ra = float(row.get(ra_col, 0))
                     dec = float(row.get(dec_col, 0))
-                    sources.append({'weight': w, 'is_ref': is_ref, 'ra': ra, 'dec': dec})
+                    sources.append({'id': s_id, 'weight': w, 'is_ref': is_ref, 'ra': ra, 'dec': dec})
                 except: continue
             catalogs[name] = sources
     return catalogs
@@ -183,6 +184,31 @@ def main():
     def plot_group(rows, title, filename_prefix):
         plt.figure(figsize=(10, 8))
         
+        # Identify observed/used IDs for this observation
+        obs_id_str = rows[0]['OBS_ID']
+        prop_id = Path(xml_path).stem.replace('JWST', '')
+        msa_dir = Path(xml_path).parent / 'msatargets'
+        observed_ids = set()
+        used_ref_ids = set()
+        
+        if msa_dir.exists():
+            # Science targets
+            for f in msa_dir.glob(f"{prop_id}-obs{obs_id_str}-exp*.csv"):
+                try:
+                    m_df = pd.read_csv(f)
+                    id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                    if id_col:
+                        observed_ids.update(m_df[id_col].astype(str).tolist())
+                except: pass
+            # Reference stars
+            for f in msa_dir.glob(f"{prop_id}-obs{obs_id_str}-*-TA.csv"):
+                try:
+                    m_df = pd.read_csv(f)
+                    id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                    if id_col:
+                        used_ref_ids.update(m_df[id_col].astype(str).tolist())
+                except: pass
+
         # Calculate min/max weight for this group's catalogs
         group_weights = []
         group_cat_names = set([r['Target'] for r in rows if r['Target'] in catalogs])
@@ -249,7 +275,7 @@ def main():
                 q_ra_max, q_dec_max = np.max(q_poly, axis=0)
                 qc_ra, qc_dec = (q_ra_min + q_ra_max)/2, (q_dec_min + q_dec_max)/2
                 plt.text(qc_ra, qc_dec, f"{v_label_str}\nQ{q_idx}", color='black', alpha=1.0,
-                         fontsize=10, fontweight='bold', ha='center', va='center')
+                         fontsize=8, ha='center', va='center')
 
             # Calculate availability counts (internal data)
             quad_counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
@@ -295,16 +321,37 @@ def main():
                 pt_alpha = 0.2 + 0.8 * norm_wt
 
                 if src['is_ref']:
+                    is_used = src['id'] in used_ref_ids
                     plt.scatter(src['ra'], src['dec'], marker='*', s=50, color='0.50', 
-                                edgecolors='black', linewidths=0.5, alpha=0.3, zorder=-1)
+                                edgecolors='lime' if is_used else 'black', 
+                                linewidths=1.0 if is_used else 0.5, alpha=0.3, zorder=-1 if not is_used else 0)
                 else:
                     is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
+                    is_observed = src['id'] in observed_ids
+                    
+                    edge_color = '0.50'
+                    l_width = 0.5
+                    z_ord = 4
+                    
+                    if is_observed:
+                        edge_color = 'lime'
+                        l_width = 1.0
+                        z_ord = 5
+                    
                     if is_highest:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
                                     color=pt_color, edgecolors='black', linewidths=1, zorder=6)
+                        if is_observed: # Double outline for observed highest? Just use lime for now or black?
+                            # User asked for green outline around observed. 
+                            # If it's highest, it already has black. Let's add a green one outside?
+                            # Or just prioritize green for observed?
+                            # "Add a green outline around objects actually observed and reference stars actually used"
+                            # Let's use green.
+                            plt.scatter(src['ra'], src['dec'], marker='o', s=size+4, alpha=pt_alpha, 
+                                        color='none', edgecolors='lime', linewidths=1.5, zorder=7)
                     else:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                    color=pt_color, edgecolors='0.50', linewidths=0.5, zorder=4)
+                                    color=pt_color, edgecolors=edge_color, linewidths=l_width, zorder=z_ord)
 
         if not all_ras: 
             plt.close()
@@ -319,6 +366,12 @@ def main():
         from matplotlib.lines import Line2D
         custom_lines = []
         custom_labels = []
+
+        # 0. Catalog Name (at the bottom)
+        if group_cat_names:
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            cat_list = ", ".join(sorted(group_cat_names))
+            custom_labels.append(f'Catalog: {cat_list}')
 
         # 1. Highest Priority
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
@@ -341,25 +394,29 @@ def main():
                                    markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
                                    alpha=0.3, linestyle='None'))
         custom_labels.append('Reference Object')
+        
+        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=np.sqrt(50), 
+                                   alpha=0.3, linestyle='None'))
+        custom_labels.append('Reference Object (Used)')
 
-        # 4. MSA Quadrants
+        # 4. Observed Target
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.8', 
+                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=8, linestyle='None'))
+        custom_labels.append('Observed Target (Green Outline)')
+
+        # 5. MSA Quadrants
         if HAS_PYSIAF:
             custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
             custom_labels.append('MSA Quadrants')
             
-        # 5. Catalog Name (at the bottom)
-        if group_cat_names:
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            cat_list = ", ".join(sorted(group_cat_names))
-            custom_labels.append(f'Catalog: {cat_list}')
-
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
         plt.grid(False)
         plt.tight_layout()
         
         save_path = output_dir / f"{filename_prefix}.png"
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=150)
         plt.close()
         print(f"Plot saved to: {save_path}")
 
