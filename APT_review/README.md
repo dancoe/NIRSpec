@@ -39,6 +39,17 @@ from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more
 👷 1 observation under construction: Obs 2
 ```
 
+**SPAR REVIEW Checklist:**
+
+```
+TARGET ACQUISITION
+✅ MOS MSATA
+
+BRIGHT SOURCE CHECKING
+👁️ no bright sources
+...
+```
+
 ![MSA Coverage Plot](docs/JWST7729_msa_coverage.png)
 
 ---
