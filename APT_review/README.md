@@ -127,16 +127,19 @@ The script automatically finds relevant CSV files (MSATA Target Info, Wavelength
 python APT_review.py program.aptx --exports ./my_exports/
 ```
 
-### 3. Override the output path or suppress plots
+### 3. Override the output report file path
 
 ```bash
 python APT_review.py /path/to/program.aptx --output my_report.txt
+```
 
-# Do not generate MSA coverage plots
+### 4. Do not generate MSA coverage plots
+
+```bash
 python APT_review.py program.aptx --noplots
 ```
 
-### 3. Review only specific observations
+### 5. Review only specific observations
 
 By default, the script **excludes observations with a `COMPLETED` status** in APT.
 
