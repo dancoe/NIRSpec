@@ -150,11 +150,21 @@ def main():
     
     catalogs = load_catalogs(xml_path)
     
-    global_max_wt = 1
+    all_weights = []
     for cat_sources in catalogs.values():
-        if cat_sources:
-            global_max_wt = max(global_max_wt, max([s['weight'] for s in cat_sources] + [1]))
-    global_max_log_wt = np.log10(global_max_wt) if global_max_wt > 1 else 1.0
+        all_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
+    
+    if all_weights:
+        global_min_wt = min(all_weights)
+        global_max_wt = max(all_weights)
+    else:
+        global_min_wt = 1
+        global_max_wt = 1
+        
+    global_min_log_wt = np.log10(global_min_wt)
+    global_max_log_wt = np.log10(global_max_wt)
+    if global_max_log_wt == global_min_log_wt:
+        global_max_log_wt = global_min_log_wt + 1.0
     
     # Process visits to group by Obs
     obs_groups = {} # obs_id -> [rows]
@@ -196,15 +206,19 @@ def main():
         all_ras = []
         all_decs = []
         
+        unique_catalogs = {} # cat_name -> row to use as reference
+        
         for i, row in enumerate(rows):
             vid = row['Visit ID']
             v_label = row.get('V_LABEL', str(vid))
             cat_name = row['Target']
+            if cat_name not in unique_catalogs:
+                unique_catalogs[cat_name] = row
+            
             s_region = row['s_region']
             ra_ptr = row['RA Center Rot']
             dec_ptr = row['Dec Center Rot']
             pa_ptr = row['Orient Used']
-            color = colors[i % 10]
             
             poly = parse_s_region(s_region)
             if poly is None: continue
@@ -212,14 +226,14 @@ def main():
             all_ras.extend(poly[:, 0])
             all_decs.extend(poly[:, 1])
             
-            # Do not plot full MSA as faint background to avoid white haze
+            # Do not plot full MSA background
             
             # Calculate PySIAF quadrants
             main_ap_name = row.get('Aperture', 'NRS_FULL_MSA')
             quads = get_siaf_quadrants(ra_ptr, dec_ptr, pa_ptr, main_ap_name)
             
             if not quads:
-                print(f"Error: PySIAF required for quadrant analysis. Skipping visit {v_label}.")
+                print(f"Warning: PySIAF calculation failed for {v_label}")
                 continue
 
             # Draw quadrant boundaries
@@ -227,40 +241,55 @@ def main():
             for q_idx, q_poly in quads.items():
                 plt.plot(np.append(q_poly[:, 0], q_poly[0,0]), np.append(q_poly[:,1], q_poly[0,1]), 
                          color='black', linewidth=0.5, alpha=1.0)
-                # Label quads
-                q_center = np.mean(q_poly, axis=0)
-                plt.text(q_center[0], q_center[1], f"{v_label_str}\nQ{q_idx}", color='black', alpha=1.0,
+                # Label quads - use bounding box center for robust centering
+                q_ra_min, q_dec_min = np.min(q_poly, axis=0)
+                q_ra_max, q_dec_max = np.max(q_poly, axis=0)
+                qc_ra, qc_dec = (q_ra_min + q_ra_max)/2, (q_dec_min + q_dec_max)/2
+                plt.text(qc_ra, qc_dec, f"{v_label_str}\nQ{q_idx}", color='black', alpha=1.0,
                          fontsize=10, fontweight='bold', ha='center', va='center')
 
+            # Calculate availability counts (internal data)
             quad_counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
-            
-            # Find rough FOV center for filtering targets
             c_ra, c_dec = np.mean(poly, axis=0)
-            
-            # Plot catalog targets
             cat_sources = catalogs.get(cat_name, [])
+            for src in cat_sources:
+                if abs(src['ra'] - c_ra) > 0.15 or abs(src['dec'] - c_dec) > 0.15:
+                    continue
+                for q_idx, q_poly in quads.items():
+                    if is_inside((src['ra'], src['dec']), q_poly):
+                        if src['is_ref']: quad_counts[q_idx]['ref'] += 1
+                        else: quad_counts[q_idx]['sci'] += 1
+                        break
+            
+            if 0: # Still disabled as requested
+                availability_report.append({
+                    'vid': vid,
+                    'v_label': v_label,
+                    'cat': cat_name,
+                    'counts': quad_counts
+                })
+
+        # Plot catalog targets ONCE per observation to avoid density haze
+        log_range = global_max_log_wt - global_min_log_wt
+        if log_range == 0: log_range = 1.0
+        obs_c_ra = (min(all_ras) + max(all_ras)) / 2
+        obs_c_dec = (min(all_decs) + max(all_decs)) / 2
+
+        for cat_name in unique_catalogs:
+            cat_sources = catalogs.get(cat_name, [])
+            if not cat_sources: continue
+            
             # Find max weight in this catalog for highest priority outline
             max_wt = max([s['weight'] for s in cat_sources] + [0])
 
             for src in cat_sources:
-                # Coordinate filter for performance
-                if abs(src['ra'] - c_ra) > 0.15 or abs(src['dec'] - c_dec) > 0.15:
+                if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
                     continue
                 
-                # Check which quadrant it falls into using PySIAF quads
-                for q_idx, q_poly in quads.items():
-                    if is_inside((src['ra'], src['dec']), q_poly):
-                        if src['is_ref']:
-                            quad_counts[q_idx]['ref'] += 1
-                        else:
-                            quad_counts[q_idx]['sci'] += 1
-                        break
-                
-                # Plotting
-                log_w = np.log10(max(1, src['weight']))
-                norm_wt = log_w / global_max_log_wt if global_max_log_wt > 0 else 0
+                log_w = np.log10(max(1e-6, src['weight']))
+                norm_wt = (log_w - global_min_log_wt) / log_range
                 norm_wt = max(0.0, min(1.0, norm_wt))
-                size = 5 + 5 * log_w
+                size = 5 + 5 * (log_w - global_min_log_wt)
                 pt_color = plt.cm.rainbow(norm_wt)
                 pt_alpha = 0.2 + 0.8 * norm_wt
 
@@ -275,15 +304,6 @@ def main():
                     else:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
                                     color=pt_color, edgecolors='0.50', linewidths=0.5, zorder=4)
-
-            # Record availability for report
-            if 0:
-                availability_report.append({
-                    'vid': vid,
-                    'v_label': v_label,
-                    'cat': cat_name,
-                    'counts': quad_counts
-                })
 
         if not all_ras: 
             plt.close()
@@ -315,10 +335,12 @@ def main():
             custom_labels.append('MSA Quadrant Boundaries')
 
         # Weight scale
+        log_range = global_max_log_wt - global_min_log_wt
+        if log_range == 0: log_range = 1.0
         for frac in [0.0, 0.25, 0.5, 0.75, 1.0]:
-            log_w = frac * global_max_log_wt
+            log_w = global_min_log_wt + frac * log_range
             w = 10**log_w
-            sz = 5 + 5 * log_w
+            sz = 5 + 5 * frac * log_range
             pt_color = plt.cm.rainbow(frac)
             pt_alpha = 0.2 + 0.8 * frac
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
