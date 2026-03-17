@@ -427,16 +427,16 @@ def main():
                         # Black arrowhead starting exactly where red ends
                         plt.annotate("", xy=(arrow_x + dx_total, arrow_y + dy_total), 
                                      xytext=(arrow_x + dx_shaft, arrow_y + dy_shaft),
-                                     arrowprops=dict(arrowstyle='simple,head_width=1.0,head_length=1.5', 
-                                                     color='black', lw=0.5),
+                                     arrowprops=dict(arrowstyle='simple,head_width=1.0,head_length=1.0', 
+                                                     color='0.30', lw=0.5),
                                      zorder=11)
                                      
                         # Text "Dispersion" positioned above the entire arrow structure
                         tip_x, tip_y = arrow_x + dx_total, arrow_y + dy_total
                         text_x = (arrow_x + tip_x) / 2
-                        text_y = max(arrow_y, tip_y) + 0.02 * abs(y_max - y_min)
+                        text_y = max(arrow_y, tip_y) - 0.0 * abs(y_max - y_min)
                         plt.text(text_x, text_y, "Dispersion", color='black', 
-                                 ha='center', va='bottom', fontsize=9, fontweight='bold', zorder=12)
+                                 ha='center', va='bottom', fontsize=9, zorder=12)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
         
