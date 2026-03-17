@@ -1297,7 +1297,11 @@ class NIRSpecMOSReviewer:
                 
                 # Update the stats for Exposure Specs as well to be consistent
                 for spec_stat in self.stats['all_exposure_specs']:
-                    if spec_stat['obs'] == num and spec_stat['id'] == spec_str:
+                    try:
+                        extracted_sid = str(spec_str.split()[0])
+                    except:
+                        extracted_sid = str(spec_str)
+                    if str(spec_stat['obs']) == str(num) and str(spec_stat['id']) == extracted_sid:
                         spec_stat['dur'] = s_dur
 
                 config_name = pt.findtext(f"{{{n_mos}}}Configuration", namespaces=NS)
@@ -1562,7 +1566,7 @@ class NIRSpecMOSReviewer:
         if not self.stats['all_exposure_specs']:
             return
         write("\n" + "="*80)
-        write("EXPOSURE SPECIFICATIONS SUMMARY")
+        write("EXPOSURE SPECIFICATIONS")
         write("="*80)
         write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | "
               f"{'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
@@ -1579,7 +1583,7 @@ class NIRSpecMOSReviewer:
             return
         
         write("\n" + "="*125)
-        write("CONFIGURATIONS / POINTINGS SUMMARY")
+        write("CONFIGURATIONS / POINTINGS")
         write("="*125)
         
         write("\nDispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.")
