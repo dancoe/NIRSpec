@@ -320,29 +320,13 @@ def main():
         custom_lines = []
         custom_labels = []
 
-        # Visit entries
-        handles, labels = plt.gca().get_legend_handles_labels()
-        custom_lines.extend(handles)
-        custom_labels.extend(labels)
+        # 1. Highest Priority
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+                                   markeredgecolor='black', markeredgewidth=2, markersize=10, linestyle='None'))
+        custom_labels.append('Highest Priority')
 
-        # Catalog Name
-        if group_cat_names:
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            cat_list = ", ".join(sorted(group_cat_names))
-            custom_labels.append(f'Catalog: {cat_list}')
-
-        # Symbols
-        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
-                                   alpha=0.3, linestyle='None'))
-        custom_labels.append('Reference Object')
-
-        if HAS_PYSIAF:
-            custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
-            custom_labels.append('MSA Quadrant Boundaries')
-
-        # Weight scale
-        for frac in [0.0, 0.25, 0.5, 0.75, 1.0]:
+        # 2. Weight scale (decreasing)
+        for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
             log_w = min_log_wt + frac * log_range
             w = 10**log_w
             sz = 5 + 5 * frac * log_range
@@ -351,11 +335,24 @@ def main():
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
                                        alpha=pt_alpha, markersize=np.sqrt(sz), linestyle='None'))
             custom_labels.append(f'Weight: {w:,.0f}')
+
+        # 3. Reference Object
+        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                   markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
+                                   alpha=0.3, linestyle='None'))
+        custom_labels.append('Reference Object')
+
+        # 4. MSA Quadrants
+        if HAS_PYSIAF:
+            custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
+            custom_labels.append('MSA Quadrants')
             
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
-                                   markeredgecolor='black', markeredgewidth=2, markersize=10, linestyle='None'))
-        custom_labels.append('Highest Priority')
-        
+        # 5. Catalog Name (at the bottom)
+        if group_cat_names:
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            cat_list = ", ".join(sorted(group_cat_names))
+            custom_labels.append(f'Catalog: {cat_list}')
+
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
         plt.grid(False)
