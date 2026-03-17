@@ -401,33 +401,38 @@ def main():
                     disp_len = np.sqrt(np.sum(disp_vec**2))
                     if disp_len > 0:
                         unit_disp = disp_vec / disp_len
-                        # Make it 6% of plot width (half as long)
-                        arrow_len = 0.06 * abs(x_max - x_min)
-                        dx, dy = unit_disp * arrow_len
+                        # Total arrow length: 7% of plot width
+                        total_len = 0.07 * abs(x_max - x_min)
                         
-                        # Draw gradient line with rainbow colormap (0.15 to 1.0)
+                        # Rainbow gradient for 80% of the length
+                        shaft_len = 0.8 * total_len
+                        # Head for the remaining 20%
+                        head_start = shaft_len
+                        head_end = total_len
+                        
+                        dx_shaft, dy_shaft = unit_disp * shaft_len
+                        dx_total, dy_total = unit_disp * total_len
+                        
+                        # Draw gradient line (shaft)
                         n_segments = 50
                         for i in range(n_segments):
                             frac = i / n_segments
-                            p1 = (arrow_x + dx * frac, arrow_y + dy * frac)
-                            p2 = (arrow_x + dx * (i + 1) / n_segments, arrow_y + dy * (i + 1) / n_segments)
+                            p1 = (arrow_x + dx_shaft * frac, arrow_y + dy_shaft * frac)
+                            p2 = (arrow_x + dx_shaft * (i + 1) / n_segments, arrow_y + dy_shaft * (i + 1) / n_segments)
                             # Start at 0.15 to skip deep purple
                             rainbow_color = plt.cm.rainbow(0.15 + 0.85 * frac)
                             plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=rainbow_color, 
                                      lw=3.5, zorder=10, solid_capstyle='butt')
                         
-                        # Black arrowhead starting exactly at the end of red path
-                        # Extend the total length slightly for the head itself
-                        head_scale = 0.2 # Head length relative to shaft
-                        plt.annotate("", xy=(arrow_x + dx * (1 + head_scale), arrow_y + dy * (1 + head_scale)), 
-                                     xytext=(arrow_x + dx, arrow_y + dy),
-                                     arrowprops=dict(arrowstyle='simple,head_width=0.8,head_length=1.2', 
+                        # Black arrowhead starting exactly where red ends
+                        plt.annotate("", xy=(arrow_x + dx_total, arrow_y + dy_total), 
+                                     xytext=(arrow_x + dx_shaft, arrow_y + dy_shaft),
+                                     arrowprops=dict(arrowstyle='simple,head_width=1.0,head_length=1.5', 
                                                      color='black', lw=0.5),
                                      zorder=11)
                                      
                         # Text "Dispersion" positioned above the entire arrow structure
-                        tip_x = arrow_x + dx * (1 + head_scale)
-                        tip_y = arrow_y + dy * (1 + head_scale)
+                        tip_x, tip_y = arrow_x + dx_total, arrow_y + dy_total
                         text_x = (arrow_x + tip_x) / 2
                         text_y = max(arrow_y, tip_y) + 0.02 * abs(y_max - y_min)
                         plt.text(text_x, text_y, "Dispersion", color='black', 
