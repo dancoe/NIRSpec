@@ -304,14 +304,15 @@ def main():
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.tight_layout()
         
-        save_path = output_dir / f"msa_coverage_{filename_prefix}.png"
+        save_path = output_dir / f"{filename_prefix}.png"
         plt.savefig(save_path)
         plt.close()
         print(f"Plot saved to: {save_path}")
 
     # 1. Create plots for each Observation
+    xml_stem = Path(xml_path).stem
     for obs_id, rows in sorted(obs_groups.items()):
-        plot_group(rows, f"MSA Coverage: Observation {obs_id}", f"obs{obs_id}")
+        plot_group(rows, f"MSA Coverage: Observation {obs_id}", f"{xml_stem}_Obs{obs_id}")
     
     # Print availability summary
     print("\nAVAILABILITY SUMMARY PER QUADRANT (Available In Field):")

@@ -2448,7 +2448,7 @@ class NIRSpecMOSReviewer:
         for p in other_files:
             if "_visits.csv" in p:
                 p_dir = Path(p).parent
-                plot_files.extend(list(p_dir.glob("msa_coverage_*.png")))
+                plot_files.extend(list(p_dir.glob(f"{self.input_path.stem}_Obs*.png")))
         
         if plot_files:
             plot_files = sorted(list(set(plot_files)))
@@ -2490,9 +2490,8 @@ class NIRSpecMOSReviewer:
                 # Exclude observations under construction
                 if self.obs_info.get(obs_id, {}).get('sign') == "👷":
                     continue
-                plot_file = plot_dir / f"msa_coverage_obs{obs_id}.png"
-                if plot_file.exists():
-                    write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
+                plot_file = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
+                write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
 
     def generate_plots(self):
         if not self.visits_csv_path: return
