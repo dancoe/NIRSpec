@@ -150,22 +150,6 @@ def main():
     
     catalogs = load_catalogs(xml_path)
     
-    all_weights = []
-    for cat_sources in catalogs.values():
-        all_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
-    
-    if all_weights:
-        global_min_wt = min(all_weights)
-        global_max_wt = max(all_weights)
-    else:
-        global_min_wt = 1
-        global_max_wt = 1
-        
-    global_min_log_wt = np.log10(global_min_wt)
-    global_max_log_wt = np.log10(global_max_wt)
-    if global_max_log_wt == global_min_log_wt:
-        global_max_log_wt = global_min_log_wt + 1.0
-    
     # Process visits to group by Obs
     obs_groups = {} # obs_id -> [rows]
     
@@ -198,6 +182,25 @@ def main():
 
     def plot_group(rows, title, filename_prefix):
         plt.figure(figsize=(10, 8))
+        
+        # Calculate min/max weight for this group's catalogs
+        group_weights = []
+        group_cat_names = set([r['Target'] for r in rows if r['Target'] in catalogs])
+        for cat_name in group_cat_names:
+            cat_sources = catalogs.get(cat_name, [])
+            group_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
+        
+        if not group_weights:
+            min_wt, max_wt = 1, 1
+        else:
+            min_wt, max_wt = min(group_weights), max(group_weights)
+            
+        min_log_wt = np.log10(min_wt)
+        max_log_wt = np.log10(max_wt)
+        if max_log_wt == min_log_wt:
+            max_log_wt = min_log_wt + 1.0
+        log_range = max_log_wt - min_log_wt
+
         
         # Color visits in group
         colors = plt.cm.tab10(np.linspace(0, 1, max(2, len(rows))))
@@ -270,8 +273,6 @@ def main():
                 })
 
         # Plot catalog targets ONCE per observation to avoid density haze
-        log_range = global_max_log_wt - global_min_log_wt
-        if log_range == 0: log_range = 1.0
         obs_c_ra = (min(all_ras) + max(all_ras)) / 2
         obs_c_dec = (min(all_decs) + max(all_decs)) / 2
 
@@ -287,9 +288,9 @@ def main():
                     continue
                 
                 log_w = np.log10(max(1e-6, src['weight']))
-                norm_wt = (log_w - global_min_log_wt) / log_range
+                norm_wt = (log_w - min_log_wt) / log_range
                 norm_wt = max(0.0, min(1.0, norm_wt))
-                size = 5 + 5 * (log_w - global_min_log_wt)
+                size = 5 + 5 * (log_w - min_log_wt)
                 pt_color = plt.cm.rainbow(norm_wt)
                 pt_alpha = 0.2 + 0.8 * norm_wt
 
@@ -324,6 +325,12 @@ def main():
         custom_lines.extend(handles)
         custom_labels.extend(labels)
 
+        # Catalog Name
+        if group_cat_names:
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            cat_list = ", ".join(sorted(group_cat_names))
+            custom_labels.append(f'Catalog: {cat_list}')
+
         # Symbols
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
                                    markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
@@ -335,10 +342,8 @@ def main():
             custom_labels.append('MSA Quadrant Boundaries')
 
         # Weight scale
-        log_range = global_max_log_wt - global_min_log_wt
-        if log_range == 0: log_range = 1.0
         for frac in [0.0, 0.25, 0.5, 0.75, 1.0]:
-            log_w = global_min_log_wt + frac * log_range
+            log_w = min_log_wt + frac * log_range
             w = 10**log_w
             sz = 5 + 5 * frac * log_range
             pt_color = plt.cm.rainbow(frac)
