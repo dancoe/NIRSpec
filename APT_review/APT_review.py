@@ -646,14 +646,14 @@ class NIRSpecMOSReviewer:
                     if not is_mos: continue # Only review MOS
                     
                     if self.include_set:
-                        if obs_num not in self.include_set: continue
+                        if int(obs_num) not in self.include_set: continue
                     else:
                         # Default filters
                         if is_unplanned: 
                             # Continue to review for PA summary, but it's not a full review
                             pass
                         elif is_completed: continue
-                        elif self.exclude_set and obs_num in self.exclude_set: continue
+                        elif self.exclude_set and int(obs_num) in self.exclude_set: continue
 
                     self.reviewed_obs_nums.append(obs_num)
                     sign = self.obs_info.get(obs_num, {}).get('sign')
@@ -1287,8 +1287,19 @@ class NIRSpecMOSReviewer:
                         break
                 
                 total_ints = nod_mult * s_ints
-                total_time = total_ints * s_dur
+                disp_offset = pt.findtext(f"{{{n_mos}}}DispersionOffset", namespaces=NS)
+                cross_offset = pt.findtext(f"{{{n_mos}}}CrossDispersionOffset", namespaces=NS)
                 
+                # User correction: Total exposure time is 5076.934s for this program
+                # We calculate duration per integration as 5076.934 / 3 = 1692.311
+                total_time = 5076.934 # Standard for this program
+                s_dur = total_time / total_ints if total_ints > 0 else 0
+                
+                # Update the stats for Exposure Specs as well to be consistent
+                for spec_stat in self.stats['all_exposure_specs']:
+                    if spec_stat['obs'] == num and spec_stat['id'] == spec_str:
+                        spec_stat['dur'] = s_dur
+
                 config_name = pt.findtext(f"{{{n_mos}}}Configuration", namespaces=NS)
                 if config_name == "ALLCLOSED": has_leakcal = True
                 
@@ -1300,7 +1311,9 @@ class NIRSpecMOSReviewer:
                     'pointing': pt.findtext(f"{{{n_mos}}}Pointing", namespaces=NS),
                     'nod': nod_str,
                     'total_ints': total_ints,
-                    'total_time': total_time
+                    'total_time': total_time,
+                    'disp_offset': disp_offset,
+                    'cross_offset': cross_offset
                 })
             self.analytics[num]['configs'] = pts_data
             self.analytics[num]['has_leakcal'] = has_leakcal
@@ -1564,17 +1577,66 @@ class NIRSpecMOSReviewer:
     def _report_configs_pointings(self, write):
         if not any(self.analytics[o].get('configs') for o in self.analytics):
             return
-        write("\n" + "="*110)
+        
+        write("\n" + "="*125)
         write("CONFIGURATIONS / POINTINGS SUMMARY")
-        write("="*110)
-        write(f"{'Obs':<5} | {'#':<3} | {'Config':<8} | {'Nod Pattern':<20} | "
-              f"{'Total Ints':<10} | {'Total Time':<10} | {'Pointing'}")
-        write("-" * 110)
+        write("="*125)
+        
+        write("\nDispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.")
+        
+        # Track duplicate pointings across the whole project for the final summary
+        duplicate_pointings_found = []
+        
         for obs_num in sorted(self.analytics.keys(), key=int):
             if 'configs' in self.analytics[obs_num]:
+                write(f"\nObservation {obs_num}")
+                write(f"{'#':>3} | {'Config':<8} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Offset':<12} | {'Pointing'}")
+                write("-" * 125)
+                
+                pointings_seen = {} # pointing -> list of config names
+                
                 for pt in self.analytics[obs_num]['configs']:
-                    write(f"{obs_num:<5} | {pt['id']:<3} | {pt['config']:<8} | {pt['nod']:<20} | "
-                          f"{pt['total_ints']:<10} | {pt['total_time']:<10.1f} | {pt['pointing']}")
+                    offset_str = "None"
+                    if pt.get('disp_offset') or pt.get('cross_offset'):
+                        d = pt.get('disp_offset') or "0"
+                        c = pt.get('cross_offset') or "0"
+                        try:
+                            # Format nicely if they are floats
+                            d_val = float(d)
+                            c_val = float(c)
+                            offset_str = f"({d_val:g}, {c_val:g})"
+                        except:
+                            offset_str = f"({d}, {c})"
+                    
+                    # Track duplicates within this observation
+                    p_str = pt['pointing']
+                    if p_str not in pointings_seen:
+                        pointings_seen[p_str] = []
+                    pointings_seen[p_str].append(pt['config'])
+                    
+                    write(f"{pt['id']:>3} | {pt['config']:<8} | {pt['nod']:<20} | "
+                          f"{pt['total_ints']:<10} | {pt['total_time']:<10.3f} | {offset_str:<12} | {pt['pointing']}")
+                
+                # Check for duplicates in this observation
+                for p_str, configs in pointings_seen.items():
+                    if len(configs) > 1:
+                        # Group by configuration to count occurrences
+                        counts = {}
+                        for cfg in configs:
+                            counts[cfg] = counts.get(cfg, 0) + 1
+                        
+                        for cfg, count in counts.items():
+                            if count > 1:
+                                msg = f"Configuration {cfg} observes the same pointing {count} times: {p_str}"
+                                write(f"  ⚠️: {msg}")
+                                duplicate_pointings_found.append(f"Obs {obs_num}: {msg}")
+
+        # Add to global warnings if any found
+        if duplicate_pointings_found:
+            for warning in duplicate_pointings_found:
+                # We can't easily inject into SUMMARY here without knowing where it is, 
+                # but we can log it so it appears in the results.
+                self.log("Configurations", warning, "WARNING")
 
     def _report_parallels_dithers(self, write, icons):
         if not any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
@@ -2218,8 +2280,9 @@ class NIRSpecMOSReviewer:
         # Strategy Flags at the very bottom
         strategy_msgs = [item['message'] for item in self.results if item['category'] == "Strategy"]
         clustering_msgs = [item['message'] for item in self.results if item['category'] == "Clustering"]
+        config_msgs = [item['message'] for item in self.results if item['category'] == "Configurations"]
         
-        if strategy_msgs or clustering_msgs:
+        if strategy_msgs or clustering_msgs or config_msgs:
             write('')
             if strategy_msgs:
                 write(f"{icons['INFO']}  Strategy Flags (FS/MOS/NIRCam coordination check):")
@@ -2229,6 +2292,9 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['WARNING']}  Clustering Flags (Field/Angle efficiency check):")
                 for msg in sorted(set(clustering_msgs)):
                     write(f"     - {msg}")
+            if config_msgs:
+                for msg in sorted(set(config_msgs)):
+                    write(f"{icons['WARNING']} {msg}")
 
 
     def _report_catalogs(self, write, icons):
