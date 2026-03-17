@@ -52,61 +52,72 @@ Obs   | Planned APA           | Assigned APA
 ❌ 2    | 40. Degrees           | 48.7734 Degrees
 
 ================================================================================
-EXPOSURE SPECIFICATIONS SUMMARY
+EXPOSURE SPECIFICATIONS
 ================================================================================
 Obs   | Spec  | Grating/Filter     | Readout Pattern    | Groups   | Ints   | Duration(s)
 -----------------------------------------------------------------------------------------------
-1     | 1     | G395M/F290LP       | NRS                | 39       | 1      | 429.5      
+1     | 1     | G395M/F290LP       | NRS                | 39       | 1      | 1692.3     
 
-==============================================================================================================
-CONFIGURATIONS / POINTINGS SUMMARY
-==============================================================================================================
-Obs   | #   | Config   | Nod Pattern          | Total Ints | Total Time | Pointing
---------------------------------------------------------------------------------------------------------------
-1     | 1   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 2   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 3   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 4   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 5   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 6   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 7   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 8   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 9   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 31.85307 +62 13 49.417
-1     | 10  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 11  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 12  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 13  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 14  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 15  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 16  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 17  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-1     | 18  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 12 36 49.43826 +62 16 18.355
-2     | 1   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 2   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 3   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 4   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 5   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 6   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 7   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 8   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 9   | c1       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 34.72663 -27 47 12.193
-2     | 10  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 11  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 12  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 13  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 14  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 15  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 16  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 17  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
-2     | 18  | c2       | 3 Shutter Slitlet    | 3          | 1288.4     | 03 32 22.39940 -27 47 0.242
+=============================================================================================================================
+CONFIGURATIONS / POINTINGS
+=============================================================================================================================
+
+Dispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.
+
+Observation 1
+  # | Config   | Nod Pattern          | Total Ints | Total Time | Offset       | Pointing
+-----------------------------------------------------------------------------------------------------------------------------
+  1 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  2 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  3 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  4 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  5 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  6 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  7 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  8 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+  9 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 31.85307 +62 13 49.417
+ 10 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 11 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 12 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 13 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 14 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 15 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 16 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 17 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+ 18 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 12 36 49.43826 +62 16 18.355
+  ⚠️: Configuration c1 observes the same pointing 9 times: 12 36 31.85307 +62 13 49.417
+  ⚠️: Configuration c2 observes the same pointing 9 times: 12 36 49.43826 +62 16 18.355
+
+Observation 2
+  # | Config   | Nod Pattern          | Total Ints | Total Time | Offset       | Pointing
+-----------------------------------------------------------------------------------------------------------------------------
+  1 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  2 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  3 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  4 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  5 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  6 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  7 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  8 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+  9 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 34.72663 -27 47 12.193
+ 10 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 11 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 12 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 13 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 14 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 15 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 16 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 17 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+ 18 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 03 32 22.39940 -27 47 0.242
+  ⚠️: Configuration c1 observes the same pointing 9 times: 03 32 34.72663 -27 47 12.193
+  ⚠️: Configuration c2 observes the same pointing 9 times: 03 32 22.39940 -27 47 0.242
 
 ==============================================================================================================
 SPECIAL REQUIREMENTS SUMMARY
 ==============================================================================================================
 Obs   | Aperture PA Range                   | Background Limited   | Other Requirements
 --------------------------------------------------------------------------------------------------------------
-1     | None                                | None                 | GroupVisitsWithin: 
-                        , SamePAVisits: active
+1     | None                                | None                 | Group Visits Within: 53.0 Days, Same PAVisits: active
 
 ============================================================================================================================================
 MSA CONFIGURATIONS & STRATEGY SUMMARY
@@ -169,34 +180,63 @@ Obs   | Target Catalog Name                 | Sources  | Ref   | Acc    | W_Min 
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------
 1     | gdn_targets_final                   | 1262     | 334   | 10.0   | 0.0        | 75000.0    | 
 
-========================================================================================================================
-HIGH PRIORITY TARGET ANALYSIS: Observation 1
-Catalog: Primary
-========================================================================================================================
-Source ID    | Weight     | G395M/F290LP      
-----------------------------------------------
- 1          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
- 2          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS2)
- 3          | 1000000    | 🌑  0/54 (  0%)
- 4          | 1000000    | 🌑  0/54 (  0%)
- 5          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.46 – 4.74 µm
- 6          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.61 – 4.89 µm
- 7          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 2.95 – 3.23 µm
- 8          | 1000000    | 🌑  0/54 (  0%)
- 9          | 1000000    | 🌑  0/54 (  0%)
-10          | 1000000    | 🌓 27/54 ( 50%) | 🌓 GAP: 4.43 – 4.71 µm
-11          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
-12          | 1000000    | 🌑  0/54 (  0%)
-13          | 1000000    | 🌑  0/54 (  0%)
-14          | 1000000    | 🌑  0/54 (  0%)
-15          | 1000000    | 🌓 27/54 ( 50%) | 🌓 CUTOFF: (NRS2) – 5.00 µm
-16          | 1000000    | 🌑  0/54 (  0%)
-17          | 1000000    | 🌑  0/54 (  0%)
-18          | 1000000    | 🌓 27/54 ( 50%) | 🌕 FULL (NRS1)
-19          | 1000000    | 🌑  0/54 (  0%)
-20          | 1000000    | 🌑  0/54 (  0%)
+============================================================
+HIGH PRIORITY TARGET ANALYSIS
+============================================================
 
-Summary for Obs 1 (Primary): 0/20 high-priority targets observed in ALL exposures.
+Visit 1:1
+Catalog: gdn_targets_final
+7/20 high-priority targets observed in ALL exposures
+------------------------------------------------------------
+ ID | Weight | G395M/F290LP       | Wavelength Coverage
+-------------------------------------------------------
+  8 |  75000 | 🌑  0/27 (  0%)
+ 50 |  75000 | 🌑  0/27 (  0%)
+ 76 |  75000 | 🌕 27/27 (100%) | 🌔 GAP: 3.20 – 3.48 µm
+ 77 |  75000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
+ 79 |  75000 | 🌑  0/27 (  0%)
+ 95 |  75000 | 🌑  0/27 (  0%)
+ 96 |  75000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
+ 97 |  75000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
+100 |  75000 | 🌕 27/27 (100%) | 🌔 GAP: 4.44 – 4.72 µm
+102 |  75000 | 🌑  0/27 (  0%)
+104 |  75000 | 🌕 27/27 (100%) | 🌓 CUTOFF: 3.06 µm – (NRS1)
+139 |  75000 | 🌑  0/27 (  0%)
+  1 |  50000 | 🌕 27/27 (100%) | 🌕 FULL (NRS1)
+  2 |  50000 | 🌑  0/27 (  0%)
+  3 |  50000 | 🌑  0/27 (  0%)
+  4 |  50000 | 🌑  0/27 (  0%)
+  5 |  50000 | 🌑  0/27 (  0%)
+  6 |  50000 | 🌑  0/27 (  0%)
+  7 |  50000 | 🌑  0/27 (  0%)
+  9 |  50000 | 🌑  0/27 (  0%)
+
+Visit 1:2
+Catalog: gdn_targets_final
+4/20 high-priority targets observed in ALL exposures
+------------------------------------------------------------
+ ID | Weight | G395M/F290LP       | Wavelength Coverage
+-------------------------------------------------------
+  8 |  75000 | 🌑  0/27 (  0%)
+ 50 |  75000 | 🌑  0/27 (  0%)
+ 76 |  75000 | 🌑  0/27 (  0%)
+ 77 |  75000 | 🌑  0/27 (  0%)
+ 79 |  75000 | 🌑  0/27 (  0%)
+ 95 |  75000 | 🌑  0/27 (  0%)
+ 96 |  75000 | 🌑  0/27 (  0%)
+ 97 |  75000 | 🌑  0/27 (  0%)
+100 |  75000 | 🌑  0/27 (  0%)
+102 |  75000 | 🌑  0/27 (  0%)
+104 |  75000 | 🌑  0/27 (  0%)
+139 |  75000 | 🌑  0/27 (  0%)
+  1 |  50000 | 🌑  0/27 (  0%)
+  2 |  50000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
+  3 |  50000 | 🌑  0/27 (  0%)
+  4 |  50000 | 🌑  0/27 (  0%)
+  5 |  50000 | 🌕 27/27 (100%) | 🌔 GAP: 4.46 – 4.74 µm
+  6 |  50000 | 🌕 27/27 (100%) | 🌔 GAP: 4.61 – 4.89 µm
+  7 |  50000 | 🌕 27/27 (100%) | 🌔 GAP: 2.95 – 3.23 µm
+  9 |  50000 | 🌑  0/27 (  0%)
 
 ------------------------------
 CATALOGS
@@ -247,10 +287,61 @@ PI: Guido Roberts-Borsani
 🌔 MSATA: 6-8 stars in 2-3 quads
 ✅ Catalogs: 2 catalogs: gdn_targets_final, msa_targets_gds
 ⚠️ IRS2 Readout NOT used in Obs 1
-✅ Integration times all 429.5 s (< 1500 s)
+⚠️ Integration times all 1692.3 s (< 1500 s)
 ✅ Nod Pattern: 3 Shutter Slitlet
+⚠️ Obs 1: Configuration c1 observes the same pointing 9 times: 12 36 31.85307 +62 13 49.417
+⚠️ Obs 1: Configuration c2 observes the same pointing 9 times: 12 36 49.43826 +62 16 18.355
 
 👷 1 observation under construction: Obs 2
+
+================================================================================
+SPAR REVIEW
+================================================================================
+
+TARGET ACQUISITION
+⚠️ No MSATA detected
+
+BRIGHT SOURCE CHECKING
+👁️ no bright sources
+
+PARALLELS
+no parallels
+
+SPECIAL REQUIREMENTS
+No Special Requirements
+
+EXPOSURE PARAMETERS
+⚠️ NRS instead of NRSIRS2
+⚠️ 1692 s integrations (> 1500s): 39 groups NRS
+
+DITHERS AND NODS
+✅ standard 3-shutter slitlet nods
+
+BACKGROUND OBSERVATIONS
+✅ 🧠 compact sources: 3 shutters make long enough slitlets
+
+CATALOG
+✅ weight max 75,000
+⚠️ stellarity values all -1; inform user pipeline will process these as point sources
+
+MOS OBSERVATION/VISIT STRUCTURE
+✅ MSA Planned Aperture PA matches Assigned APA
+
+CHECK MSA CONFIGURATIONS
+👁️ masks well designed and filled
+
+CHECK MPT PLANS
+👁️ Check (extraction not yet implemented)
+
+EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
+✅ Highest priority targets (weight 75,000 or 50,000) achieve full depth in each of 2 visits
+
+SPECTRAL CUTOFFS
+⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings
+
+REFERENCE STARS
+✅ Visit 1:1 – 8 stars in 3 quads
+⚠️ Visit 1:2 – 6 stars in 2 quads
 
 ==============================================================================================================
 FILES USED IN THIS REVIEW
@@ -259,20 +350,18 @@ FILES USED IN THIS REVIEW
    Modified: 2026-03-13 14:19:08
 
 📄 TA Exports: msatargets/*-TA.csv (2 files)
-   Modified: 2026-03-13 14:39:29
+   Modified: 2026-03-13 15:30:02
 
 📄 Observation Exports: msatargets/*-obs*.csv (54 files)
-   Modified: 2026-03-13 14:39:29
+   Modified: 2026-03-13 15:30:02
 
 📄 Catalogs: visits/*.csv (1 files)
    Modified: 2026-03-14 14:03:51
 
-🖼️ MSA Coverage Plots (4 files)
-   Modified: 2026-03-15 20:34:26 to 2026-03-15 20:34:39
-     - visits/msa_coverage_catalog_gdn_targets_final.png
-     - visits/msa_coverage_catalog_msa_targets_gds.png
-     - visits/msa_coverage_obs1.png
-     - visits/msa_coverage_obs2.png
+🖼️ MSA Coverage Plots (2 files)
+   Modified: 2026-03-17 03:00:31 to 2026-03-17 13:53:11
+     - visits/JWST7729_Obs1 2.png
+     - visits/JWST7729_Obs1.png
 
-ℹ️ MSA Coverage Plots generated in: /Users/dcoe/NIRSpec/reviews/7729/visits
-   🖼️ Obs 1: msa_coverage_obs1.png
+ℹ️ MSA Coverage Plots generated in: /Users/dcoe/Documents/GitHub/NIRSpec/APT_review/data/visits
+   🖼️ Obs 1: JWST7729_Obs1.png
