@@ -298,58 +298,73 @@ def main():
                     'counts': quad_counts
                 })
 
-        # Plot catalog targets ONCE per observation to avoid density haze
+        # Consolidate and plot sources once to avoid "hazy" overplotting
         obs_c_ra = (min(all_ras) + max(all_ras)) / 2
         obs_c_dec = (min(all_decs) + max(all_decs)) / 2
+        
+        combined_sources = {}
+        for name in unique_catalogs:
+            for src in catalogs.get(name, []):
+                # Use RA/Dec as key to deduplicate identical targets across multiple catalogs
+                key = (round(src['ra'], 6), round(src['dec'], 6))
+                if key not in combined_sources or src['weight'] > combined_sources[key]['weight']:
+                    combined_sources[key] = src
+        
+        all_sources = list(combined_sources.values())
+        weights = [s['weight'] for s in all_sources if s['weight'] > 0]
+        
+        if not weights:
+            min_wt, max_wt = 0, 0
+            min_log_wt, log_range = 0, 1
+        else:
+            min_wt, max_wt = min(weights), max(weights)
+            min_log_wt = np.log10(min_wt)
+            max_log_wt = np.log10(max_wt)
+            log_range = max_log_wt - min_log_wt
+            if log_range == 0: log_range = 1
 
-        for cat_name in unique_catalogs:
-            cat_sources = catalogs.get(cat_name, [])
-            if not cat_sources: continue
+        for src in all_sources:
+            if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
+                continue
             
-            # Find max weight in this catalog for highest priority outline
-            max_wt = max([s['weight'] for s in cat_sources] + [0])
+            log_w = np.log10(max(1e-6, src['weight']))
+            norm_wt = (log_w - min_log_wt) / log_range
+            norm_wt = max(0.0, min(1.0, norm_wt))
+            size = 5 + 5 * (log_w - min_log_wt)
+            pt_color = plt.cm.rainbow(norm_wt)
 
-            for src in cat_sources:
-                if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
-                    continue
+            if src['is_ref']:
+                is_used = src['id'] in used_ref_ids
+                plt.scatter(src['ra'], src['dec'], marker='*', s=150 if is_used else 50, color='0.50', 
+                            edgecolors='lime' if is_used else 'black', 
+                            linewidths=1.0 if is_used else 0.5, 
+                            alpha=1.0 if is_used else 0.3, 
+                            zorder=-1 if not is_used else 0)
+            else:
+                is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
+                is_observed = src['id'] in observed_ids
                 
-                log_w = np.log10(max(1e-6, src['weight']))
-                norm_wt = (log_w - min_log_wt) / log_range
-                norm_wt = max(0.0, min(1.0, norm_wt))
-                size = 5 + 5 * (log_w - min_log_wt)
-                pt_color = plt.cm.rainbow(norm_wt)
-
-                if src['is_ref']:
-                    is_used = src['id'] in used_ref_ids
-                    plt.scatter(src['ra'], src['dec'], marker='*', s=50, color='0.50', 
-                                edgecolors='lime' if is_used else 'black', 
-                                linewidths=1.0 if is_used else 0.5, 
-                                alpha=1.0 if is_used else 0.3, 
-                                zorder=-1 if not is_used else 0)
-                else:
-                    is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
-                    is_observed = src['id'] in observed_ids
-                    
-                    edge_color = '0.50'
-                    l_width = 0.5
-                    z_ord = 4
-                    pt_alpha = 1.0 if is_observed else 0.3
-                    
+                edge_color = '0.50'
+                l_width = 0.5
+                z_ord = 4
+                pt_alpha = 1.0 if is_observed else 0.3
+                
+                if is_observed:
+                    edge_color = 'lime'
+                    l_width = 1.0
+                    z_ord = 5
+                
+                if is_highest:
+                    # Thick black outline for highest priority
+                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
+                                color=pt_color, edgecolors='black', linewidths=2.0, zorder=6)
                     if is_observed:
-                        edge_color = 'lime'
-                        l_width = 1.0
-                        z_ord = 5
-                    
-                    if is_highest:
-                        plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                    color=pt_color, edgecolors='black', linewidths=1, zorder=6)
-                        if is_observed:
-                            # Double outline for observed highest: black inside, lime outside
-                            plt.scatter(src['ra'], src['dec'], marker='o', s=size+4, alpha=pt_alpha, 
-                                        color='none', edgecolors='lime', linewidths=1.0, zorder=7)
-                    else:
-                        plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                    color=pt_color, edgecolors=edge_color, linewidths=l_width, zorder=z_ord)
+                        # Extra green ring outside the thick black outline
+                        plt.scatter(src['ra'], src['dec'], marker='o', s=size + 15, alpha=pt_alpha, 
+                                    color='none', edgecolors='lime', linewidths=1.0, zorder=7)
+                else:
+                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
+                                color=pt_color, edgecolors=edge_color, linewidths=l_width, zorder=z_ord)
 
         if not all_ras: 
             plt.close()
@@ -373,7 +388,7 @@ def main():
 
         # 1. Highest Priority
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
-                                   markeredgecolor='black', markeredgewidth=2, markersize=10, linestyle='None'))
+                                   markeredgecolor='black', markeredgewidth=2.0, markersize=10, linestyle='None'))
         custom_labels.append('Highest Priority')
 
         # 2. Weight scale (decreasing)
@@ -393,7 +408,7 @@ def main():
         custom_labels.append('Reference Object')
         
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=np.sqrt(50), 
+                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=np.sqrt(150), 
                                    alpha=1.0, linestyle='None'))
         custom_labels.append('Reference Object (Used)')
 
