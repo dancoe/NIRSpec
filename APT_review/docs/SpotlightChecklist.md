@@ -33,8 +33,8 @@ This checklist is based on the [PPSDB Spotlight Tool recommendations](SpotlightC
 | ✅ | Sufficient number of sources (> 20) |
 | ✅ | IDs < 1,000,000 (1e6) | |
 | ✅ | Weights < 1,000,000,000 (1e9) | |
-| ✅ | Stellarity values included and not all -1 | |
-| ✅ | Astrometric accuracy 5 – 15 mas | |
+| ✅ | Stellarity values included and not all same | Uniform values warn about point/extended processing |
+| ✅ | Astrometric accuracy 5 – 15 mas | Warns if > 15 mas |
 | 👁️ | Compare science mags to suppressed spoilers | Requires Aladin/MPT to compare science targets vs suppressed spoilers. |
 | ✅ | WATA: target must be included in catalog | |
 
