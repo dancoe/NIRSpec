@@ -150,6 +150,12 @@ def main():
     
     catalogs = load_catalogs(xml_path)
     
+    global_max_wt = 1
+    for cat_sources in catalogs.values():
+        if cat_sources:
+            global_max_wt = max(global_max_wt, max([s['weight'] for s in cat_sources] + [1]))
+    global_max_log_wt = np.log10(global_max_wt) if global_max_wt > 1 else 1.0
+    
     # Process visits to group by Obs
     obs_groups = {} # obs_id -> [rows]
     
@@ -233,6 +239,9 @@ def main():
             
             # Plot catalog targets
             cat_sources = catalogs.get(cat_name, [])
+            # Find max weight in this catalog for highest priority outline
+            max_wt = max([s['weight'] for s in cat_sources] + [0])
+
             for src in cat_sources:
                 # Coordinate filter for performance
                 if abs(src['ra'] - c_ra) > 0.15 or abs(src['dec'] - c_dec) > 0.15:
@@ -248,12 +257,24 @@ def main():
                         break
                 
                 # Plotting
-                size = 5 + 5 * np.log10(max(1, src['weight']))
+                log_w = np.log10(max(1, src['weight']))
+                norm_wt = log_w / global_max_log_wt if global_max_log_wt > 0 else 0
+                norm_wt = max(0.0, min(1.0, norm_wt))
+                size = 5 + 5 * log_w
+                pt_color = plt.cm.rainbow(norm_wt)
+                pt_alpha = 0.2 + 0.8 * norm_wt
+
                 if src['is_ref']:
                     plt.scatter(src['ra'], src['dec'], marker='*', s=150, color='gold', 
-                                edgecolors='black', zorder=5)
+                                edgecolors='black', alpha=0.6, zorder=-1)
                 else:
-                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=0.4, color=color, zorder=4)
+                    is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
+                    if is_highest:
+                        plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
+                                    color=pt_color, edgecolors='black', linewidths=2, zorder=6)
+                    else:
+                        plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
+                                    color=pt_color, edgecolors='none', zorder=4)
 
             # Record availability for report
             availability_report.append({
@@ -293,11 +314,23 @@ def main():
 
         # Weight scale
         weights_to_show = [1, 1000, 1000000]
+        if global_max_wt > 1000000 and global_max_wt not in weights_to_show:
+            weights_to_show.append(int(global_max_wt))
+            
         for w in weights_to_show:
-            sz = 5 + 5 * np.log10(w)
-            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='gray', 
-                                       alpha=0.4, markersize=np.sqrt(sz), linestyle='None'))
+            log_w = np.log10(max(1, w))
+            norm_wt = log_w / global_max_log_wt if global_max_log_wt > 0 else 0
+            norm_wt = max(0.0, min(1.0, norm_wt))
+            sz = 5 + 5 * log_w
+            pt_color = plt.cm.rainbow(norm_wt)
+            pt_alpha = 0.2 + 0.8 * norm_wt
+            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
+                                       alpha=pt_alpha, markersize=np.sqrt(sz), linestyle='None'))
             custom_labels.append(f'Weight: {w:,}')
+            
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
+                                   markeredgecolor='black', markeredgewidth=2, markersize=10, linestyle='None'))
+        custom_labels.append('Highest Priority')
         
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
