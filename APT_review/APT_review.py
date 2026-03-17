@@ -2257,6 +2257,20 @@ class NIRSpecMOSReviewer:
                 if items:
                     write(f"{icons['WARNING']} Data Excess over " + ", ".join(items))
             
+            # Configuration warnings (e.g. repeated pointings) for reviewed observations
+            reviewed_str_list = [str(o) for o in reviewed_full]
+            config_msgs = []
+            for item in self.results:
+                if item['category'] == "Configurations":
+                    # Extract obs number from message like "Obs 1: ..."
+                    m = re.match(r'Obs (\d+):', item['message'])
+                    if m and m.group(1) in reviewed_str_list:
+                        config_msgs.append(item['message'])
+
+            if config_msgs:
+                for msg in sorted(set(config_msgs)):
+                    write(f"{icons['WARNING']} {msg}")
+
             write('')
 
         # 2. Under Construction section
@@ -2274,20 +2288,13 @@ class NIRSpecMOSReviewer:
         # Strategy Flags at the very bottom
         strategy_msgs = [item['message'] for item in self.results if item['category'] == "Strategy"]
         clustering_msgs = [item['message'] for item in self.results if item['category'] == "Clustering"]
-        config_msgs = [item['message'] for item in self.results if item['category'] == "Configurations"]
-        
-        if strategy_msgs or clustering_msgs or config_msgs:
+        if strategy_msgs or clustering_msgs:
             write('')
             if strategy_msgs:
-                write(f"{icons['INFO']}  Strategy Flags (FS/MOS/NIRCam coordination check):")
                 for msg in sorted(set(strategy_msgs)):
-                    write(f"     - {msg}")
+                    write(f"{icons['INFO']} {msg}")
             if clustering_msgs:
-                write(f"{icons['WARNING']}  Clustering Flags (Field/Angle efficiency check):")
                 for msg in sorted(set(clustering_msgs)):
-                    write(f"     - {msg}")
-            if config_msgs:
-                for msg in sorted(set(config_msgs)):
                     write(f"{icons['WARNING']} {msg}")
 
 
