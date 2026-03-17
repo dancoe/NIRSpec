@@ -374,26 +374,24 @@ def main():
             plt.close()
             return
 
+        plt.xlabel('RA (Degrees)')
+        plt.ylabel('Dec (Degrees)')
+        plt.title(title)
+        plt.gca().invert_xaxis()
+
         # Draw dispersion arrow (Q3 -> Q1 direction)
-        # We'll use the corner of the plot
         try:
-            # Get axis limits to find a good corner
             x_min, x_max = plt.xlim()
             y_min, y_max = plt.ylim()
-            # X is inverted (RA), so x_max is smaller than x_min in degrees? 
-            # Actually invert_xaxis() means large RA is on the left.
+            # RA is on X axis (inverted). 
+            # Visually Left = x_min (larger RA), Visually Right = x_max (smaller RA)
             
-            # Pick a spot (bottom right corner in plot coordinates)
-            # Since X is inverted, bottom right has smaller RA value.
-            arrow_x = x_min + 0.9 * (x_max - x_min)
-            arrow_y = y_min + 0.1 * (y_max - y_min)
+            # Bottom Right of plot
+            arrow_x = x_min + 0.85 * (x_max - x_min)
+            arrow_y = y_min + 0.12 * (y_max - y_min)
             
-            # Find dispersion vector in RA/Dec space from any visit's quads
             if HAS_PYSIAF:
-                # We'll use the centers of Q3 and Q1 to define the vector
-                # Pick any visit that has both
-                v3_c = None
-                v1_c = None
+                v3_c, v1_c = None, None
                 for vid in obs_quads:
                     if 3 in obs_quads[vid] and 1 in obs_quads[vid]:
                         v3_c = np.mean(obs_quads[vid][3], axis=0)
@@ -402,27 +400,23 @@ def main():
                 
                 if v3_c is not None and v1_c is not None:
                     disp_vec = v1_c - v3_c
-                    # Normalize and scale for visibility
                     disp_len = np.sqrt(np.sum(disp_vec**2))
                     if disp_len > 0:
                         unit_disp = disp_vec / disp_len
-                        scale = 0.05 * (max(x_min, x_max) - min(x_min, x_max))
-                        dx, dy = unit_disp * scale
+                        # Make it 10% of plot width
+                        arrow_len = 0.10 * abs(x_max - x_min)
+                        dx, dy = unit_disp * arrow_len
                         
-                        # Use black color, larger arrowhead
-                        plt.arrow(arrow_x, arrow_y, dx, dy, color='black', head_width=0.015*scale, 
-                                  head_length=0.03*scale, width=0.005*scale, zorder=10, 
-                                  length_includes_head=True)
+                        # Draw arrow using annotate for a definitive arrowhead
+                        plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), xytext=(arrow_x, arrow_y),
+                                     arrowprops=dict(arrowstyle='-|>', mutation_scale=20, color='black', lw=1.5),
+                                     zorder=10)
                         # Text above the arrow
-                        plt.text(arrow_x + dx/2, arrow_y + max(0, dy) + 0.01*scale, "Dispersion", color='black', 
-                                 ha='center', va='bottom', fontsize=8, fontweight='bold', zorder=10)
+                        plt.text(arrow_x + dx/2, arrow_y + dy/2 + 0.03 * abs(y_max - y_min), 
+                                 "Dispersion", color='black', ha='center', va='bottom', 
+                                 fontsize=8, fontweight='bold', zorder=11)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
-
-        plt.xlabel('RA (Degrees)')
-        plt.ylabel('Dec (Degrees)')
-        plt.title(title)
-        plt.gca().invert_xaxis()
         
         # Legend construction
         from matplotlib.lines import Line2D
