@@ -2217,10 +2217,13 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['WARNING']} IRS2 Readout NOT used in Obs {obs_list}")
 
             # Integration Times
-            if self.stats['integration_times']:
-                all_min   = min(t[0] for t in self.stats['integration_times'])
-                all_max   = max(t[1] for t in self.stats['integration_times'])
-                time_icon = icons['SUCCESS'] if self.stats['all_under_1500'] else icons['WARNING']
+            reviewed_specs = [s for s in self.stats.get('all_exposure_specs', [])
+                              if self.obs_info.get(str(s['obs']), {}).get('sign') == "🔎"]
+            if reviewed_specs:
+                all_times = [s['dur'] for s in reviewed_specs]
+                all_min   = min(all_times)
+                all_max   = max(all_times)
+                time_icon = icons['SUCCESS'] if all(t <= 1500 for t in all_times) else icons['WARNING']
                 if abs(all_min - all_max) < 0.1:
                     write(f"{time_icon} Integration times all {all_min:.1f} s (< 1500 s)")
                 else:
