@@ -340,7 +340,7 @@ def main():
             if src['is_ref']:
                 is_used = src['id'] in used_ref_ids
                 plt.scatter(src['ra'], src['dec'], marker='*', s=50 if is_used else 30, color='0.50', 
-                            edgecolors='lime' if is_used else 'black', 
+                            edgecolors='magenta' if is_used else 'black', 
                             linewidths=0.5 if is_used else 0.5, 
                             alpha=1.0 if is_used else 0.3, 
                             zorder=-1 if not is_used else 0)
@@ -389,8 +389,8 @@ def main():
             y_min, y_max = orig_ylim
             
             # Position safely within the plot area
-            arrow_x = x_min + 0.90 * (x_max - x_min)
-            arrow_y = y_min + 0.15 * (y_max - y_min)
+            arrow_x = x_min + 0.9 * (x_max - x_min)
+            arrow_y = y_min + 0.2 * (y_max - y_min)
             
             if HAS_PYSIAF:
                 v3_c, v1_c = None, None
@@ -478,7 +478,7 @@ def main():
         custom_labels.append('Reference Object')
         
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=np.sqrt(150), 
+                                   markeredgecolor='magenta', markeredgewidth=1.0, markersize=np.sqrt(150), 
                                    alpha=1.0, linestyle='None'))
         custom_labels.append('Reference Object (Used)')
 

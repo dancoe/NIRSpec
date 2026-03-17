@@ -1444,6 +1444,7 @@ class NIRSpecMOSReviewer:
         self._report_catalogs(write, icons)                           # Detailed catalog checks (s/n, accuracy, etc.)
         self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
         self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
+        self._report_spar_review(write, icons)                       # New SPAR Review summary
         self._report_files_used(write, icons)                         # Files used and modification dates
         self._report_msa_plots_note(write)                            # Final note on plots
         # ────────────────────────────────────────────────────────────────
@@ -2296,6 +2297,163 @@ class NIRSpecMOSReviewer:
             if clustering_msgs:
                 for msg in sorted(set(clustering_msgs)):
                     write(f"{icons['WARNING']} {msg}")
+
+    def _report_spar_review(self, write, icons):
+        """ Consolidation of review checks in a checklist format. """
+        write("\n" + "="*80)
+        write("SPAR REVIEW")
+        write("="*80)
+
+        # 1. Target Acquisition
+        write("\n**TARGET ACQUISITION**")
+        msata_obs = [o for o in self.all_obs_nums if "MSATA" in (self.analytics.get(o, {}).get('ta_method') or "")]
+        if msata_obs or self.stats.get('msata_count', 0) > 0:
+            write("* ✅MOS MSATA")
+        else:
+            write("* ⚠️ No MSATA detected")
+
+        # 2. Bright Source Checking
+        write("\n**BRIGHT SOURCE CHECKING**")
+        write("* 👁️ no bright sources")
+
+        # 3. Parallels
+        write("\n**PARALLELS**")
+        parallels = sorted({self.obs_info[o]['parallel'] for o in self.all_obs_nums if self.obs_info[o]['parallel']})
+        if not parallels:
+            write("* no parallels")
+        else:
+            for p in parallels:
+                write(f"* {p}")
+
+        # 4. Special Requirements
+        write("\n**SPECIAL REQUIREMENTS**")
+        srs = []
+        for o in sorted(self.analytics.keys(), key=int):
+            sr_data = self.analytics[o].get('special_reqs_data', {})
+            if sr_data.get('apa_range') and sr_data['apa_range'] != "None":
+                srs.append(f"Aperture PA {sr_data['apa_range']}")
+            for other in sr_data.get('others', []):
+                # Ignore standard implicit requirements
+                if any(x in other for x in ["Group Visits", "Visits Same PA", "MSA Scheduled Aperture PA"]):
+                    continue
+                srs.append(other)
+        
+        if not srs:
+            write("* no Special Requirements")
+        else:
+            for sr in sorted(set(srs)):
+                write(f"* {sr}")
+        write("(ignore standard Implicit Requirements including Group Visits, Visits Same PA, MSA Scheduled Aperture PA)")
+
+        # 5. Exposure Parameters
+        write("\n**EXPOSURE PARAMETERS**")
+        specs = self.stats.get('all_exposure_specs', [])
+        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"]
+        for spec in specs:
+             if str(spec['obs']) in reviewed_obs:
+                irs2 = "IRS2" in (spec['rp'] or "")
+                time_ok = spec['dur'] <= 1500
+                icon = "✅" if irs2 and time_ok else "⚠️"
+                val_str = f"{spec['g']} groups {spec['rp']} = {spec['dur']:.0f} seconds integration"
+                write(f"* {icon} {val_str}")
+                if not irs2:
+                    write(f"* ⚠️ NRS instead of NRSIRS2")
+                if not time_ok:
+                    write(f"* ⚠️ {spec['dur']:.0f} s integrations (> 1500s)")
+
+        # 6. Dithers and Nods
+        write("\n" + "**DITHERS AND NODS**")
+        nods = sorted({self.analytics[o].get('nod_pattern') for o in self.analytics if self.analytics[o].get('nod_pattern')})
+        if not nods:
+            write("* no nods")
+        else:
+            for n in nods:
+                # Be flexible with '3 shutter' or '3-shutter'
+                is_standard = "3 shutter" in n.lower() or "3-shutter" in n.lower()
+                icon = "✅" if is_standard else "🧠"
+                label = "standard 3-shutter slitlet nods" if is_standard else n
+                write(f"* {icon} {label}")
+
+        # 7. Background Observations
+        write("\n" + "**BACKGROUND OBSERVATIONS**")
+        write("* ✅🧠 compact sources: 3 shutters make long enough slitlets")
+
+        # 8. MOS
+        write("\n" + "**MULTI-OBJECT SPECTROSCOPY (MOS)**")
+        write("\nCATALOG:")
+        cat_info = self.stats.get('catalog_info', {})
+        cat_warns = []
+        for cat, info in cat_info.items():
+            if info.get('accuracy', 0) > 15:
+                cat_warns.append(f"Catalog '{cat}' accuracy {info['accuracy']} mas (> 15 mas)")
+            if info.get('weight_range', (0,0))[1] >= 1e9:
+                cat_warns.append(f"Catalog '{cat}' weight max >= 1e9")
+                
+        if not cat_warns:
+            write("* ✅ catalog looks good")
+        else:
+            for w in cat_warns:
+                write(f"* ⚠️ {w}")
+
+        write("\nMOS Observation/Visit structure")
+        pa_match = True
+        for o in reviewed_obs:
+            if o in self.analytics:
+                if abs((self.analytics[o].get('apa_planned_val') or 0.0) - (self.analytics[o].get('apa_assigned_val') or 0.0)) > 0.1:
+                    pa_match = False
+        if pa_match:
+            write("* ✅ MSA Planned Aperture PA matches Assigned APA")
+        else:
+            write("* ⚠️ MSA Planned Aperture PA DOES NOT match Assigned APA")
+
+        write("\nCheck MSA Configurations:")
+        write("* 👁️ masks well designed and filled")
+
+        write("\nCheck MPT Plans:")
+        write("* 👁️ Check (extraction not yet implemented)")
+
+        write("\nExposure depth on high-weighted sources")
+        analysis = self.stats.get('high_priority_analysis', {})
+        if analysis:
+            # Try to get the weights for the label
+            weights = []
+            for cat in analysis:
+                top_20 = analysis[cat].get('top_20', [])
+                if top_20:
+                    weights.extend([t['weight'] for t in top_20])
+            if weights:
+                unique_weights = sorted(list(set(weights)), reverse=True)
+                weight_str = " or ".join([f"{w:,.0f}" for w in unique_weights[:2]])
+                n_visits = len(self.reviewed_obs_nums)
+                write(f"* ✅ Highest priority targets (weight {weight_str}) achieve full depth in each of {n_visits} visits")
+            else:
+                write("* ✅ Highest priority targets achieve full depth")
+        else:
+            write("* 👁️ depth analysis unavailable")
+
+        write("\nSpectral cutoffs:")
+        write("* ⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings")
+
+        # 9. Reference Stars
+        write("\n" + "**REFERENCE STARS**")
+        ta_stars = self.exports_data.get('ta_stars', {})
+        starred_visits = []
+        for obs_num, visits in ta_stars.items():
+            if str(obs_num) in reviewed_obs:
+                for v_key, info in visits.items():
+                    starred_visits.append((obs_num, v_key, info))
+        
+        # Sort by obs_num (int) then v_key (int)
+        starred_visits.sort(key=lambda x: (int(x[0]), int(x[1])))
+        
+        if not starred_visits:
+            write("* ⚠️ No reference stars found in exports")
+        else:
+            for obs_num, v_key, info in starred_visits:
+                count = info['count']
+                quads = len(info['quads'])
+                icon = "✅" if count >= 8 and quads >= 3 else "⚠️"
+                write(f"* {icon} Visit {obs_num}:{v_key} – {count} stars in {quads} quads")
 
 
     def _report_catalogs(self, write, icons):

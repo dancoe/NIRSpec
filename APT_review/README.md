@@ -122,7 +122,7 @@ python APT_review.py program.aptx --exclude "2,6-8"
 
 ## What the Report Covers
 
-The report is organized into 16 sections that are printed in sequence:
+The report is organized into 18 sections that are printed in sequence:
 
 1.  **Review Header** — Program title, PI, and PID.
 2.  **Observing Description** — High-level summary from the proposal.
@@ -144,12 +144,9 @@ The report is organized into 16 sections that are printed in sequence:
 13. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
 14. **High Priority Targets** — Per-visit coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
 15. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
-16. **Final Summary** — A concise technical sign-off including:
-    - Counts of **Reviewed**, **COMPLETE** (excluded), and **Excluded** observations.
-    - **Strategy Flags**: Spotlight checks for FS/MOS angle requirements and NIRCam/MOS timing links.
-    - **Clustering Flags**: Identifies observations within 1.5° that could be planned together for efficiency.
-    - Time budget (Allocated vs. Charged) and program-wide compliance for MSATA, Integration Times, and IRS2.
-    - **Files Used**: A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
+16. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
+17. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
+18. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
 
 ---
 
