@@ -385,7 +385,7 @@ def main():
             
             # Pick a spot (bottom right corner in plot coordinates)
             # Since X is inverted, bottom right has smaller RA value.
-            arrow_x = x_min + 0.1 * (x_max - x_min)
+            arrow_x = x_min + 0.9 * (x_max - x_min)
             arrow_y = y_min + 0.1 * (y_max - y_min)
             
             # Find dispersion vector in RA/Dec space from any visit's quads

@@ -50,6 +50,7 @@ from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more
 | `docs/APT_report.md` | Full technical reference describing every metric extracted, where it comes from, and how the report is structured. |
 | `docs/APT_XML.md` | Reference for the APT XML schema — where specific data lives in the XML tree. |
 | `docs/APT_exports.md` | Guide to the supplementary CSV exports (MSATA, Wavelengths) and how the script finds them. |
+| `docs/Plots.md` | Reference for interpreting the MSA coverage plots (colors, outlines, and dispersion). |
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
 | `docs/ChangeLog.md` | Historical log of updates and new features added to the tool. |
 
