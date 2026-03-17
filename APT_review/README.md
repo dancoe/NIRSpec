@@ -23,7 +23,7 @@
 generates:
 
 * report: [**JWST7729_review.txt**](docs/JWST7729_review.txt)
-* plots: [**msa_coverage_*.png**](docs/JWST7729_msa_coverage.png)
+* plots: [**JWST7729_Obs1.png**](docs/JWST7729_Obs1.png)
 
 ### Example Report Excerpts
 
@@ -66,6 +66,7 @@ TARGET ACQUISITION
 
 EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 ✅ Highest priority targets (weight 75,000 or 50,000) achieve full depth in each of 2 visits
+
 ...
 ```
 
