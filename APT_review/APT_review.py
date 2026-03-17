@@ -92,6 +92,7 @@ class NIRSpecMOSReviewer:
             'wavelengths': {}, # obs_num -> {sid -> {gf -> {'n1_min': val, ...}}}
             'availability': {} # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
         }
+        self.visits_csv_path = None
         self._tree = None
         self._root = None
         self._main_xml_arcname = None
@@ -297,21 +298,7 @@ class NIRSpecMOSReviewer:
                         'counts': counts
                     }
                 
-                # Proactively generate plots using the external script
-                script_dir = Path(__file__).parent
-                plot_script = script_dir / "msa_coverage_plot.py"
-                if plot_script.exists():
-                    try:
-                        valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
-                        valid_obs_str = ",".join(valid_obs)
-                        print(f"Generating MSA coverage plots for {file_path.name}...")
-                        subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(file_path), valid_obs_str], 
-                                       check=True)
-                    except subprocess.CalledProcessError as e:
-                        print(f"Warning: MSA coverage plot generation failed.")
-                    except Exception as e:
-                        print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
-
+                self.visits_csv_path = file_path
                 return True
         except Exception as e:
             print(f"Warning: Could not parse visits CSV: {e}")
@@ -2507,6 +2494,23 @@ class NIRSpecMOSReviewer:
                 if plot_file.exists():
                     write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
 
+    def generate_plots(self):
+        if not self.visits_csv_path: return
+        script_dir = Path(__file__).parent
+        plot_script = script_dir / "msa_coverage_plot.py"
+        if plot_script.exists():
+            try:
+                valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
+                if not valid_obs: return
+                valid_obs_str = ",".join(valid_obs)
+                print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
+                subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), valid_obs_str], 
+                               check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: MSA coverage plot generation failed.")
+            except Exception as e:
+                print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
     parser.add_argument("apt_file", help="Path to .aptx or .xml file")
@@ -2531,3 +2535,4 @@ if __name__ == "__main__":
         exports_dir=args.exports
     )
     reviewer.print_report()
+    reviewer.generate_plots()
