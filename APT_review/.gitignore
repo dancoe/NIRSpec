@@ -1,4 +1,6 @@
+# Locally present but ignored by Git
 INSTRUCTIONS.md
+GitCommit.md
 data/
 .DS_Store
 **/.DS_Store
