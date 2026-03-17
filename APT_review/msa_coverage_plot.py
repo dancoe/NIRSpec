@@ -383,8 +383,10 @@ def main():
         try:
             x_min, x_max = plt.xlim()
             y_min, y_max = plt.ylim()
-            arrow_x = x_min + 0.85 * (x_max - x_min)
-            arrow_y = y_min + 0.12 * (y_max - y_min)
+            # RA is inverted: Large on left, Small on right
+            # Bottom right is near x_max (small RA) and y_min (small Dec)
+            arrow_x = x_min + 0.90 * (x_max - x_min)
+            arrow_y = y_min + 0.10 * (y_max - y_min)
             
             if HAS_PYSIAF:
                 v3_c, v1_c = None, None
@@ -399,27 +401,30 @@ def main():
                     disp_len = np.sqrt(np.sum(disp_vec**2))
                     if disp_len > 0:
                         unit_disp = disp_vec / disp_len
-                        arrow_len = 0.10 * abs(x_max - x_min)
+                        # Make it 12% of plot width for better visibility
+                        arrow_len = 0.12 * abs(x_max - x_min)
                         dx, dy = unit_disp * arrow_len
                         
-                        # Draw gradient line
-                        n_segments = 50
+                        # Draw gradient line with higher density and thickness
+                        n_segments = 100
                         for i in range(n_segments):
-                            p1 = (arrow_x + dx * i / n_segments, arrow_y + dy * i / n_segments)
+                            frac = i / n_segments
+                            p1 = (arrow_x + dx * frac, arrow_y + dy * frac)
                             p2 = (arrow_x + dx * (i + 1) / n_segments, arrow_y + dy * (i + 1) / n_segments)
-                            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=plt.cm.jet(i / n_segments), 
-                                     lw=2.0, zorder=10)
+                            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=plt.cm.jet(frac), 
+                                     lw=3.5, zorder=10, solid_capstyle='butt')
                         
-                        # Add black arrowhead at the tip
+                        # Prominent black arrowhead at the tip
                         plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), 
-                                     xytext=(arrow_x + dx * 0.95, arrow_y + dy * 0.95),
-                                     arrowprops=dict(arrowstyle='-|>', mutation_scale=20, color='black', lw=1.5),
+                                     xytext=(arrow_x + dx * 0.9, arrow_y + dy * 0.9),
+                                     arrowprops=dict(arrowstyle='simple,head_width=1.5,head_length=2.0', 
+                                                     color='black', lw=0.5),
                                      zorder=11)
                                      
-                        # Text above the arrow
-                        plt.text(arrow_x + dx/2, arrow_y + dy/2 + 0.03 * abs(y_max - y_min), 
+                        # Text "Dispersion" clearly above the arrow
+                        plt.text(arrow_x + dx/2, arrow_y + dy/2 + 0.04 * abs(y_max - y_min), 
                                  "Dispersion", color='black', ha='center', va='bottom', 
-                                 fontsize=8, fontweight='bold', zorder=12)
+                                 fontsize=9, fontweight='bold', zorder=12)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
         
