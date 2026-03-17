@@ -379,14 +379,10 @@ def main():
         plt.title(title)
         plt.gca().invert_xaxis()
 
-        # Draw dispersion arrow (Q3 -> Q1 direction)
+        # Draw dispersion arrow (Q3 -> Q1 direction) with gradient
         try:
             x_min, x_max = plt.xlim()
             y_min, y_max = plt.ylim()
-            # RA is on X axis (inverted). 
-            # Visually Left = x_min (larger RA), Visually Right = x_max (smaller RA)
-            
-            # Bottom Right of plot
             arrow_x = x_min + 0.85 * (x_max - x_min)
             arrow_y = y_min + 0.12 * (y_max - y_min)
             
@@ -403,18 +399,27 @@ def main():
                     disp_len = np.sqrt(np.sum(disp_vec**2))
                     if disp_len > 0:
                         unit_disp = disp_vec / disp_len
-                        # Make it 10% of plot width
                         arrow_len = 0.10 * abs(x_max - x_min)
                         dx, dy = unit_disp * arrow_len
                         
-                        # Draw arrow using annotate for a definitive arrowhead
-                        plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), xytext=(arrow_x, arrow_y),
+                        # Draw gradient line
+                        n_segments = 50
+                        for i in range(n_segments):
+                            p1 = (arrow_x + dx * i / n_segments, arrow_y + dy * i / n_segments)
+                            p2 = (arrow_x + dx * (i + 1) / n_segments, arrow_y + dy * (i + 1) / n_segments)
+                            plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=plt.cm.jet(i / n_segments), 
+                                     lw=2.0, zorder=10)
+                        
+                        # Add black arrowhead at the tip
+                        plt.annotate("", xy=(arrow_x + dx, arrow_y + dy), 
+                                     xytext=(arrow_x + dx * 0.95, arrow_y + dy * 0.95),
                                      arrowprops=dict(arrowstyle='-|>', mutation_scale=20, color='black', lw=1.5),
-                                     zorder=10)
+                                     zorder=11)
+                                     
                         # Text above the arrow
                         plt.text(arrow_x + dx/2, arrow_y + dy/2 + 0.03 * abs(y_max - y_min), 
                                  "Dispersion", color='black', ha='center', va='bottom', 
-                                 fontsize=8, fontweight='bold', zorder=11)
+                                 fontsize=8, fontweight='bold', zorder=12)
         except Exception as e:
             print(f"Could not draw dispersion arrow: {e}")
         
