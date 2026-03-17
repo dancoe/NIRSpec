@@ -191,6 +191,9 @@ def main():
         observed_ids = set()
         used_ref_ids = set()
         
+        # To store quads for dispersion arrow calculation
+        obs_quads = {} # visit_id -> {quad_idx: poly}
+
         if msa_dir.exists():
             # Science targets
             for f in msa_dir.glob(f"{prop_id}-obs{obs_id_str}-exp*.csv"):
@@ -260,6 +263,7 @@ def main():
             # Calculate PySIAF quadrants
             main_ap_name = row.get('Aperture', 'NRS_FULL_MSA')
             quads = get_siaf_quadrants(ra_ptr, dec_ptr, pa_ptr, main_ap_name)
+            obs_quads[vid] = quads
             
             if not quads:
                 print(f"Warning: PySIAF calculation failed for {v_label}")
@@ -335,9 +339,9 @@ def main():
 
             if src['is_ref']:
                 is_used = src['id'] in used_ref_ids
-                plt.scatter(src['ra'], src['dec'], marker='*', s=150 if is_used else 50, color='0.50', 
+                plt.scatter(src['ra'], src['dec'], marker='*', s=50 if is_used else 30, color='0.50', 
                             edgecolors='lime' if is_used else 'black', 
-                            linewidths=1.0 if is_used else 0.5, 
+                            linewidths=0.5 if is_used else 0.5, 
                             alpha=1.0 if is_used else 0.3, 
                             zorder=-1 if not is_used else 0)
             else:
@@ -351,13 +355,13 @@ def main():
                 
                 if is_observed:
                     edge_color = 'lime'
-                    l_width = 1.0
+                    l_width = 0.5
                     z_ord = 5
                 
                 if is_highest:
                     # Thick black outline for highest priority
-                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                color=pt_color, edgecolors='black', linewidths=2.0, zorder=6)
+                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=1.0, 
+                                color=pt_color, edgecolors='black', linewidths=1.0, zorder=6)
                     if is_observed:
                         # Extra green ring outside the thick black outline
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size + 15, alpha=pt_alpha, 
@@ -369,6 +373,48 @@ def main():
         if not all_ras: 
             plt.close()
             return
+
+        # Draw dispersion arrow (Q3 -> Q1 direction)
+        # We'll use the corner of the plot
+        try:
+            # Get axis limits to find a good corner
+            x_min, x_max = plt.xlim()
+            y_min, y_max = plt.ylim()
+            # X is inverted (RA), so x_max is smaller than x_min in degrees? 
+            # Actually invert_xaxis() means large RA is on the left.
+            
+            # Pick a spot (bottom right corner in plot coordinates)
+            # Since X is inverted, bottom right has smaller RA value.
+            arrow_x = x_min + 0.1 * (x_max - x_min)
+            arrow_y = y_min + 0.1 * (y_max - y_min)
+            
+            # Find dispersion vector in RA/Dec space from any visit's quads
+            if HAS_PYSIAF:
+                # We'll use the centers of Q3 and Q1 to define the vector
+                # Pick any visit that has both
+                v3_c = None
+                v1_c = None
+                for vid in obs_quads:
+                    if 3 in obs_quads[vid] and 1 in obs_quads[vid]:
+                        v3_c = np.mean(obs_quads[vid][3], axis=0)
+                        v1_c = np.mean(obs_quads[vid][1], axis=0)
+                        break
+                
+                if v3_c is not None and v1_c is not None:
+                    disp_vec = v1_c - v3_c
+                    # Normalize and scale for visibility
+                    disp_len = np.sqrt(np.sum(disp_vec**2))
+                    if disp_len > 0:
+                        unit_disp = disp_vec / disp_len
+                        scale = 0.05 * (max(x_min, x_max) - min(x_min, x_max))
+                        dx, dy = unit_disp * scale
+                        
+                        plt.arrow(arrow_x, arrow_y, dx, dy, color='red', head_width=0.01*scale, 
+                                  head_length=0.02*scale, width=0.005*scale, zorder=10)
+                        plt.text(arrow_x + dx/2, arrow_y - 0.02*scale, "Dispersion", color='red', 
+                                 ha='center', va='top', fontsize=8, fontweight='bold', zorder=10)
+        except Exception as e:
+            print(f"Could not draw dispersion arrow: {e}")
 
         plt.xlabel('RA (Degrees)')
         plt.ylabel('Dec (Degrees)')
@@ -417,10 +463,13 @@ def main():
                                    markeredgecolor='lime', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
         custom_labels.append('Observed Target (Green Outline)')
 
-        # 5. MSA Quadrants
+        # 5. MSA Quadrants and Info
         if HAS_PYSIAF:
             custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
             custom_labels.append('MSA Quadrants')
+            
+        custom_lines.append(Line2D([0], [0], color='red', linewidth=1.5))
+        custom_labels.append('Dispersion Direction')
             
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
