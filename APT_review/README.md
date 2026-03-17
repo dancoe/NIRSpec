@@ -1,6 +1,6 @@
 # NIRSpec MOS APT Review Assistant
 
-`APT_review.py` aids Instrument Scientists in reviewing NIRSpec MOS programs by extracting information from an APT file `.aptx` and generating an ASCII report `.txt` and optional plots `.png`, including:
+`APT_review.py` aids Instrument Scientists in reviewing NIRSpec MOS programs by extracting information from an APT file `.aptx` and generating an ASCII report `.txt`, including:
 * APT warnings and errors
 * MSATA reference stars used and quads covered (reported and plotted)
 * Depth and wavelength coverage of high-priority targets
@@ -8,6 +8,11 @@
 * Aperture PA planned vs. assigned
 * Total Charged Time vs. Allocated
 * and more...
+
+`msa_coverage_plot.py` optionally generates plots of the MSA coverage on the sky, including:
+* catalog color-coded by weight
+* reference stars used for MSATA
+* MSA quadrants
 
 ---
 
@@ -39,18 +44,31 @@ from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more
 👷 1 observation under construction: Obs 2
 ```
 
+```
+HIGH PRIORITY TARGET ANALYSIS
+Visit 1:1
+------------------------------------------------------------
+  ID | Weight | G395M/F290LP    | Wavelength Coverage
+-------------------------------------------------------
+  50 |  75000 | 🌑  0/27 (  0%)
+  76 |  75000 | 🌕 27/27 (100%) | 🌔 GAP: 3.20 – 3.48 µm
+  77 |  75000 | 🌕 27/27 (100%) | 🌕 FULL (NRS2)
+ 104 |  75000 | 🌕 27/27 (100%) | 🌓 CUTOFF: 3.06 µm – (NRS1)
+```
+
+
 **SPAR REVIEW Checklist:**
 
 ```
 TARGET ACQUISITION
 ✅ MOS MSATA
 
-BRIGHT SOURCE CHECKING
-👁️ no bright sources
+EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
+✅ Highest priority targets (weight 75,000 or 50,000) achieve full depth in each of 2 visits
 ...
 ```
 
-![MSA Coverage Plot](docs/JWST7729_msa_coverage.png)
+![MSA Coverage Plot](docs/JWST7729_Obs1.png)
 
 ---
 

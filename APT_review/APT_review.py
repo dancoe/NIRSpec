@@ -2081,15 +2081,15 @@ class NIRSpecMOSReviewer:
                         elif n2_full and n1_gap:
                             s = f"{icons['FULL']} FULL (NRS2)"
                         elif n1_max > 0 and n2_min > 0:
-                            s = f"{icons['PARTIAL']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
+                            s = f"{icons['MOSTLY']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
                         elif n1_gap and n2_min > 0:
-                            s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                            s = f"🌓 CUTOFF: {n2_min:.2f} µm – (NRS1)"
                         elif n2_gap and n1_max > 0:
-                            s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                            s = f"🌗 CUTOFF: (NRS2) – {n1_max:.2f} µm"
                         elif n1_min == -1 and n1_max > 0 and n2_gap:
-                             s = f"{icons['PARTIAL']} CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                             s = f"🌗 CUTOFF: (NRS2) – {n1_max:.2f} µm"
                         elif n2_min > 0 and n2_max == -2 and n1_gap:
-                             s = f"{icons['PARTIAL']} CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                             s = f"🌓 CUTOFF: {n2_min:.2f} µm – (NRS1)"
                         
                         if s: wave_summaries.append(s)
 
@@ -2441,7 +2441,7 @@ class NIRSpecMOSReviewer:
             # Count visits in reviewed observations
             n_v = 0
             for o in reviewed_obs:
-                n_v += len(self.analytics.get(o, {}).get('visits', []))
+                n_v += len(self.analytics.get(o, {}).get('visit_info', {}).keys())
 
             if weights:
                 unique_weights = sorted(list(set(weights)), reverse=True)
