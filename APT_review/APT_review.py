@@ -951,6 +951,7 @@ class NIRSpecMOSReviewer:
             'total_sources': total_count,
             'ref_sources': ref_count,
             'weight_range': (min(weights), max(weights)) if weights else (0, 0),
+            'stellarity_range': (min(stellarities), max(stellarities)) if stellarities else (0, 0),
             'max_id': max_id
         }
         return metrics
@@ -2300,14 +2301,16 @@ class NIRSpecMOSReviewer:
 
     def _report_spar_review(self, write, icons):
         """ Consolidation of review checks in a checklist format. """
+        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"]
+        
         write("\n" + "="*80)
         write("SPAR REVIEW")
         write("="*80)
 
         # 1. Target Acquisition
         write("\nTARGET ACQUISITION")
-        msata_obs = [o for o in self.all_obs_nums if "MSATA" in (self.analytics.get(o, {}).get('ta_method') or "")]
-        if msata_obs or self.stats.get('msata_count', 0) > 0:
+        msata_obs = [o for o in reviewed_obs if "MSATA" in (self.analytics.get(o, {}).get('ta_method') or "")]
+        if msata_obs or (not reviewed_obs and self.stats.get('msata_count', 0) > 0):
             write("✅ MOS MSATA")
         else:
             write("⚠️ No MSATA detected")
@@ -2318,7 +2321,7 @@ class NIRSpecMOSReviewer:
 
         # 3. Parallels
         write("\nPARALLELS")
-        parallels = sorted({self.obs_info[o]['parallel'] for o in self.all_obs_nums if self.obs_info[o]['parallel']})
+        parallels = sorted({self.obs_info[o]['parallel'] for o in reviewed_obs if self.obs_info[o]['parallel']})
         if not parallels:
             write("no parallels")
         else:
@@ -2328,42 +2331,43 @@ class NIRSpecMOSReviewer:
         # 4. Special Requirements
         write("\nSPECIAL REQUIREMENTS")
         srs = []
-        for o in sorted(self.analytics.keys(), key=int):
+        for o in sorted(reviewed_obs, key=int):
             sr_data = self.analytics[o].get('special_reqs_data', {})
             if sr_data.get('apa_range') and sr_data['apa_range'] != "None":
                 srs.append(f"Aperture PA {sr_data['apa_range']}")
             for other in sr_data.get('others', []):
                 # Ignore standard implicit requirements
-                if any(x in other for x in ["Group Visits", "Visits Same PA", "MSA Scheduled Aperture PA"]):
+                ignore_list = ["Group Visits", "Visits Same PA", "MSA Scheduled Aperture PA", "Same PAVisits"]
+                if any(x in other for x in ignore_list):
                     continue
                 srs.append(other)
         
         if not srs:
-            write("no Special Requirements")
+            write("No Special Requirements")
         else:
             for sr in sorted(set(srs)):
                 write(f"{sr}")
-        write("(ignore standard Implicit Requirements including Group Visits, Visits Same PA, MSA Scheduled Aperture PA)")
 
         # 5. Exposure Parameters
         write("\nEXPOSURE PARAMETERS")
         specs = self.stats.get('all_exposure_specs', [])
-        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"]
+        
         for spec in specs:
              if str(spec['obs']) in reviewed_obs:
                 irs2 = "IRS2" in (spec['rp'] or "")
                 time_ok = spec['dur'] <= 1500
-                icon = "✅" if irs2 and time_ok else "⚠️"
-                val_str = f"{spec['g']} groups {spec['rp']} = {spec['dur']:.0f} seconds integration"
-                write(f"{icon} {val_str}")
-                if not irs2:
-                    write(f"⚠️ NRS instead of NRSIRS2")
-                if not time_ok:
-                    write(f"⚠️ {spec['dur']:.0f} s integrations (> 1500s)")
+                
+                if irs2 and time_ok:
+                    write(f"✅ {spec['g']} groups {spec['rp']} = {spec['dur']:.0f} seconds integration")
+                else:
+                    if not irs2:
+                        write("⚠️ NRS instead of NRSIRS2")
+                    if not time_ok:
+                        write(f"⚠️ {spec['dur']:.0f} s integrations (> 1500s): {spec['g']} groups {spec['rp']}")
 
         # 6. Dithers and Nods
         write("\nDITHERS AND NODS")
-        nods = sorted({self.analytics[o].get('nod_pattern') for o in self.analytics if self.analytics[o].get('nod_pattern')})
+        nods = sorted({self.analytics[o].get('nod_pattern') for o in reviewed_obs if self.analytics[o].get('nod_pattern')})
         if not nods:
             write("no nods")
         else:
@@ -2379,23 +2383,34 @@ class NIRSpecMOSReviewer:
         write("✅ 🧠 compact sources: 3 shutters make long enough slitlets")
 
         # 8. MOS
-        write("\nMULTI-OBJECT SPECTROSCOPY (MOS)")
-        write("\nCATALOG:")
+        # (Catalog section)
+        write("\nCATALOG")
         cat_info = self.stats.get('catalog_info', {})
         cat_warns = []
+        reviewed_catalogs = {self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')}
+        
         for cat, info in cat_info.items():
+            if cat not in reviewed_catalogs: continue
+            
+            w_max = info.get('weight_range', (0,0))[1]
+            s_range = info.get('stellarity_range', (0,0))
+            write(f"✅ weight max {w_max:,.0f}")
+            if s_range[0] == s_range[1]:
+                val = s_range[0]
+                source_type = "extended" if (0 <= val <= 0.75) else "point"
+                write(f"⚠️ stellarity values all {val:.2g}; inform user pipeline will process these as {source_type} sources")
+            else:
+                write(f"✅ stellarity {s_range[0]:.2g} – {s_range[1]:.2g}")
+
             if info.get('accuracy', 0) > 15:
                 cat_warns.append(f"Catalog '{cat}' accuracy {info['accuracy']} mas (> 15 mas)")
-            if info.get('weight_range', (0,0))[1] >= 1e9:
+            if w_max >= 1e9:
                 cat_warns.append(f"Catalog '{cat}' weight max >= 1e9")
                 
-        if not cat_warns:
-            write("✅ catalog looks good")
-        else:
-            for w in cat_warns:
-                write(f"⚠️ {w}")
+        for w in cat_warns:
+            write(f"⚠️ {w}")
 
-        write("\nMOS Observation/Visit structure")
+        write("\nMOS OBSERVATION/VISIT STRUCTURE")
         pa_match = True
         for o in reviewed_obs:
             if o in self.analytics:
@@ -2406,32 +2421,38 @@ class NIRSpecMOSReviewer:
         else:
             write("⚠️ MSA Planned Aperture PA DOES NOT match Assigned APA")
 
-        write("\nCheck MSA Configurations:")
+        write("\nCHECK MSA CONFIGURATIONS")
         write("👁️ masks well designed and filled")
 
-        write("\nCheck MPT Plans:")
+        write("\nCHECK MPT PLANS")
         write("👁️ Check (extraction not yet implemented)")
 
-        write("\nExposure depth on high-weighted sources")
+        write("\nEXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
         analysis = self.stats.get('high_priority_analysis', {})
         if analysis:
-            # Try to get the weights for the label
+            # Try to get the weights for the label, only for catalogs in reviewed observations
             weights = []
-            for cat in analysis:
-                top_20 = analysis[cat].get('top_20', [])
-                if top_20:
-                    weights.extend([t['weight'] for t in top_20])
+            for cat in reviewed_catalogs:
+                if cat in analysis:
+                    top_20 = analysis[cat].get('top_20', [])
+                    if top_20:
+                        weights.extend([t['weight'] for t in top_20])
+            
+            # Count visits in reviewed observations
+            n_v = 0
+            for o in reviewed_obs:
+                n_v += len(self.analytics.get(o, {}).get('visits', []))
+
             if weights:
                 unique_weights = sorted(list(set(weights)), reverse=True)
                 weight_str = " or ".join([f"{w:,.0f}" for w in unique_weights[:2]])
-                n_visits = len(self.reviewed_obs_nums)
-                write(f"✅ Highest priority targets (weight {weight_str}) achieve full depth in each of {n_visits} visits")
+                write(f"✅ Highest priority targets (weight {weight_str}) achieve full depth in each of {n_v} visits")
             else:
                 write("✅ Highest priority targets achieve full depth")
         else:
             write("👁️ depth analysis unavailable")
 
-        write("\nSpectral cutoffs:")
+        write("\nSPECTRAL CUTOFFS")
         write("⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings")
 
         # 9. Reference Stars
