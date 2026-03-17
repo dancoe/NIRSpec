@@ -318,13 +318,14 @@ def main():
                 norm_wt = max(0.0, min(1.0, norm_wt))
                 size = 5 + 5 * (log_w - min_log_wt)
                 pt_color = plt.cm.rainbow(norm_wt)
-                pt_alpha = 0.2 + 0.8 * norm_wt
 
                 if src['is_ref']:
                     is_used = src['id'] in used_ref_ids
                     plt.scatter(src['ra'], src['dec'], marker='*', s=50, color='0.50', 
                                 edgecolors='lime' if is_used else 'black', 
-                                linewidths=1.0 if is_used else 0.5, alpha=0.3, zorder=-1 if not is_used else 0)
+                                linewidths=1.0 if is_used else 0.5, 
+                                alpha=1.0 if is_used else 0.3, 
+                                zorder=-1 if not is_used else 0)
                 else:
                     is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                     is_observed = src['id'] in observed_ids
@@ -332,6 +333,7 @@ def main():
                     edge_color = '0.50'
                     l_width = 0.5
                     z_ord = 4
+                    pt_alpha = 1.0 if is_observed else 0.3
                     
                     if is_observed:
                         edge_color = 'lime'
@@ -341,14 +343,10 @@ def main():
                     if is_highest:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
                                     color=pt_color, edgecolors='black', linewidths=1, zorder=6)
-                        if is_observed: # Double outline for observed highest? Just use lime for now or black?
-                            # User asked for green outline around observed. 
-                            # If it's highest, it already has black. Let's add a green one outside?
-                            # Or just prioritize green for observed?
-                            # "Add a green outline around objects actually observed and reference stars actually used"
-                            # Let's use green.
+                        if is_observed:
+                            # Double outline for observed highest: black inside, lime outside
                             plt.scatter(src['ra'], src['dec'], marker='o', s=size+4, alpha=pt_alpha, 
-                                        color='none', edgecolors='lime', linewidths=1.5, zorder=7)
+                                        color='none', edgecolors='lime', linewidths=1.0, zorder=7)
                     else:
                         plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
                                     color=pt_color, edgecolors=edge_color, linewidths=l_width, zorder=z_ord)
@@ -384,9 +382,8 @@ def main():
             w = 10**log_w
             sz = 5 + 5 * frac * log_range
             pt_color = plt.cm.rainbow(frac)
-            pt_alpha = 0.2 + 0.8 * frac
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
-                                       alpha=pt_alpha, markersize=np.sqrt(sz), linestyle='None'))
+                                       alpha=0.3, markersize=np.sqrt(sz), linestyle='None'))
             custom_labels.append(f'Weight: {w:,.0f}')
 
         # 3. Reference Object
@@ -397,12 +394,12 @@ def main():
         
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
                                    markeredgecolor='lime', markeredgewidth=1.0, markersize=np.sqrt(50), 
-                                   alpha=0.3, linestyle='None'))
+                                   alpha=1.0, linestyle='None'))
         custom_labels.append('Reference Object (Used)')
 
         # 4. Observed Target
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.8', 
-                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=8, linestyle='None'))
+                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
         custom_labels.append('Observed Target (Green Outline)')
 
         # 5. MSA Quadrants
