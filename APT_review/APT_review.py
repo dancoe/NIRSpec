@@ -2707,7 +2707,13 @@ class NIRSpecMOSReviewer:
                 
         for name, data in groups.items():
             files = data['files']
-            if not files: continue
+            
+            # Show Visit Exports even if not found, to remind user it's helpful
+            if not files:
+                if name == 'Visit Exports':
+                    write(f"\n📄 {name}: (Not found)")
+                    write(f"   Note: Required for quadrant availability analysis.")
+                continue
             
             mtimes = [self.files_used[f] for f in files]
             min_mtime, max_mtime = min(mtimes), max(mtimes)
