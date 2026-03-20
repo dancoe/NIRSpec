@@ -158,6 +158,7 @@ class NIRSpecMOSReviewer:
         for csv_file in csv_files:
             name = csv_file.name
             name_lower = name.lower()
+            parent_name_lower = csv_file.parent.name.lower()
             if name_lower.endswith("-ta.csv"):
                 m = re.search(r'obs(\d+)(?:-(\d+))?', name_lower)
                 if m:
@@ -165,7 +166,7 @@ class NIRSpecMOSReviewer:
                     visit_num = m.group(2)
                     if self._parse_ta_csv(csv_file, obs_num, visit_num):
                         self._record_file_used(csv_file)
-            elif "visit" in name_lower and name_lower.endswith(".csv"):
+            elif ("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv"):
                 if self._parse_visits_csv(csv_file):
                     self._record_file_used(csv_file)
                 else:
