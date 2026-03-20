@@ -94,6 +94,7 @@ class NIRSpecMOSReviewer:
             'availability': {} # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
         }
         self.visits_csv_path = None
+        self.has_pysiaf = None
         self._tree = None
         self._root = None
         self._main_xml_arcname = None
@@ -300,14 +301,14 @@ class NIRSpecMOSReviewer:
         try:
             import pysiaf
             from pysiaf.utils import rotations
-            HAS_PYSIAF = True
+            self.has_pysiaf = True
         except ImportError:
-            HAS_PYSIAF = False
+            self.has_pysiaf = False
             
         # If PySIAF is missing, we can't do the quadrant availability analysis, 
         # but we can still identify the file as a valid visits export.
-        if not HAS_PYSIAF:
-            pass # We'll print the skip warning later if we actually find visit rows
+        if not self.has_pysiaf:
+            pass # We'll provide a clear note in the FILES USED section later
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -359,39 +360,42 @@ class NIRSpecMOSReviewer:
                         ra_ptr = float(ra_str) if ra_str else 0.0
                         dec_ptr = float(dec_str) if dec_str else 0.0
                         pa_ptr = float(pa_str) if pa_str else 0.0
-                        main_ap = siaf[ap_name]
-                        attitude = rotations.attitude(main_ap.V2Ref, main_ap.V3Ref, ra_ptr, dec_ptr, pa_ptr)
                         
-                        quad_maps = {1: 'NRS_FULL_MSA1', 2: 'NRS_FULL_MSA2', 3: 'NRS_FULL_MSA3', 4: 'NRS_FULL_MSA4'}
-                        quad_polys = {}
-                        for q_idx, q_ap_name in quad_maps.items():
-                            q_ap = siaf[q_ap_name]
-                            q_ap.set_attitude_matrix(attitude)
-                            q_ra, q_dec = q_ap.closed_polygon_points('sky')
-                            quad_polys[q_idx] = np.column_stack((q_ra, q_dec))
+                        if self.has_pysiaf:
+                            main_ap = siaf[ap_name]
+                            attitude = rotations.attitude(main_ap.V2Ref, main_ap.V3Ref, ra_ptr, dec_ptr, pa_ptr)
+                            
+                            quad_maps = {1: 'NRS_FULL_MSA1', 2: 'NRS_FULL_MSA2', 3: 'NRS_FULL_MSA3', 4: 'NRS_FULL_MSA4'}
+                            quad_polys = {}
+                            for q_idx, q_ap_name in quad_maps.items():
+                                q_ap = siaf[q_ap_name]
+                                q_ap.set_attitude_matrix(attitude)
+                                q_ra, q_dec = q_ap.closed_polygon_points('sky')
+                                quad_polys[q_idx] = np.column_stack((q_ra, q_dec))
                     except Exception as e:
-                        print(f"Warning: SIAF calculation failed for visit {vid}: {e}")
+                        if self.has_pysiaf:
+                            print(f"Warning: SIAF calculation failed for visit {vid}: {e}")
                         continue
                     
                     counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
                     cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
-                    if not cat_sources: continue
                     
-                    for sid, src in cat_sources.items():
-                        for q_idx, q_poly in quad_polys.items():
-                            if is_inside((src['ra'], src['dec']), q_poly):
-                                if src['is_ref']:
-                                    counts[q_idx]['ref'] += 1
-                                else:
-                                    counts[q_idx]['sci'] += 1
-                                break
+                    if cat_sources and self.has_pysiaf:
+                        for sid, src in cat_sources.items():
+                            for q_idx, q_poly in quad_polys.items():
+                                if is_inside((src['ra'], src['dec']), q_poly):
+                                    if src['is_ref']:
+                                        counts[q_idx]['ref'] += 1
+                                    else:
+                                        counts[q_idx]['sci'] += 1
+                                    break
                     
                     self.exports_data['availability'][vid] = {
                         'cat': cat_name,
                         'counts': counts
                     }
                 
-                if not HAS_PYSIAF:
+                if not self.has_pysiaf:
                     print("⚠️ PySIAF not found. Skipping quadrant availability analysis for visits.")
                 
                 self.visits_csv_path = file_path
@@ -2734,6 +2738,9 @@ class NIRSpecMOSReviewer:
             
             write(f"\n📄 {name}: {dir_str}{data['pattern']} ({len(files)} files)")
             write(f"   Modified: {date_range}{warning}")
+            
+            if name == 'Visit Exports' and self.has_pysiaf is False:
+                write(f"   ⚠️ PySIAF not installed. Skipping quadrant overlap analysis.")
 
         # 3. Check for MSA Coverage Plots
         plot_files = []
