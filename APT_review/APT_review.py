@@ -119,6 +119,7 @@ class NIRSpecMOSReviewer:
             potential_dirs.append(self.exports_path)
         else:
             p = self.input_path.parent
+            potential_dirs.append(p)
             potential_dirs.append(p / "exports")
             try:
                 for d in p.glob("*/"):
@@ -209,28 +210,22 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
             return False
 
-        # Output folder: we'll create a folder named 'msatargets' in the input file's directory
-        output_dir = self.input_path.parent / "msatargets"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # The -output flag in 'apt' usually takes a path prefix. 
-        # Using output_dir / stem will put them in the folder.
-        output_prefix = str(output_dir / self.input_path.stem)
-        
+        # Exact command as requested by user
         cmd = [
             str(apt_bin),
             "-nogui",
             "-export", "msatargets",
-            "-output", output_prefix,
-            str(self.input_path)
+            "-output", "msatargets",
+            self.input_path.name
         ]
         
         print(f"📡 Exporting MSA Target Info using APT: {' '.join(cmd)}")
         try:
-            # APT can be slow
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            # Run in the directory of the .aptx file to ensure relative paths work
+            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
             return True
         except subprocess.CalledProcessError as e:
+            # Note: APT often writes logs to stderr even on success, but check=True catches non-zero exits
             print(f"❌ APT export failed: {e.stderr}")
             return False
         except Exception as e:
