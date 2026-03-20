@@ -142,8 +142,8 @@ class NIRSpecMOSReviewer:
 
         csv_files = []
         for d in final_dirs:
-            # Recursive search to catch nested exports
-            csv_files.extend(list(d.rglob("*.csv")))
+            # Reverted rglob to glob to limit depth to 1 as requested
+            csv_files.extend(list(d.glob("*.csv")))
 
         # Use a dict to unique by absolute path
         csv_files = {f.absolute(): f for f in csv_files}.values()
@@ -2671,6 +2671,7 @@ class NIRSpecMOSReviewer:
         groups = {
             'TA Exports': {'files': [], 'pattern': '*-TA.csv'},
             'Observation Exports': {'files': [], 'pattern': '*-obs*.csv'},
+            'Visit Exports': {'files': [], 'pattern': '*_visits.csv'},
             'Catalogs': {'files': [], 'pattern': '*msa.csv'}
         }
         
@@ -2678,6 +2679,8 @@ class NIRSpecMOSReviewer:
             lower_p = p.lower()
             if p.endswith('-TA.csv'):
                 groups['TA Exports']['files'].append(p)
+            elif p.endswith('_visits.csv'):
+                groups['Visit Exports']['files'].append(p)
             elif 'msa.csv' in lower_p:
                 groups['Catalogs']['files'].append(p)
             elif '-obs' in lower_p:
@@ -2702,23 +2705,25 @@ class NIRSpecMOSReviewer:
             if any(m < apt_mtime - 60 for m in mtimes):
                 warning = f" {icons['WARNING']} (Older than APTX!)"
             
-            # Find common directory relative to CWD
-            common_dir = ""
-            try:
-                rel_parts = [Path(f).relative_to(cwd).parts[:-1] for f in files]
-                if rel_parts:
-                    common = rel_parts[0]
-                    for p in rel_parts[1:]:
-                        new_common = []
-                        for i in range(min(len(common), len(p))):
-                            if common[i] == p[i]: new_common.append(common[i])
-                            else: break
-                        common = tuple(new_common)
-                    if common:
-                        common_dir = "/".join(common) + "/"
-            except: pass
+            # Find unique parent directories relative to CWD
+            parent_dirs = set()
+            for f in files:
+                try:
+                    rel_p = Path(f).parent.relative_to(cwd)
+                    # If it's in the CWD, it shows as '.', which we omit for clarity 
+                    # unless it's the only place and we want to show it? 
+                    # User seems to prefer seeing the subdir if it exists.
+                    if str(rel_p) != '.':
+                        parent_dirs.add(str(rel_p))
+                except: pass
             
-            write(f"\n📄 {name}: {common_dir}{data['pattern']} ({len(files)} files)")
+            dir_str = ""
+            if parent_dirs:
+                # If multiple subdirs, list them
+                dirs_sorted = sorted(list(parent_dirs))
+                dir_str = f"{', '.join(dirs_sorted)}/"
+            
+            write(f"\n📄 {name}: {dir_str}{data['pattern']} ({len(files)} files)")
             write(f"   Modified: {date_range}{warning}")
 
         # 3. Check for MSA Coverage Plots
