@@ -217,14 +217,10 @@ class NIRSpecMOSReviewer:
         
         print(f"📡 Exporting MSA Target Info using APT: {cmd_str}")
         try:
-            # shell=True handles the escaped command string
-            res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
-            
-            if res.returncode != 0:
-                print(f"❌ APT export failed (exit code {res.returncode}):")
-                if res.stdout: print(res.stdout)
-                if res.stderr: print(res.stderr)
-                return False
+            # APT may exit with a non-zero code or log [SEVERE] warnings (e.g. about directory 
+            # existence) even if the export files are successfully produced. 
+            # We ignore the return code and let the subsequent re-scan determine if it worked.
+            subprocess.run(cmd_str, shell=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
             return True
         except Exception as e:
             print(f"❌ Error during APT export execution: {e}")
