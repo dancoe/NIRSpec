@@ -302,6 +302,10 @@ class NIRSpecMOSReviewer:
 
     def _parse_visits_csv(self, file_path):
         import numpy as np
+        if self.has_pysiaf is None:
+            # First time loading - provide context for the pause
+            print(f"📡 Loading PySIAF for quadrant analysis (using {file_path.name})...")
+            
         try:
             import pysiaf
             from pysiaf.utils import rotations

@@ -212,45 +212,53 @@ def main():
                         used_ref_ids.update(m_df[id_col].astype(str).tolist())
                 except: pass
 
-        # Calculate min/max weight for this group's catalogs
+        # 1. Flexible column mapping for visits CSV
+        fnames = rows[0].index if hasattr(rows[0], 'index') else rows[0].keys()
+        col_map = {str(fn).upper().replace(' ', ''): fn for fn in fnames}
+        
+        def get_v_val(row, *preferred_names):
+            for name in preferred_names:
+                nk = name.upper().replace(' ', '')
+                if nk in col_map:
+                    return row[col_map[nk]]
+            return None
+
+        # Build catalogs for this obs
         group_weights = []
-        group_cat_names = set([r['Target'] for r in rows if r['Target'] in catalogs])
-        for cat_name in group_cat_names:
-            cat_sources = catalogs.get(cat_name, [])
-            group_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
+        group_cat_names = set()
+        for r in rows:
+            tgt = get_v_val(r, 'Target', 'TargetName')
+            if tgt in catalogs:
+                group_cat_names.add(tgt)
+                cat_sources = catalogs.get(tgt, [])
+                group_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
         
         if not group_weights:
-            min_wt, max_wt = 1, 1
+            min_wt, max_wt = 0.1, 0.1
+            min_log_wt, log_range = -1, 1
         else:
             min_wt, max_wt = min(group_weights), max(group_weights)
-            
-        min_log_wt = np.log10(min_wt)
-        max_log_wt = np.log10(max_wt)
-        if max_log_wt == min_log_wt:
-            max_log_wt = min_log_wt + 1.0
-        log_range = max_log_wt - min_log_wt
+            min_log_wt = np.log10(min_wt)
+            max_log_wt = np.log10(max_wt)
+            log_range = max_log_wt - min_log_wt
+            if log_range == 0: log_range = 1
 
-        
-        # Color visits in group
-        colors = plt.cm.tab10(np.linspace(0, 1, max(2, len(rows))))
-        
         # Keep track of bounds for the plot
         all_ras = []
         all_decs = []
-        
         unique_catalogs = {} # cat_name -> row to use as reference
         
         for i, row in enumerate(rows):
             vid = row['Visit ID']
             v_label = row.get('V_LABEL', str(vid))
-            cat_name = row['Target']
-            if cat_name not in unique_catalogs:
+            cat_name = get_v_val(row, 'Target', 'TargetName')
+            if cat_name and cat_name not in unique_catalogs:
                 unique_catalogs[cat_name] = row
             
-            s_region = row['s_region']
-            ra_ptr = row['RA Center Rot']
-            dec_ptr = row['Dec Center Rot']
-            pa_ptr = row['Orient Used']
+            s_region = get_v_val(row, 's_region', 'S_REGION')
+            ra_ptr = get_v_val(row, 'RA Center Rot', 'RA')
+            dec_ptr = get_v_val(row, 'Dec Center Rot', 'Dec')
+            pa_ptr = get_v_val(row, 'Orient Used', 'PA', 'Aperture PA')
             
             poly = parse_s_region(s_region)
             if poly is None: continue
@@ -331,10 +339,12 @@ def main():
             if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
                 continue
             
-            log_w = np.log10(max(1e-6, src['weight']))
-            norm_wt = (log_w - min_log_wt) / log_range
+            log_w = np.log10(max(1e-10, src['weight']))
+            norm_wt = (log_w - min_log_wt) / log_range if log_range > 0 else 0.5
             norm_wt = max(0.0, min(1.0, norm_wt))
-            size = 5 + 5 * (log_w - min_log_wt)
+            
+            # Ensure size is always positive to avoid matplotlib crash
+            size = max(1.0, 5 + 5 * (log_w - min_log_wt))
             pt_color = plt.cm.rainbow(norm_wt)
 
             if src['is_ref']:
