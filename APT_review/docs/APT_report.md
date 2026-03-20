@@ -14,7 +14,7 @@ python APT_review.py <apt_file> [--output <file>] [--include <obs>] [--exclude <
 *   **`--output` / `-o`**: Optional path to save the report as a text file.
 *   **`--include` / `-i`**: Comma/range string of observation numbers to process (e.g. `'1,3-5,10'`). Observations provided here are processed regardless of their status.
 *   **`--exclude` / `-e`**: Comma/range string of observation numbers to skip explicitly.
-*   **`--exports`**: Directory containing exported CSV files. If not provided, the script searches the APT directory and current directory (and their immediate subdirectories) for `*-TA.csv` and `*-obs*.csv` files.
+*   **`--exports`**: Directory containing exported CSV files. If not provided, the script searches the APT directory and current directory (and their immediate subdirectories) for `*-TA.csv` and `*-obs*.csv` files. **(Internal STScI Only)**: If no exports are found, the script attempts to automatically export them from the `.aptx` file using the APT command-line utility.
 *   **Default Behavior**: Observations with the APT status `COMPLETED` are excluded by default to focus the review on future/planned activity.
 
 ---
@@ -72,7 +72,7 @@ Located in `<Observation>/<SpecialRequirements>`:
 
 *   **Stars (Committed / XML)**: Counted from `<nsmos:ReferenceStars>/<nsmos:ReferenceStar>` in the observation template.
 *   **Stars (Exports / CSV)**: If a `*-TA.csv` file is found, its contents **override or supplement** the XML data for quadrant distribution analysis. This file contains the finalized selection from the MSA Planning Tool (MPT), including exact IDs and magnitudes.
-*   **Stars (Candidates / Estimated)**: If neither XML committed stars nor CSV exports are found, the script estimates candidates by searching the catalog for sources within ~110 arcsec of the first pointing coordinate, at the given Aperture PA.
+*   **Stars (Candidates / Estimated)**: If neither XML committed stars nor CSV exports are found (and automatic export fails or is not available), the script estimates candidates by searching the catalog for sources within ~110 arcsec of the first pointing coordinate, at the given Aperture PA.
 *   **Quadrants & Geometry**: Determined using **PySIAF** (from `*_visits.csv`) to transform focal-plane aperture definitions (NRS_FULL_MSA1-4) to sky coordinates based on the observation's pointing and roll angle.
     *   **Status thresholds**: ≥ 7 stars → SUCCESS; 5–6 → WARNING; < 5 → ERROR. ≥ 3 quadrants → SUCCESS; < 3 → WARNING.
 *   **Availability Grid**: Summarizes Used Ref / Available Ref / Available Science targets per quadrant across all visits.

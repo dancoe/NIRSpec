@@ -195,11 +195,12 @@ The report is organized into 18 sections that are printed in sequence:
 | `.xml` | Raw XML only. MPT JSON plans will not be found unless placed in a `json_temp/` subfolder next to the XML. |
 | `.csv` | **Supplementary.** Exported via APT (File -> Export -> MSA Target Info, Wavelength Coverage, or Visits). Used for TA ref star, detector gap, and quadrant geometry analysis. |
 
-### Automatic Supplementary File Search
+### Automatic Supplementary File Search & Export (STScI Only)
 The script automatically searches for supplementary files to enhance its analysis:
 
 *   **MPT JSON Plans (`.json`)**: Searched for specifically in a `json_temp/` directory adjacent to the APT file (or inside `[program_name]/json_temp/`).
 *   **CSV Exports (`*-TA.csv`, `*-obs*.csv`, `*_visits.csv`)**: Searched for in `exports/`, the current directory, and **any immediate subdirectory** of either the APT parent folder or the current directory.
+*   **Automatic Export**: If CSV exports are not found and the input is an `.aptx` file, the script will attempt to automatically run the APT command-line exporter (Internal STScI use only; requires APT in `/Applications/APT/`).
 
 You can override the search path for CSVs using the `--exports` flag.
 

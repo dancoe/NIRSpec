@@ -112,7 +112,7 @@ class NIRSpecMOSReviewer:
         if p.exists():
             self.files_used[str(p)] = p.stat().st_mtime
 
-    def _load_exports(self):
+    def _load_exports(self, _is_retry=False):
         """Search for and parse exported files (diag, csv) to supplement XML data."""
         potential_dirs = []
         if self.exports_path:
@@ -138,19 +138,11 @@ class NIRSpecMOSReviewer:
                 final_dirs.append(d)
                 seen.add(abs_d)
 
-        diag_files = []
         csv_files = []
         for d in final_dirs:
-            diag_files.extend(list(d.glob("*.diag")))
             csv_files.extend(list(d.glob("*.csv")))
 
-        diag_files = {f.absolute(): f for f in diag_files}.values()
         csv_files = {f.absolute(): f for f in csv_files}.values()
-
-        for diag_file in diag_files:
-            # Stopped using .diag files per user request. 
-            # Information believed to be in .aptx/XML instead.
-            pass
 
         wavelength_files = []
         for csv_file in csv_files:
@@ -172,6 +164,78 @@ class NIRSpecMOSReviewer:
                 wavelength_files.append(csv_file)
         
         self.potential_csv_files = wavelength_files
+
+        # If no CSV files were found and input is an .aptx file, attempt to export them automatically
+        if not self.potential_csv_files and not self.exports_data['ta_stars'] and not _is_retry:
+            if self.input_path.exists() and self.input_path.suffix.lower() == '.aptx':
+                print("📝 MSA Target Info not found. Attempting automatic export from APT...")
+                if self._export_msa_target_info():
+                    # Re-run search to pick up the newly exported files
+                    self._load_exports(_is_retry=True)
+                    return
+
+    def _find_latest_apt_path(self):
+        """Find the latest APT directory in /Applications/APT/."""
+        apt_parent = Path("/Applications/APT")
+        if not apt_parent.exists():
+            return None
+        
+        # Matches directories like "APT 2024.1.2" or "APT_27.1_..."
+        dirs = [d for d in apt_parent.glob("APT*") if d.is_dir()]
+        if not dirs:
+            return None
+        
+        # Sort by version number found in the name
+        def sort_key(p):
+            # Extract numbers
+            nums = re.findall(r'\d+', p.name)
+            if nums:
+                # Pad for comparison if they are of different lengths (e.g. 2025 vs 27)
+                return [int(n) for n in nums]
+            return [0]
+            
+        dirs.sort(key=sort_key, reverse=True)
+        return dirs[0]
+
+    def _export_msa_target_info(self):
+        """Attempt to export MSA Target Info using APT command line."""
+        apt_dir = self._find_latest_apt_path()
+        if not apt_dir:
+            print("⚠️ No APT installation found. Cannot export MSA Target Info.")
+            return False
+            
+        apt_bin = apt_dir / "bin" / "apt"
+        if not apt_bin.exists():
+            print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
+            return False
+
+        # Output folder: we'll create a folder named 'msatargets' in the input file's directory
+        output_dir = self.input_path.parent / "msatargets"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # The -output flag in 'apt' usually takes a path prefix. 
+        # Using output_dir / stem will put them in the folder.
+        output_prefix = str(output_dir / self.input_path.stem)
+        
+        cmd = [
+            str(apt_bin),
+            "-nogui",
+            "-export", "msatargets",
+            "-output", output_prefix,
+            str(self.input_path)
+        ]
+        
+        print(f"📡 Exporting MSA Target Info using APT: {' '.join(cmd)}")
+        try:
+            # APT can be slow
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"❌ APT export failed: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"❌ Error during APT export: {e}")
+            return False
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
         try:
