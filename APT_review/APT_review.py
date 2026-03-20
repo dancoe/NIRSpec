@@ -332,7 +332,9 @@ class NIRSpecMOSReviewer:
                         p1x, p1y = p2x, p2y
                     return inside
 
-                siaf = pysiaf.Siaf('NIRSpec')
+                siaf = None
+                if self.has_pysiaf:
+                    siaf = pysiaf.Siaf('NIRSpec')
                 
                 # Flexible column mapping
                 fnames = reader.fieldnames if reader.fieldnames else []
