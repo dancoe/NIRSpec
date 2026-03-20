@@ -142,8 +142,10 @@ class NIRSpecMOSReviewer:
 
         csv_files = []
         for d in final_dirs:
-            csv_files.extend(list(d.glob("*.csv")))
+            # Recursive search to catch nested exports
+            csv_files.extend(list(d.rglob("*.csv")))
 
+        # Use a dict to unique by absolute path
         csv_files = {f.absolute(): f for f in csv_files}.values()
 
         wavelength_files = []
@@ -327,17 +329,32 @@ class NIRSpecMOSReviewer:
 
                 siaf = pysiaf.Siaf('NIRSpec')
                 
+                # Flexible column mapping
+                fnames = reader.fieldnames if reader.fieldnames else []
+                col_map = {fn.upper().replace(' ', ''): fn for fn in fnames}
+                
+                def get_val(row, *keys):
+                    for k in keys:
+                        # Try direct, then upper, then stripped
+                        if k in row: return row[k]
+                        k_map = k.upper().replace(' ', '')
+                        if k_map in col_map: return row[col_map[k_map]]
+                    return None
+
                 for row in reader:
-                    vid = row.get('Visit ID')
+                    vid = get_val(row, 'Visit ID', 'Visit', 'VisitNumber')
                     if not vid or vid in self.exports_data['availability']: continue
                     
-                    cat_name = row.get('Target')
-                    ra_ptr = float(row.get('RA Center Rot', 0))
-                    dec_ptr = float(row.get('Dec Center Rot', 0))
-                    pa_ptr = float(row.get('Orient Used', 0))
-                    ap_name = row.get('Aperture', 'NRS_FULL_MSA')
+                    cat_name = get_val(row, 'Target', 'Target Name', 'TargetName')
+                    ra_str = get_val(row, 'RA Center Rot', 'RA', 'RA_Center')
+                    dec_str = get_val(row, 'Dec Center Rot', 'Dec', 'Dec_Center')
+                    pa_str = get_val(row, 'Orient Used', 'Orient', 'Aperture PA', 'PA')
+                    ap_name = get_val(row, 'Aperture', 'ApertureName') or 'NRS_FULL_MSA'
                     
                     try:
+                        ra_ptr = float(ra_str) if ra_str else 0.0
+                        dec_ptr = float(dec_str) if dec_str else 0.0
+                        pa_ptr = float(pa_str) if pa_str else 0.0
                         main_ap = siaf[ap_name]
                         attitude = rotations.attitude(main_ap.V2Ref, main_ap.V3Ref, ra_ptr, dec_ptr, pa_ptr)
                         
