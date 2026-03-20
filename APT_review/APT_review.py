@@ -94,6 +94,7 @@ class NIRSpecMOSReviewer:
             'availability': {} # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
         }
         self.visits_csv_path = None
+        self.searched_dirs = []
         self.has_pysiaf = None
         self._tree = None
         self._root = None
@@ -143,6 +144,8 @@ class NIRSpecMOSReviewer:
                 final_dirs.append(d)
                 seen.add(abs_d)
 
+        self.searched_dirs = final_dirs
+        
         csv_files = []
         for d in final_dirs:
             # Reverted rglob to glob to limit depth to 1 as requested
@@ -2678,6 +2681,19 @@ class NIRSpecMOSReviewer:
         except ValueError:
             display_apt = apt_path_abs
         write(f"📄 {display_apt}\n   Modified: {apt_date}")
+        
+        # Display directories searched
+        if self.searched_dirs:
+            rel_dirs = []
+            for d in self.searched_dirs:
+                try:
+                    rd = str(d.relative_to(cwd))
+                    if rd == '.': rd = './'
+                    rel_dirs.append(rd)
+                except: rel_dirs.append(str(d))
+            # Unique and sort
+            rel_dirs = sorted(list(set(rel_dirs)))
+            write(f"   (Checked: {', '.join(rel_dirs)})")
         
         # 2. Categorize other files
         other_files = [p for p in self.files_used.keys() if p != apt_path_abs]
