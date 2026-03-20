@@ -122,6 +122,8 @@ class NIRSpecMOSReviewer:
             p = self.input_path.parent
             potential_dirs.append(p)
             potential_dirs.append(p / "exports")
+            potential_dirs.append(p / "msatargets")
+            potential_dirs.append(p / "visits")
             try:
                 for d in p.glob("*/"):
                     if d.is_dir(): potential_dirs.append(d)
@@ -151,20 +153,21 @@ class NIRSpecMOSReviewer:
         wavelength_files = []
         for csv_file in csv_files:
             name = csv_file.name
-            if name.endswith("-TA.csv"):
-                m = re.search(r'obs(\d+)(?:-(\d+))?', name)
+            name_lower = name.lower()
+            if name_lower.endswith("-ta.csv"):
+                m = re.search(r'obs(\d+)(?:-(\d+))?', name_lower)
                 if m:
                     obs_num = m.group(1)
                     visit_num = m.group(2)
                     if self._parse_ta_csv(csv_file, obs_num, visit_num):
                         self._record_file_used(csv_file)
-            elif name.endswith("_visits.csv"):
+            elif name_lower.endswith("_visits.csv"):
                 if self._parse_visits_csv(csv_file):
                     self._record_file_used(csv_file)
-            elif "msa.csv" in name.lower():
+            elif "msa.csv" in name_lower:
                 # Potential catalog
                 self._record_file_used(csv_file)
-            elif "obs" in name.lower() and name.endswith(".csv"):
+            elif "obs" in name_lower and name_lower.endswith(".csv"):
                 wavelength_files.append(csv_file)
         
         self.potential_csv_files = wavelength_files
