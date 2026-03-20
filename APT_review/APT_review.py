@@ -211,12 +211,13 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
             return False
 
-        # Construct command string for shell execution to match manual terminal success
-        cmd_str = f"{shlex.quote(str(apt_bin))} -nogui -export msatargets -output msatargets {shlex.quote(self.input_path.name)}"
+        # Manually escaping spaces for the shell command as requested
+        apt_bin_str = str(apt_bin).replace(' ', r'\ ')
+        cmd_str = f"{apt_bin_str} -nogui -export msatargets -output msatargets {shlex.quote(self.input_path.name)}"
         
         print(f"📡 Exporting MSA Target Info using APT: {cmd_str}")
         try:
-            # Using shell=True for maximum compatibility with user's manual terminal run
+            # shell=True handles the escaped command string
             res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
             
             if res.returncode != 0:
