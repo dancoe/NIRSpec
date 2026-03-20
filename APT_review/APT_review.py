@@ -204,48 +204,45 @@ class NIRSpecMOSReviewer:
         return dirs[0]
 
     def _run_automatic_exports(self, is_missing_msa, is_missing_visits):
-        """Attempt to export missing data (msatargets, visits) using APT command line."""
+        """Attempt to export missing data. MSA targets supported; visits not yet."""
+        if is_missing_visits:
+            print("\n📝 visits not found. We can't get APT to export them automatically yet.")
+        
+        if not is_missing_msa:
+            return True
+
         apt_dir = self._find_latest_apt_path()
         if not apt_dir:
-            print("⚠️ No APT installation found. Cannot export complementary files.")
+            print("⚠️ No APT installation found. Cannot export msatargets.")
             return False
             
         apt_bin = apt_dir / "bin" / "apt"
         if not apt_bin.exists():
-            print(f"⚠️ {apt_bin} not found. Cannot export complementary files.")
+            print(f"⚠️ {apt_bin} not found.")
             return False
 
-        modes = []
-        if is_missing_msa: modes.append("msatargets")
-        if is_missing_visits: modes.append("visits")
-        
-        display_modes = " & ".join(modes)
-        print(f"\n📝 {display_modes} not found. We can get APT to export them.")
-        
-        for mode in modes:
-            cmd = [str(apt_bin), "-nogui", "-export", mode, "-output", mode, self.input_path.name]
-            print(f"   {shlex.join(cmd)}")
+        cmd = [str(apt_bin), "-nogui", "-export", "msatargets", "-output", "msatargets", self.input_path.name]
+        print("\n📝 msatargets not found. We can get APT to export them:")
+        print(f"   {shlex.join(cmd)}")
         
         # Prompt user, defaulting to 'Y' (Enter to continue)
-        user_input = input("\nProceed with automatic export? [Y/n]: ").strip().lower()
+        user_input = input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
         if user_input and user_input != 'y':
             print("🛑 Export cancelled by user.")
             return False
 
-        for mode in modes:
-            # Create the subdirectory to help APT along and avoid [SEVERE] errors
-            output_dir = self.input_path.parent / mode
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            print(f"📡 Exporting {mode} using APT...")
-            cmd = [str(apt_bin), "-nogui", "-export", mode, "-output", mode, self.input_path.name]
-            try:
-                # We don't capture output to avoid buffer filling issues that can cause hangs.
-                subprocess.run(cmd, cwd=str(self.input_path.parent))
-            except Exception as e:
-                print(f"❌ Error during {mode} export: {e}")
+        # Create the subdirectory to help APT along and avoid [SEVERE] errors
+        output_dir = self.input_path.parent / "msatargets"
+        output_dir.mkdir(parents=True, exist_ok=True)
         
-        return True
+        print(f"📡 Exporting msatargets using APT...")
+        try:
+            # We don't capture output to avoid buffer filling issues that can cause hangs.
+            subprocess.run(cmd, cwd=str(self.input_path.parent))
+            return True
+        except Exception as e:
+            print(f"❌ Error during msatargets export: {e}")
+            return False
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
         try:

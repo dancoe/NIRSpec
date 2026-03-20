@@ -27,7 +27,8 @@ The script searches for the most recent version of APT in `/Applications/APT/` a
 
 apt -nogui -export msatargets -output msatargets <Program>.aptx
 
-apt -nogui -export visits     -output visits     <Program>.aptx
+# Automatic visits export is not yet supported:
+# apt -nogui -export visits     -output visits     <Program>.aptx
 ```
 
 This automatic export assumes you have APT installed in the standard location.
