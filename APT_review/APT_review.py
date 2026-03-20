@@ -210,10 +210,6 @@ class NIRSpecMOSReviewer:
         if not apt_bin.exists():
             print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
             return False
-
-        # Create the subdirectory to help APT along and avoid the SEVERE error
-        output_dir = self.input_path.parent / "msatargets"
-        output_dir.mkdir(parents=True, exist_ok=True)
         
         # Using a list for cmd is the preferred/robust method in Python's subprocess as it 
         # handles spaces and special characters automatically without needing a shell.
@@ -226,7 +222,7 @@ class NIRSpecMOSReviewer:
         ]
         
         cmd_display = shlex.join(cmd)
-        print(f"\n📝 MSA Target Info not found. Ready to export from APT using this command:")
+        print(f"\n📝 MSA Target Info not found. We can get APT to export it:")
         print(f"   {cmd_display}")
         
         # Prompt user, defaulting to 'Y' (Enter to continue)
@@ -234,6 +230,10 @@ class NIRSpecMOSReviewer:
         if user_input and user_input != 'y':
             print("🛑 Export cancelled by user.")
             return False
+
+        # Create the subdirectory now that user confirmed, to avoid APT SEVERE error
+        output_dir = self.input_path.parent / "msatargets"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"📡 Exporting MSA Target Info using APT...")
         try:
