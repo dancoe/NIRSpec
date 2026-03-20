@@ -6,10 +6,11 @@ This document describes how to export the MSA Target Info from APT, which is req
 
 For internal STScI users, `APT_review.py` can automatically attempt to export this information if it is not found alongside the `.aptx` file. 
 
-The script searches for the most recent version of APT in `/Applications/APT/` and runs the following command in the directory containing the `.aptx` file:
+The script searches for the most recent version of APT in `/Applications/APT/` and runs the following commands (if needed) in the directory containing the `.aptx` file:
 
 ```bash
 /Applications/APT/APT <Version>/bin/apt -nogui -export msatargets -output msatargets <Program>.aptx
+/Applications/APT/APT <Version>/bin/apt -nogui -export visits -output visits <Program>.aptx
 ```
 
 This automatic export assumes you have APT installed in the standard location.

@@ -168,10 +168,12 @@ class NIRSpecMOSReviewer:
         self.potential_csv_files = wavelength_files
 
         # If no CSV files were found and input is an .aptx file, attempt to export them automatically
-        if not self.potential_csv_files and not self.exports_data['ta_stars'] and not _is_retry:
+        is_missing_msa = not self.potential_csv_files and not self.exports_data['ta_stars']
+        is_missing_visits = not self.exports_data['availability']
+        
+        if (is_missing_msa or is_missing_visits) and not _is_retry:
             if self.input_path.exists() and self.input_path.suffix.lower() == '.aptx':
-                print("📝 MSA Target Info not found. Attempting automatic export from APT...")
-                if self._export_msa_target_info():
+                if self._run_automatic_exports(is_missing_msa, is_missing_visits):
                     # Re-run search to pick up the newly exported files
                     self._load_exports(_is_retry=True)
                     return
@@ -199,31 +201,28 @@ class NIRSpecMOSReviewer:
         dirs.sort(key=sort_key, reverse=True)
         return dirs[0]
 
-    def _export_msa_target_info(self):
-        """Attempt to export MSA Target Info using APT command line."""
+    def _run_automatic_exports(self, is_missing_msa, is_missing_visits):
+        """Attempt to export missing data (msatargets, visits) using APT command line."""
         apt_dir = self._find_latest_apt_path()
         if not apt_dir:
-            print("⚠️ No APT installation found. Cannot export MSA Target Info.")
+            print("⚠️ No APT installation found. Cannot export complementary files.")
             return False
             
         apt_bin = apt_dir / "bin" / "apt"
         if not apt_bin.exists():
-            print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
+            print(f"⚠️ {apt_bin} not found. Cannot export complementary files.")
             return False
+
+        modes = []
+        if is_missing_msa: modes.append("msatargets")
+        if is_missing_visits: modes.append("visits")
         
-        # Using a list for cmd is the preferred/robust method in Python's subprocess as it 
-        # handles spaces and special characters automatically without needing a shell.
-        cmd = [
-            str(apt_bin),
-            "-nogui",
-            "-export", "msatargets",
-            "-output", "msatargets",
-            self.input_path.name
-        ]
+        display_modes = " & ".join(modes)
+        print(f"\n📝 {display_modes} not found. We can get APT to export them.")
         
-        cmd_display = shlex.join(cmd)
-        print(f"\n📝 MSA Target Info not found. We can get APT to export it:")
-        print(f"   {cmd_display}")
+        for mode in modes:
+            cmd = [str(apt_bin), "-nogui", "-export", mode, "-output", mode, self.input_path.name]
+            print(f"   {shlex.join(cmd)}")
         
         # Prompt user, defaulting to 'Y' (Enter to continue)
         user_input = input("\nProceed with automatic export? [Y/n]: ").strip().lower()
@@ -231,18 +230,20 @@ class NIRSpecMOSReviewer:
             print("🛑 Export cancelled by user.")
             return False
 
-        # Create the subdirectory now that user confirmed, to avoid APT SEVERE error
-        output_dir = self.input_path.parent / "msatargets"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        print(f"📡 Exporting MSA Target Info using APT...")
-        try:
-            # We don't capture output to avoid buffer filling issues that can cause hangs.
-            subprocess.run(cmd, cwd=str(self.input_path.parent))
-            return True
-        except Exception as e:
-            print(f"❌ Error during APT export execution: {e}")
-            return False
+        for mode in modes:
+            # Create the subdirectory to help APT along and avoid [SEVERE] errors
+            output_dir = self.input_path.parent / mode
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            print(f"📡 Exporting {mode} using APT...")
+            cmd = [str(apt_bin), "-nogui", "-export", mode, "-output", mode, self.input_path.name]
+            try:
+                # We don't capture output to avoid buffer filling issues that can cause hangs.
+                subprocess.run(cmd, cwd=str(self.input_path.parent))
+            except Exception as e:
+                print(f"❌ Error during {mode} export: {e}")
+        
+        return True
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
         try:

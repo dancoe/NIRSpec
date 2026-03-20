@@ -200,7 +200,7 @@ The script automatically searches for supplementary files to enhance its analysi
 
 *   **MPT JSON Plans (`.json`)**: Searched for specifically in a `json_temp/` directory adjacent to the APT file (or inside `[program_name]/json_temp/`).
 *   **CSV Exports (`*-TA.csv`, `*-obs*.csv`, `*_visits.csv`)**: Searched for in `exports/`, the current directory, and **any immediate subdirectory** of either the APT parent folder or the current directory.
-*   **Automatic Export**: If CSV exports are not found and the input is an `.aptx` file, the script will attempt to automatically run the APT command-line exporter (Internal STScI use only; requires APT in `/Applications/APT/`).
+*   **Automatic Export**: If CSV exports are not found and the input is an `.aptx` file, the script will attempt to automatically run the APT command-line exporter for both `msatargets` and `visits` (Internal STScI use only; requires APT in `/Applications/APT/`).
 
 You can override the search path for CSVs using the `--exports` flag.
 
