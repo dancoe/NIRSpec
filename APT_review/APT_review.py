@@ -161,9 +161,12 @@ class NIRSpecMOSReviewer:
                     visit_num = m.group(2)
                     if self._parse_ta_csv(csv_file, obs_num, visit_num):
                         self._record_file_used(csv_file)
-            elif name_lower.endswith("_visits.csv"):
+            elif "visit" in name_lower and name_lower.endswith(".csv"):
                 if self._parse_visits_csv(csv_file):
                     self._record_file_used(csv_file)
+                else:
+                    # Provide a hint if parsing failed (likely PySIAF)
+                    print(f"⚠️ Found {csv_file.name} in {csv_file.parent.name}/ but could not parse it.")
             elif "msa.csv" in name_lower:
                 # Potential catalog
                 self._record_file_used(csv_file)
@@ -301,9 +304,10 @@ class NIRSpecMOSReviewer:
         except ImportError:
             HAS_PYSIAF = False
             
+        # If PySIAF is missing, we can't do the quadrant availability analysis, 
+        # but we can still identify the file as a valid visits export.
         if not HAS_PYSIAF:
-            print("⚠️ PySIAF not found. Skipping quadrant availability analysis.")
-            return False
+            pass # We'll print the skip warning later if we actually find visit rows
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -387,10 +391,15 @@ class NIRSpecMOSReviewer:
                         'counts': counts
                     }
                 
+                if not HAS_PYSIAF:
+                    print("⚠️ PySIAF not found. Skipping quadrant availability analysis for visits.")
+                
                 self.visits_csv_path = file_path
                 return True
         except Exception as e:
-            print(f"Warning: Could not parse visits CSV: {e}")
+            # Only print warning if it looks like a visit file but failed catastrophically
+            if "visit" in str(file_path).lower():
+                print(f"Warning: Could not parse visits CSV: {e}")
             return False
         return False
 
