@@ -12,6 +12,7 @@ import io
 from datetime import datetime
 import subprocess
 import sys
+import shlex
 
 # Namespaces
 NS = {
@@ -210,26 +211,22 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
             return False
 
-        # Exact command as requested by user
-        cmd = [
-            str(apt_bin),
-            "-nogui",
-            "-export", "msatargets",
-            "-output", "msatargets",
-            self.input_path.name
-        ]
+        # Construct command string for shell execution to match manual terminal success
+        cmd_str = f"{shlex.quote(str(apt_bin))} -nogui -export msatargets -output msatargets {shlex.quote(self.input_path.name)}"
         
-        print(f"📡 Exporting MSA Target Info using APT: {' '.join(cmd)}")
+        print(f"📡 Exporting MSA Target Info using APT: {cmd_str}")
         try:
-            # Run in the directory of the .aptx file to ensure relative paths work
-            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
+            # Using shell=True for maximum compatibility with user's manual terminal run
+            res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
+            
+            if res.returncode != 0:
+                print(f"❌ APT export failed (exit code {res.returncode}):")
+                if res.stdout: print(res.stdout)
+                if res.stderr: print(res.stderr)
+                return False
             return True
-        except subprocess.CalledProcessError as e:
-            # Note: APT often writes logs to stderr even on success, but check=True catches non-zero exits
-            print(f"❌ APT export failed: {e.stderr}")
-            return False
         except Exception as e:
-            print(f"❌ Error during APT export: {e}")
+            print(f"❌ Error during APT export execution: {e}")
             return False
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
