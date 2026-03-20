@@ -215,16 +215,30 @@ class NIRSpecMOSReviewer:
         output_dir = self.input_path.parent / "msatargets"
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Manually escaping spaces for the shell command as requested
-        apt_bin_str = str(apt_bin).replace(' ', r'\ ')
-        cmd_str = f"{apt_bin_str} -nogui -export msatargets -output msatargets {shlex.quote(self.input_path.name)}"
+        # Using a list for cmd is the preferred/robust method in Python's subprocess as it 
+        # handles spaces and special characters automatically without needing a shell.
+        cmd = [
+            str(apt_bin),
+            "-nogui",
+            "-export", "msatargets",
+            "-output", "msatargets",
+            self.input_path.name
+        ]
         
-        print(f"📡 Exporting MSA Target Info using APT: {cmd_str}")
+        cmd_display = shlex.join(cmd)
+        print(f"\n📝 MSA Target Info not found. Ready to export from APT using this command:")
+        print(f"   {cmd_display}")
+        
+        # Prompt user, defaulting to 'Y' (Enter to continue)
+        user_input = input("\nProceed with automatic export? [Y/n]: ").strip().lower()
+        if user_input and user_input != 'y':
+            print("🛑 Export cancelled by user.")
+            return False
+
+        print(f"📡 Exporting MSA Target Info using APT...")
         try:
-            # APT may exit with a non-zero code or log [SEVERE] warnings (e.g. about directory 
-            # existence) even if the export files are successfully produced. 
             # We don't capture output to avoid buffer filling issues that can cause hangs.
-            subprocess.run(cmd_str, shell=True, cwd=str(self.input_path.parent))
+            subprocess.run(cmd, cwd=str(self.input_path.parent))
             return True
         except Exception as e:
             print(f"❌ Error during APT export execution: {e}")
