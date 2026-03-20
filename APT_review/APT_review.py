@@ -2682,18 +2682,12 @@ class NIRSpecMOSReviewer:
             display_apt = apt_path_abs
         write(f"📄 {display_apt}\n   Modified: {apt_date}")
         
-        # Display directories searched
+        # Display directories searched for complementary files
         if self.searched_dirs:
-            rel_dirs = []
-            for d in self.searched_dirs:
-                try:
-                    rd = str(d.relative_to(cwd))
-                    if rd == '.': rd = './'
-                    rel_dirs.append(rd)
-                except: rel_dirs.append(str(d))
-            # Unique and sort
-            rel_dirs = sorted(list(set(rel_dirs)))
-            write(f"   (Checked: {', '.join(rel_dirs)})")
+            write(f"   Searching for complementary exports in:")
+            abs_dirs = sorted(list(set([str(d.absolute()) for d in self.searched_dirs if d.exists()])))
+            for d in abs_dirs:
+                write(f"     - {d}")
         
         # 2. Categorize other files
         other_files = [p for p in self.files_used.keys() if p != apt_path_abs]
