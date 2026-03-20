@@ -211,6 +211,10 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found. Cannot export MSA Target Info.")
             return False
 
+        # Create the subdirectory to help APT along and avoid the SEVERE error
+        output_dir = self.input_path.parent / "msatargets"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
         # Manually escaping spaces for the shell command as requested
         apt_bin_str = str(apt_bin).replace(' ', r'\ ')
         cmd_str = f"{apt_bin_str} -nogui -export msatargets -output msatargets {shlex.quote(self.input_path.name)}"
@@ -219,8 +223,8 @@ class NIRSpecMOSReviewer:
         try:
             # APT may exit with a non-zero code or log [SEVERE] warnings (e.g. about directory 
             # existence) even if the export files are successfully produced. 
-            # We ignore the return code and let the subsequent re-scan determine if it worked.
-            subprocess.run(cmd_str, shell=True, capture_output=True, text=True, cwd=str(self.input_path.parent))
+            # We don't capture output to avoid buffer filling issues that can cause hangs.
+            subprocess.run(cmd_str, shell=True, cwd=str(self.input_path.parent))
             return True
         except Exception as e:
             print(f"❌ Error during APT export execution: {e}")
