@@ -681,7 +681,7 @@ class NIRSpecMOSReviewer:
         # Fallback: CamelCase to space
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', tag_name)
 
-    def _parse_msa_exp_csv(self, file_path, obs_num, label=""):
+    def _parse_msa_exp_csv(self, file_path, obs_num, exp_idx=None, label=""):
         """Parse MSA configuration CSV to extract target IDs and shutter coordinates."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:

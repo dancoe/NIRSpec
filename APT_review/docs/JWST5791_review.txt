@@ -1,0 +1,304 @@
+
+============================================================
+NIRSPEC MOS TECHNICAL REVIEW REPORT
+============================================================
+
+JWST 5791
+The Crucible of Planet Formation - Protoplanetary Disks in the Extreme Environment of Trumpler 14
+PI: Michael Kuhn
+
+Observing Description:
+This proposal aims at obtaining imaging and NIRSpec/MOS spectroscopy of the massive young star cluster Tr14 in the Carina nebula. This cluster is the nearest star-forming region where proto-planetary disks are exposed to extreme amounts of FUV radiation, ideal for studying the effect of photoevaporation on planet-forming disks. 
+
+We propose NIRCAM/LW F466N pre-imaging to obtain high-precision positions of low- and intermediate-mass members of Tr14. This data will be used with existing VLT near-infrared observations to identify the disk excess emission via color-color diagram selection.  NIRCAM/SW F212N is requested to detect the evaporating disks via H2 emission. Due to the bright O stars in the center of Tr 14, we have selected narrow-band filters to perform the imaging, minimizing the effect of saturation.
+
+We propose NIRSPEC MOS spectroscopy in two wavelength settings: G140H/F100LP: to detect the stellar absorption lines of the intermediate and low-mass stars and derive their spectral types, effective temperature, and masses. G395H/F290LP: to detect and characterize the disk emission using emission lines of ionized hydrogen and molecular emission. Observations with 8 MSA configurations are requested to obtain spectra for a sample of >300 cluster members with FUV irradiation ranging from 10^3-10^7 G0.
+
+The resulting spectroscopic database will be the largest spectroscopic dataset for irradiated and photoevaporating protoplanetary disks. Analysis of the spectra will include modeling disk continuum and spectral lines to infer disk structure, temperature, and mass-loss rate. Statistical analysis will be used to investigate correlations between disk properties and FUV irradiation, stellar mass, age, and environment. The derived disk properties will be compared to theoretical models of photoevaporating disks, and the disk-population statistics will be compared to results from numerical simulations.
+
+The results from this study will demonstrate whether high FUV environments have a statistically significant effect on the properties of inner disks, where Earth-like planets may be expected to form.
+
+========================================================================================================================
+OBSERVATION SUMMARY
+========================================================================================================================
+   Obs  | Mode            | Parallel        | Label                | Target Name                         | Status
+-----------------------------------------------------------------------------------------------------------------
+🤷🏻 2    | NIRCam Imaging  |                 | NIRCam Pre-Imaging   | CL-TRUMPLER-14                      | COMPLETED
+☑️ 6    | NIRSpec MOS     |                 | JWST_Tr14_RefVet     | Tr14_RefVetted                      | COMPLETED
+🔎 7    | NIRSpec MOS     |                 | Prop5791_repeat11    | Tr14_repeat                         | IMPLEMENTATION
+-----------------------------------------------------------------------------------------------------------------
+   🔎 included for review
+   👷 not yet designed? angle doesn't match assigned
+   🙈 excluded
+   🤷🏻 different mode not reviewed by this code
+   ☑️  completed observation already executed
+
+================================================================================
+PROGRAM METADATA & SUBMISSION DETAILS
+================================================================================
+APT Version: Version 2025.7.2
+Has Errors:  true
+
+[Submission Comments]
+Visit 7:1 has been configured to replace the missed observations as described in the WOPR. Obs 2 and Obs 6 have already been completed.
+
+[Diagnostic Justifications]
+The warnings do not appear to affect the new visit 7:1.
+
+[Submission Log]
+----- Attempting Submission 4 (Fri Apr 11 23:35:14 GMT 2025) -----
+
+----- Attempting Submission 5 (Mon Apr 28 02:11:46 GMT 2025) -----
+JWST Approved Proposal 5791  successfully submitted.
+Receipt: # 5791-5
+
+----- Attempting Submission 6 (Tue Apr 29 21:54:25 GMT 2025) -----
+
+----- Attempting Submission 7 (Wed Feb 11 20:57:37 GMT 2026) -----
+
+----- Attempting Submission 8 (Tue Feb 17 18:41:39 GMT 2026) -----
+
+----- Attempting Submission 9 (Wed Mar 18 18:50:20 GMT 2026) -----
+
+================================================================================
+DETAILED FINDINGS & RECOMMENDATIONS
+================================================================================
+
+[Observation 7: Tr14_repeat]
+  ⚠️ Shorts: Configs c1,c2: Target 3356 in q4d256s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36 [found in: 5791-obs7-exp1-c1e1n1-G140H-F100LP.csv, 5791-obs7-exp2-c1e2n1-G395H-F290LP.csv]
+  ⚠️ Shorts: Configs c5,c6: Target 3536 in q4d262s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36 [found in: 5791-obs7-exp5-c3e1n2-G140H-F100LP.csv, 5791-obs7-exp6-c3e2n2-G395H-F290LP.csv]
+
+================================================================================
+APERTURE PA SUMMARY
+================================================================================
+Obs   | Planned APA           | Assigned APA
+--------------------------------------------------------------------------------
+✅ 7    | 212.4594 Degrees      | 212.4594 Degrees
+
+================================================================================
+EXPOSURE SPECIFICATIONS
+================================================================================
+Obs   | Spec  | Grating/Filter     | Readout Pattern    | Groups   | Ints   | Duration(s)
+-----------------------------------------------------------------------------------------------
+7     | 1     | G140H/F100LP       | NRSIRS2RAPID       | 19       | 1      | 1692.3     
+7     | 2     | G395H/F290LP       | NRSIRS2RAPID       | 19       | 1      | 1692.3     
+
+=============================================================================================================================
+CONFIGURATIONS / POINTINGS
+=============================================================================================================================
+
+Dispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.
+
+Observation 7
+  # | Config   | Nod Pattern          | Total Ints | Total Time | Offset       | Pointing
+-----------------------------------------------------------------------------------------------------------------------------
+  1 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 58.76757 -59 34 4.473
+  2 | c1       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 58.76757 -59 34 4.473
+  3 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 59.57789 -59 33 52.745
+  4 | c2       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 59.57789 -59 33 52.745
+  5 | c3       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 59.55583 -59 33 59.157
+  6 | c3       | 3 Shutter Slitlet    | 3          | 5076.934   | None         | 10 43 59.55583 -59 33 59.157
+  ⚠️: Configuration c1 observes the same pointing 2 times: 10 43 58.76757 -59 34 4.473
+  ⚠️: Configuration c2 observes the same pointing 2 times: 10 43 59.57789 -59 33 52.745
+  ⚠️: Configuration c3 observes the same pointing 2 times: 10 43 59.55583 -59 33 59.157
+
+==============================================================================================================
+SPECIAL REQUIREMENTS SUMMARY
+==============================================================================================================
+Obs   | Aperture PA Range                   | Background Limited   | Other Requirements
+--------------------------------------------------------------------------------------------------------------
+7     | None                                | None                 | None
+
+============================================================================================================================================
+MSA CONFIGURATIONS & STRATEGY SUMMARY
+============================================================================================================================================
+Obs   | Config       | Slitlets (Lengths)                  | Primaries    | Fillers    | Nod Pattern          | Conf   | Leakcal 
+--------------------------------------------------------------------------------------------------------------------------------------------
+7     | c1           | 61                                  | 62           | 0          | 3 Shutter Slitlet    | No     | No      
+7     | c2           | 58                                  | 58           | 0          | 3 Shutter Slitlet    | No     | No      
+7     | c3           | 60                                  | 61           | 0          | 3 Shutter Slitlet    | No     | No      
+
+================================================================================
+MSATA & REFERENCE STARS SUMMARY
+================================================================================
+Obs   | Method   | Stars      | Quads     
+--------------------------------------------------------------------------------
+7     | MSATA    | 8  🌕       | 4  🌕      
+
+================================================================================
+REFERENCE STARS USED (from TA export)
+================================================================================
+
+Obs 7 [Filter: F110W, Readout: NRSRAPID] (Range: 19.5 – 22.0)  (8 stars, 5791-obs7-1-TA.csv)
+  ID         Quad   NRS_F110W
+  ---------------------------
+  1561          3       19.57
+  1616          2       19.64
+  1763          2       19.68
+  4140          4       19.93
+  270           1       19.97
+  763           1       20.38
+  1925          2       20.47
+  2543          2       20.57
+
+============================================================
+REFERENCE STAR AVAILABILITY
+============================================================
+Counts: Used Ref / Available Ref / Available Science
+
+Visit    | Catalog                        |      Q1      |      Q2      |      Q3      |      Q4
+------------------------------------------------------------------------------------------------
+7:1      | Tr14_repeat                    |   2/ 7/314   |   4/ 7/318   |   1/ 2/587   |   1/ 2/955  
+
+================================================================================================================================================================
+TARGET CATALOG PER OBSERVATION
+================================================================================================================================================================
+Obs   | Target Catalog Name                 | Sources  | Ref   | Acc    | W_Min      | W_Max      | Filters
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+7     | Tr14_repeat                         | 4856     | 81    | 20.0   | 0.0        | 9000000.0  | 
+
+============================================================
+HIGH PRIORITY TARGET ANALYSIS
+============================================================
+
+Visit 7:1
+Catalog: Tr14_repeat
+0/20 high-priority targets observed in ALL exposures
+------------------------------------------------------------
+   ID |  Weight | G140H/F100LP       | G395H/F290LP       | Wavelength Coverage
+-------------------------------------------------------------------------------
+ 3192 | 9000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3365 | 9000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+49006 | 4000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+49005 | 4000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+49004 | 4000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+49003 | 4000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3219 | 3000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 4900 | 3000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3149 | 2500000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3372 | 2500000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 4899 | 2500000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 2212 | 2000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+ 2385 | 2000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+ 2567 | 2000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+ 3098 | 2000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+ 3370 | 2000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3545 | 2000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3588 | 2000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3608 | 2000000 | 🌒  3/9 ( 33%) | 🌒  3/9 ( 33%)
+ 3667 | 2000000 | 🌑  0/9 (  0%) | 🌑  0/9 (  0%)
+
+================================================================================
+SHORTS
+================================================================================
+The following targets are located in rows or columns known to have electrical shorts.
+To prevent data contamination from 'glow', it is recommended to avoid these rows/columns.
+
+Observation 7 (Catalog Tr14_repeat):
+  ⚠️ Configs c1,c2: Target 3356 in q4d256s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36 [found in: 5791-obs7-exp1-c1e1n1-G140H-F100LP.csv, 5791-obs7-exp2-c1e2n1-G395H-F290LP.csv]
+  ⚠️ Configs c5,c6: Target 3536 in q4d262s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36 [found in: 5791-obs7-exp5-c3e1n2-G140H-F100LP.csv, 5791-obs7-exp6-c3e2n2-G395H-F290LP.csv]
+
+
+------------------------------
+CATALOGS
+------------------------------
+✅ Catalog 'Tr14_repeat': 4856 sources (> 20 recommended)
+⚠️ Catalog 'Tr14_repeat': Astrometric Accuracy 20.0 mas (5-15 mas recommended)
+
+================================================================================
+SUBMISSION ERRORS / WARNINGS
+================================================================================
+  ⚠️ This target is not used in this proposal. (3/1)
+  ⚠️ Some science pointings place the target outside of the aperture.
+  ⚠️ By selecting Target Placement = Module Gap the target coordinates will not fall on any detector unless an appropriate Mosaic, set of Dithers or Offset Special Requirement is specified.
+  ⚠️ The recommended value is 8 Reference Stars for this template.
+
+================================================================================
+SUMMARY
+================================================================================
+
+JWST 5791
+The Crucible of Planet Formation - Protoplanetary Disks in the Extreme Environment of Trumpler 14
+PI: Michael Kuhn
+
+✅ 19.9 Hours Total Charged / 21.1 Hours Allocated
+3 observations: 2, 6, 7
+
+🔎 1 observation reviewed: Obs 7
+✅ Aperture PA Planned = Assigned
+🌔 MSATA: 8 stars in 4 quads
+✅ Catalogs: 1 catalogs: Tr14_repeat
+✅ IRS2 Readout used for all MOS exposures
+⚠️ Integration times all 1692.3 s (< 1500 s)
+✅ Nod Pattern: 3 Shutter Slitlet
+⚠️ Obs 7: Configuration c1 observes the same pointing 2 times: 10 43 58.76757 -59 34 4.473
+⚠️ Obs 7: Configuration c2 observes the same pointing 2 times: 10 43 59.57789 -59 33 52.745
+⚠️ Obs 7: Configuration c3 observes the same pointing 2 times: 10 43 59.55583 -59 33 59.157
+
+☑️  2 observations COMPLETE: Obs 2, 6
+
+ℹ️ Obs 7: Program contains NIRCam imaging (potential pre-imaging), but this MOS observation has no timing link.
+
+================================================================================
+SPAR REVIEW
+================================================================================
+
+TARGET ACQUISITION
+⚠️ No MSATA detected
+
+BRIGHT SOURCE CHECKING
+👁️ no bright sources
+
+PARALLELS
+no parallels
+
+SPECIAL REQUIREMENTS
+No Special Requirements
+
+EXPOSURE PARAMETERS
+⚠️ 1692 s integrations (> 1500s): 19 groups NRSIRS2RAPID
+⚠️ 1692 s integrations (> 1500s): 19 groups NRSIRS2RAPID
+
+DITHERS AND NODS
+✅ standard 3-shutter slitlet nods
+
+BACKGROUND OBSERVATIONS
+✅ 🧠 compact sources: 3 shutters make long enough slitlets
+
+CATALOG
+✅ weight max 9,000,000
+⚠️ stellarity values all -1; inform user pipeline will process these as point sources
+⚠️ Catalog 'Tr14_repeat' accuracy 20.0 mas (> 15 mas)
+
+MOS OBSERVATION/VISIT STRUCTURE
+✅ MSA Planned Aperture PA matches Assigned APA
+
+CHECK MSA CONFIGURATIONS
+👁️ masks well designed and filled
+
+CHECK MPT PLANS
+👁️ Check (extraction not yet implemented)
+
+EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
+✅ Highest priority targets (weight 9,000,000 or 4,000,000) achieve full depth in each of 1 visits
+
+SPECTRAL CUTOFFS
+⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings
+
+REFERENCE STARS
+✅ Visit 7:1 – 8 stars in 4 quads
+
+==============================================================================================================
+FILES USED IN THIS REVIEW
+==============================================================================================================
+📄 JWST5791.aptx
+   Modified: 2026-03-20 10:35:40
+
+📄 TA Exports: msatargets/*-TA.csv (5 files)
+   Modified: 2026-03-20 11:30:23 to 2026-03-20 11:30:25
+
+📄 Observation Exports: msatargets/*-obs*.csv (102 files)
+   Modified: 2026-03-20 11:30:24 to 2026-03-20 11:30:25
+
+📄 Visit Exports: visits/*.csv (1 files)
+   Modified: 2026-03-20 11:37:10

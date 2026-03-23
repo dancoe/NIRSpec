@@ -19,16 +19,14 @@
 
 ## Example Report
 
-`python3 APT_review.py JWST7729.aptx`
+`python3 APT_review.py JWST5791.aptx`
 
 generates:
 
-* report: [**JWST7729_review.txt**](docs/JWST7729_review.txt)
-* plots: [**JWST7729_Obs1.png**](docs/JWST7729_Obs1.png)
+* report: [**JWST5791_review.txt**](docs/JWST5791_review.txt)
+* plots: [**JWST5791_Obs7.png**](docs/JWST5791_Obs7.png)
 
 ### Example Report Excerpts
-
-from [**JWST7729_review.txt**](docs/JWST7729_review.txt) that provides many more details
 
 ```
 ✅ 67.0 Hours Total Charged / 67.6 Hours Allocated
@@ -71,7 +69,7 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 ...
 ```
 
-![MSA Coverage Plot](docs/JWST7729_Obs1.png)
+![MSA Coverage Plot](docs/JWST5791_Obs7.png)
 
 ---
 
