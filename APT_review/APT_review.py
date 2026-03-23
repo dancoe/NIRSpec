@@ -1746,7 +1746,7 @@ class NIRSpecMOSReviewer:
     def _report_header(self, write):
         meta = self.stats.get('program_metadata', {})
         write("\n" + "="*60)
-        write("NIRSPEC MOS TECHNICAL REVIEW REPORT")
+        write("🧪 NIRSPEC MOS TECHNICAL REVIEW REPORT")
         write("="*60)
         write(f"\nJWST {self.pid or 'Unknown'}")
         write(f"{meta.get('title', 'Unknown Title')}")
@@ -1754,7 +1754,7 @@ class NIRSpecMOSReviewer:
 
     def _report_observation_table(self, write):
         write("\n" + "="*120)
-        write("OBSERVATION SUMMARY")
+        write("📋 OBSERVATION SUMMARY")
         write("="*120)
         # Sign | Obs | Mode | Parallel | Label | Target Name | Status
         header = f"   {'Obs':<4} | {'Mode':<15} | {'Parallel':<15} | {'Label':<20} | {'Target Name':<35} | {'Status'}"
@@ -1789,7 +1789,7 @@ class NIRSpecMOSReviewer:
 
     def _report_findings(self, write, icons, obs_map, general_issues):
         write("\n" + "="*80)
-        write("DETAILED FINDINGS & RECOMMENDATIONS")
+        write("🔎 DETAILED FINDINGS & RECOMMENDATIONS")
         write("="*80)
 
         # Program-wide (skip MOS Catalog — summarized in catalog section)
@@ -1819,7 +1819,7 @@ class NIRSpecMOSReviewer:
                    for o in self.analytics):
             return
         write("\n" + "="*80)
-        write("APERTURE PA SUMMARY")
+        write("🧭 APERTURE PA SUMMARY")
         write("="*80)
         write(f"Obs   | {'Planned APA':<21} | {'Assigned APA'}")
         write("-" * 80)
@@ -1843,7 +1843,7 @@ class NIRSpecMOSReviewer:
         if not shorts_data:
             return
         write("\n" + "="*80)
-        write("SHORTS")
+        write("⚡️ SHORTS")
         write("="*80)
         write("The following targets are located in rows or columns known to have electrical shorts.")
         write("To prevent data contamination from 'glow', it is recommended to avoid these rows/columns.\n")
@@ -1863,7 +1863,7 @@ class NIRSpecMOSReviewer:
         if not self.stats['all_exposure_specs']:
             return
         write("\n" + "="*80)
-        write("EXPOSURE SPECIFICATIONS")
+        write("📡 EXPOSURE SPECIFICATIONS")
         write("="*80)
         write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | "
               f"{'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
@@ -1880,7 +1880,7 @@ class NIRSpecMOSReviewer:
             return
         
         write("\n" + "="*125)
-        write("CONFIGURATIONS / POINTINGS")
+        write("📍 CONFIGURATIONS / POINTINGS")
         write("="*125)
         
         write("\nDispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.")
@@ -1943,7 +1943,7 @@ class NIRSpecMOSReviewer:
         if not any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
             return
         write("\n" + "="*90)
-        write("PARALLELS & DITHERS SUMMARY")
+        write("🎨 PARALLELS & DITHERS SUMMARY")
         write("="*90)
         write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
         write("-" * 90)
@@ -1960,7 +1960,7 @@ class NIRSpecMOSReviewer:
         if not any(self.analytics[o].get('special_reqs_data') for o in self.analytics):
             return
         write("\n" + "="*110)
-        write("SPECIAL REQUIREMENTS SUMMARY")
+        write("🔒 SPECIAL REQUIREMENTS SUMMARY")
         write("="*110)
         write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
         write("-" * 110)
@@ -1976,7 +1976,7 @@ class NIRSpecMOSReviewer:
                    for o in self.analytics):
             return
         write("\n" + "="*140)
-        write("MSA CONFIGURATIONS & STRATEGY SUMMARY")
+        write("🧩 MSA CONFIGURATIONS & STRATEGY SUMMARY")
         write("="*140)
         write(f"{'Obs':<5} | {'Config':<12} | {'Slitlets (Lengths)':<35} | {'Primaries':<12} | "
               f"{'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
@@ -1998,7 +1998,7 @@ class NIRSpecMOSReviewer:
 
     def _report_msata_ref_stars(self, write, icons):
         write("\n" + "="*80)
-        write("MSATA & REFERENCE STARS SUMMARY")
+        write("🌔 MSATA & REFERENCE STARS SUMMARY")
         write("="*80)
         write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10}")
         write("-" * 80)
@@ -2048,7 +2048,7 @@ class NIRSpecMOSReviewer:
             return
 
         write("\n" + "="*80)
-        write("REFERENCE STARS USED (from TA export)")
+        write("⭐ REFERENCE STARS USED (from TA export)")
         write("="*80)
 
         mag_cols = ['NRS_F110W', 'NRS_F140W', 'NRS_CLEAR']
@@ -2143,7 +2143,7 @@ class NIRSpecMOSReviewer:
         if not avail:
             return
         write("\n" + "="*60)
-        write("REFERENCE STAR AVAILABILITY")
+        write("🛒 REFERENCE STAR AVAILABILITY")
         write("="*60)
         write("Counts: Used Ref / Available Ref / Available Science\n")
         
@@ -2197,7 +2197,7 @@ class NIRSpecMOSReviewer:
                           or meta['justification'] != "None" or meta['submission_log'] != "None")):
             return
         write("\n" + "="*80)
-        write("PROGRAM METADATA & SUBMISSION DETAILS")
+        write("📤 PROGRAM METADATA & SUBMISSION DETAILS")
         write("="*80)
         write(f"APT Version: {meta['apt_version']}")
         write(f"Has Errors:  {meta['has_errors']}")
@@ -2219,7 +2219,7 @@ class NIRSpecMOSReviewer:
         if not (meta and meta['error_text']):
             return
         write("\n" + "="*80)
-        write("SUBMISSION ERRORS / WARNINGS")
+        write("🚩 SUBMISSION ERRORS / WARNINGS")
         write("="*80)
         # Deduplicate: count occurrences, print each unique line once with a count suffix
         counts = {}
@@ -2241,7 +2241,7 @@ class NIRSpecMOSReviewer:
 
     def _report_target_catalogs(self, write):
         write("\n" + "="*160)
-        write("TARGET CATALOG PER OBSERVATION")
+        write("📂 TARGET CATALOG PER OBSERVATION")
         write("="*160)
         write(f"{'Obs':<5} | {'Target Catalog Name':<35} | {'Sources':<8} | {'Ref':<5} | "
               f"{'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
@@ -2268,7 +2268,7 @@ class NIRSpecMOSReviewer:
             return
 
         write("\n" + "="*60)
-        write("HIGH PRIORITY TARGET ANALYSIS")
+        write("🔝 HIGH PRIORITY TARGET ANALYSIS")
         write("="*60)
             
         # Group catalogs by observation usage
@@ -2426,7 +2426,7 @@ class NIRSpecMOSReviewer:
 
         # Repeat program identity so the flourish is self-contained
         write("\n" + "="*80)
-        write("SUMMARY")
+        write("🏆 SUMMARY")
         write("="*80)
         write(f"\nJWST {self.pid or 'Unknown'}")
         write(f"{meta.get('title', 'Unknown Title')}")
@@ -2612,11 +2612,11 @@ class NIRSpecMOSReviewer:
         reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"]
         
         write("\n" + "="*80)
-        write("SPAR REVIEW")
+        write("✍️ SPAR REVIEW")
         write("="*80)
 
         # 1. Target Acquisition
-        write("\nTARGET ACQUISITION")
+        write("\n🎯 TARGET ACQUISITION")
         msata_obs = [o for o in reviewed_obs if "MSATA" in (self.analytics.get(o, {}).get('ta_method') or "")]
         if msata_obs or (not reviewed_obs and self.stats.get('msata_count', 0) > 0):
             write("✅ MOS MSATA")
@@ -2624,11 +2624,11 @@ class NIRSpecMOSReviewer:
             write("⚠️ No MSATA detected")
 
         # 2. Bright Source Checking
-        write("\nBRIGHT SOURCE CHECKING")
+        write("\n🔆 BRIGHT SOURCE CHECKING")
         write("👁️ no bright sources")
 
         # 3. Parallels
-        write("\nPARALLELS")
+        write("\n🎨 PARALLELS")
         parallels = sorted({self.obs_info[o]['parallel'] for o in reviewed_obs if self.obs_info[o]['parallel']})
         if not parallels:
             write("no parallels")
@@ -2637,7 +2637,7 @@ class NIRSpecMOSReviewer:
                 write(f"{p}")
 
         # 4. Special Requirements
-        write("\nSPECIAL REQUIREMENTS")
+        write("\n🔒 SPECIAL REQUIREMENTS")
         srs = []
         for o in sorted(reviewed_obs, key=int):
             sr_data = self.analytics[o].get('special_reqs_data', {})
@@ -2657,7 +2657,7 @@ class NIRSpecMOSReviewer:
                 write(f"{sr}")
 
         # 5. Exposure Parameters
-        write("\nEXPOSURE PARAMETERS")
+        write("\n⏲️ EXPOSURE PARAMETERS")
         specs = self.stats.get('all_exposure_specs', [])
         
         for spec in specs:
@@ -2674,7 +2674,7 @@ class NIRSpecMOSReviewer:
                         write(f"⚠️ {spec['dur']:.0f} s integrations (> 1500s): {spec['g']} groups {spec['rp']}")
 
         # 6. Dithers and Nods
-        write("\nDITHERS AND NODS")
+        write("\n💃 DITHERS AND NODS")
         nods = sorted({self.analytics[o].get('nod_pattern') for o in reviewed_obs if self.analytics[o].get('nod_pattern')})
         if not nods:
             write("no nods")
@@ -2687,12 +2687,12 @@ class NIRSpecMOSReviewer:
                 write(f"{icon} {label}")
 
         # 7. Background Observations
-        write("\nBACKGROUND OBSERVATIONS")
+        write("\n🌌 BACKGROUND OBSERVATIONS")
         write("✅ 🧠 compact sources: 3 shutters make long enough slitlets")
 
         # 8. MOS
         # (Catalog section)
-        write("\nCATALOG")
+        write("\n📂 CATALOG")
         cat_info = self.stats.get('catalog_info', {})
         cat_warns = []
         reviewed_catalogs = {self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')}
@@ -2718,7 +2718,7 @@ class NIRSpecMOSReviewer:
         for w in cat_warns:
             write(f"⚠️ {w}")
 
-        write("\nMOS OBSERVATION/VISIT STRUCTURE")
+        write("\n🏗️ MOS OBSERVATION/VISIT STRUCTURE")
         pa_match = True
         for o in reviewed_obs:
             if o in self.analytics:
@@ -2729,13 +2729,13 @@ class NIRSpecMOSReviewer:
         else:
             write("⚠️ MSA Planned Aperture PA DOES NOT match Assigned APA")
 
-        write("\nCHECK MSA CONFIGURATIONS")
+        write("\n🎭 CHECK MSA CONFIGURATIONS")
         write("👁️ masks well designed and filled")
 
-        write("\nCHECK MPT PLANS")
+        write("\n🗺️ CHECK MPT PLANS")
         write("👁️ Check (extraction not yet implemented)")
 
-        write("\nEXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
+        write("\n🌊 EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
         analysis = self.stats.get('high_priority_analysis', {})
         if analysis:
             # Try to get the weights for the label, only for catalogs in reviewed observations
@@ -2760,11 +2760,11 @@ class NIRSpecMOSReviewer:
         else:
             write("👁️ depth analysis unavailable")
 
-        write("\nSPECTRAL CUTOFFS")
+        write("\n✂️ SPECTRAL CUTOFFS")
         write("⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings")
 
         # 9. Reference Stars
-        write("\nREFERENCE STARS")
+        write("\n⭐ REFERENCE STARS")
         ta_stars = self.exports_data.get('ta_stars', {})
         starred_visits = []
         for obs_num, visits in ta_stars.items():
@@ -2787,7 +2787,7 @@ class NIRSpecMOSReviewer:
 
     def _report_catalogs(self, write, icons):
         write("\n" + "-"*30)
-        write("CATALOGS")
+        write("📈 CATALOGS")
         write("-"*30)
         active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
         any_cat = False
@@ -2868,7 +2868,7 @@ class NIRSpecMOSReviewer:
 
     def _report_files_used(self, write, icons):
         write("\n" + "="*110)
-        write("FILES USED IN THIS REVIEW")
+        write("📁 FILES USED IN THIS REVIEW")
         write("="*110)
         
         cwd = Path.cwd()
