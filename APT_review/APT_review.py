@@ -87,11 +87,13 @@ class NIRSpecMOSReviewer:
         }
         self.exports_data = {
             'assigned_pas': {}, # obs_num string -> float
-            'ta_stars': {},    # obs_num string -> {'count': N, 'quads': set(), 'file': name}
+            'ta_stars': {},   # obs_num -> visit_key -> { count, quad_counts, quads, pa, file, star_rows }
             'ta_params': {},   # obs_num string -> {visit_num string -> bin_string}
             'failed_shutters': [], # list of dicts {obs, msg}
             'wavelengths': {}, # obs_num -> {sid -> {gf -> {'n1_min': val, ...}}}
-            'availability': {} # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
+            'availability': {}, # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
+            'catalogs': [],
+            'shutter_coords': {} # obs_num -> {id -> set((q, d, s))}
         }
         self.visits_csv_path = None
         self.searched_dirs = []
@@ -159,12 +161,18 @@ class NIRSpecMOSReviewer:
             name = csv_file.name
             name_lower = name.lower()
             parent_name_lower = csv_file.parent.name.lower()
-            if name_lower.endswith("-ta.csv"):
+            if name_lower.endswith("-ta.csv") and "obs" in name_lower:
                 m = re.search(r'obs(\d+)(?:-(\d+))?', name_lower)
                 if m:
                     obs_num = m.group(1)
                     visit_num = m.group(2)
                     if self._parse_ta_csv(csv_file, obs_num, visit_num):
+                        self._record_file_used(csv_file)
+            elif "-exp" in name_lower and name_lower.endswith(".csv") and "obs" in name_lower:
+                m = re.search(r'obs(\d+)', name_lower)
+                if m:
+                    obs_num = m.group(1)
+                    if self._parse_msa_exp_csv(csv_file, obs_num):
                         self._record_file_used(csv_file)
             elif ("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv"):
                 if self._parse_visits_csv(csv_file):
@@ -283,11 +291,19 @@ class NIRSpecMOSReviewer:
                 col_map = {h.strip().upper(): h for h in reader.fieldnames}
                 id_col = col_map.get('ID')
                 q_col = col_map.get('QUADRANT')
+                d_col = col_map.get('COLUMN (DISP)')
+                s_col = col_map.get('ROW (SPAT)')
+                w_col = col_map.get('WEIGHT')
                 pa_col = col_map.get('APERTURE PA (DEGREES)')
                 quad_counts = {1: 0, 2: 0, 3: 0, 4: 0}
                 count = 0
                 pa_val = None
                 star_rows = []  # list of {'id': str, 'quad': int}
+                
+                if obs_num not in self.exports_data['shutter_coords']:
+                    self.exports_data['shutter_coords'][obs_num] = {}
+                coords = self.exports_data['shutter_coords'][obs_num]
+
                 for row in reader:
                     val = row.get(q_col)
                     sid = str(row.get(id_col, '')).strip() if id_col else ''
@@ -299,6 +315,15 @@ class NIRSpecMOSReviewer:
                                 count += 1
                                 if sid:
                                     star_rows.append({'id': sid, 'quad': q_idx})
+                                    
+                                    # Shutter coordinates for Shorts check
+                                    d_idx = int(float(str(row.get(d_col, '')).strip())) if d_col else None
+                                    s_idx = int(float(str(row.get(s_col, '')).strip())) if s_col else None
+                                    w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
+                                    if d_idx is not None and s_idx is not None:
+                                        if sid not in coords: coords[sid] = set()
+                                        coords[sid].add((q_idx, d_idx, s_idx, w_val))
+
                         except: pass
                     if pa_col and pa_val is None:
                         try: pa_val = float(row.get(pa_col))
@@ -620,6 +645,88 @@ class NIRSpecMOSReviewer:
         # Fallback: CamelCase to space
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', tag_name)
 
+    def _parse_msa_exp_csv(self, file_path, obs_num):
+        """Parse MSA configuration CSV to extract target IDs and shutter coordinates."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                if not reader.fieldnames: return False
+                col_map = {h.strip().upper(): h for h in reader.fieldnames}
+                id_col = col_map.get('ID')
+                q_col = col_map.get('QUADRANT')
+                d_col = col_map.get('COLUMN (DISP)')
+                s_col = col_map.get('ROW (SPAT)')
+                w_col = col_map.get('WEIGHT')
+                
+                if obs_num not in self.exports_data['shutter_coords']:
+                    self.exports_data['shutter_coords'][obs_num] = {}
+                coords = self.exports_data['shutter_coords'][obs_num]
+                
+                count = 0
+                for row in reader:
+                    sid = str(row.get(id_col, '')).strip() if id_col else ''
+                    if not sid: continue
+                    
+                    try:
+                        q_idx = int(float(str(row.get(q_col, '')).strip()))
+                        d_idx = int(float(str(row.get(d_col, '')).strip()))
+                        s_idx = int(float(str(row.get(s_col, '')).strip()))
+                        w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
+                        
+                        if sid not in coords: coords[sid] = set()
+                        coords[sid].add((q_idx, d_idx, s_idx, w_val))
+                        count += 1
+                    except: pass
+                
+                return count > 0
+        except: pass
+        return False
+
+    def check_shorts(self):
+        """Check for targets in known electrical short rows/columns (SHORTS)."""
+        short_flags = {} # obs_num -> list of strings
+        
+        # Shorts definitions: (Q, D, S) where D or S might be None (any)
+        # "row and column that intersects at q2d211s60"
+        # "anything in Q3 columns d353 and d354"
+        # "row and column that intersects with q4d16s36 (Wilhelm)"
+        
+        for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
+            flags = []
+            for tid, coord_set in target_map.items():
+                for q, d, s, w in coord_set:
+                    w_str = f" (weight {w:,.0f})" if w > 0 else ""
+                    
+                    # Q2 checks
+                    if q == 2:
+                        if d == 211:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Column 211 with short in q2d211s60")
+                        if s == 60:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Row 60 with short in q2d211s60")
+                    
+                    # Q3 checks
+                    elif q == 3:
+                        if d == 353:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 353 with known short")
+                        if d == 354:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 354 with known short")
+                            
+                    # Q4 checks
+                    elif q == 4:
+                        if d == 16:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36")
+                        if s == 36:
+                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36")
+            
+            if flags:
+                # Unique and sort
+                unique_flags = sorted(list(set(flags)))
+                short_flags[obs_num] = unique_flags
+                for flag in unique_flags:
+                    self.log("Shorts", flag, "WARNING", obs_num)
+        
+        self.stats['shorts_flags'] = short_flags
+
     def perform_review(self):
         # 0. Parse Visit Statuses from XML
         self.obs_status = {} # int -> str
@@ -782,8 +889,8 @@ class NIRSpecMOSReviewer:
         self.check_program_strategy()
         self.check_cross_observation_logic()
 
-        # 6. High Priority Target Analysis
         self.analyze_high_priority_targets()
+        self.check_shorts()
         
         # 7. Wavelength Coverage from Exports
         self._load_wavelength_exports()
@@ -1574,6 +1681,8 @@ class NIRSpecMOSReviewer:
         self._report_availability(write)                             # Available objects per quadrant
         self._report_target_catalogs(write)                           # Source counts, ref stars, accuracy, weight filters per catalog
         self._report_high_priority_targets(write, icons)              # Top 20 weighted targets coverage
+        self.stats['shorts_flags'] = self.stats.get('shorts_flags', {})
+        self._report_shorts(write)                                   # Electrical shorts flags
         self._report_catalogs(write, icons)                           # Detailed catalog checks (s/n, accuracy, etc.)
         self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
         self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
@@ -1650,11 +1759,13 @@ class NIRSpecMOSReviewer:
 
         # Observation-specific (Warnings/Errors only)
         for obs_num_str in sorted(obs_map.keys(), key=int):
-            if self.obs_info.get(obs_num_str, {}).get('sign') == "👷":
-                continue # Skip detailed findings for under construction
+            sign = self.obs_info.get(obs_num_str, {}).get('sign')
+            if sign not in ["🔎", "👷"]:
+                continue # Skip detailed findings for excluded/completed/drafts
             obs_findings = [f for f in obs_map[obs_num_str] if f[0] not in ['SUCCESS', 'INFO']]
             if obs_findings:
-                target = self.analytics[obs_num_str].get('target_name', 'Unknown')
+                data = self.analytics.get(obs_num_str, {})
+                target = data.get('target_name') or self.obs_info.get(obs_num_str, {}).get('target', 'Unknown')
                 write(f"\n[Observation {obs_num_str}: {target}]")
                 for status, msg in obs_findings:
                     write(f"  {icons.get(status, ' ')} {msg}")
@@ -1682,6 +1793,27 @@ class NIRSpecMOSReviewer:
             
             icon = icons['SUCCESS'] if obs_match else icons['ERROR']
             write(f"{icon} {obs_num:<4} | {planned:<21} | {assigned}")
+
+    def _report_shorts(self, write):
+        shorts_data = self.stats.get('shorts_flags', {})
+        if not shorts_data:
+            return
+        write("\n" + "="*80)
+        write("SHORTS")
+        write("="*80)
+        write("The following targets are located in rows or columns known to have electrical shorts.")
+        write("To prevent data contamination from 'glow', it is recommended to avoid these rows/columns.\n")
+        
+        for obs_num in sorted(shorts_data.keys(), key=int):
+            sign = self.obs_info.get(obs_num, {}).get('sign')
+            if sign not in ["🔎", "👷"]:
+                continue
+            data = self.analytics.get(obs_num, {})
+            target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
+            write(f"Observation {obs_num} ({target}):")
+            for flag in shorts_data[obs_num]:
+                write(f"  ⚠️ {flag}")
+            write("")
 
     def _report_exposure_specs(self, write):
         if not self.stats['all_exposure_specs']:

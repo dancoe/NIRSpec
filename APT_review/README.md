@@ -6,8 +6,9 @@
 * Depth and wavelength coverage of high-priority targets
 * Exposure specifications (gratings, integration times, readout patterns, etc.)
 * Aperture PA planned vs. assigned
-* Total Charged Time vs. Allocated
-* and more...
+*   Total Charged Time vs. Allocated
+*   **Electrical Shorts (SHORTS)**: Flags targets in problematic MSA rows/columns
+*   and more...
 
 `msa_coverage_plot.py` optionally generates plots of the MSA coverage on the sky, including:
 * catalog color-coded by weight
@@ -84,6 +85,7 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 | `docs/Plots.md` | Reference for interpreting the MSA coverage plots (colors, outlines, and dispersion). |
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
 | `docs/ChangeLog.md` | Historical log of updates and new features added to the tool. |
+| `docs/MSA.md` | **New:** Detailed reference for NIRSpec MSA layout, numbering, and global coordinates. |
 
 ---
 
@@ -181,9 +183,10 @@ The report is organized into 18 sections that are printed in sequence:
 13. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
 14. **High Priority Targets** — Per-visit coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
 15. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
-16. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
-17. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
-18. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
+16. **Electrical Shorts (SHORTS)** — Flags targets located in problematic rows/columns (e.g. q4d16s36 "Wilhelm").
+17. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
+18. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
+19. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
 
 ---
 

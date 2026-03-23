@@ -21,7 +21,10 @@ def parse_s_region(s_region):
     match = re.search(r'POLYGON ICRS (.*)', s_region)
     if not match:
         return None
-    coords = [float(x) for x in match.group(1).split()]
+    # Extract all numbers using regex to be robust against trailing commas or other characters
+    coords = [float(x) for x in re.findall(r'[-+]?\d*\.\d+|\d+', match.group(1))]
+    if not coords or len(coords) % 2 != 0:
+        return None
     return np.array(coords).reshape(-1, 2)
 
 
@@ -43,13 +46,18 @@ def is_inside(point, polygon):
         p1x, p1y = p2x, p2y
     return inside
 
+_SIAF_CACHE = None
+
 def get_siaf_quadrants(ra, dec, pa, main_ap_name='NRS_FULL_MSA'):
     """Calculate exact RA/Dec coordinates for MSA quadrants using PySIAF."""
     if not HAS_PYSIAF:
         return {}
     
+    global _SIAF_CACHE
     try:
-        siaf = pysiaf.Siaf('NIRSpec')
+        if _SIAF_CACHE is None:
+            _SIAF_CACHE = pysiaf.Siaf('NIRSpec')
+        siaf = _SIAF_CACHE
         main_ap = siaf[main_ap_name]
         
         # Create attitude matrix. ra, dec, pa are at the reference point of main_ap
@@ -145,9 +153,13 @@ def main():
     # Load data
     df = pd.read_csv(visits_csv, index_col=False)
     print(f"Columns found: {list(df.columns)}")
-    # Deduplicate: just first entry for each visit ID (ignore dithers)
-    df_visits = df.drop_duplicates(subset=['Visit ID']).copy()
-    print(f"Total entries: {len(df)}, Unique visits: {len(df_visits)}")
+    # Deduplicate: unique pointings (identity: Visit ID + RA + Dec)
+    # Using multiple columns to be robust to repeats in the visits export
+    subset_cols = [c for c in ['Visit ID', 'RA Center Rot', 'Dec Center Rot', 'Dither Index'] if c in df.columns]
+    if not subset_cols: # Fallback
+        subset_cols = ['Visit ID']
+    df_visits = df.drop_duplicates(subset=subset_cols).copy()
+    print(f"Total entries: {len(df)}, Unique pointings: {len(df_visits)}")
     
     catalogs = load_catalogs(xml_path)
     
@@ -164,7 +176,7 @@ def main():
             obs_num = int(vid_str[-6:-3])
             v_num = int(vid_str[-3:])
             obs_id = str(obs_num)
-            v_label = f"{obs_num}.{v_num}"
+            v_label = f"{obs_num}:{v_num}"
         else:
             obs_id = vid_str
             v_label = vid_str
@@ -182,7 +194,7 @@ def main():
     availability_report = []
 
     def plot_group(rows, title, filename_prefix):
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(9, 6))
         
         # Identify observed/used IDs for this observation
         obs_id_str = rows[0]['OBS_ID']
@@ -278,16 +290,25 @@ def main():
                 continue
 
             # Draw quadrant boundaries
-            v_label_str = v_label.replace('.', ':')
+            v_label_str = v_label
+            # Track which visits we've labeled to avoid clutter with overlapping dithers
+            if 'labeled_v_labels' not in locals():
+                labeled_v_labels = set()
+
             for q_idx, q_poly in quads.items():
                 plt.plot(np.append(q_poly[:, 0], q_poly[0,0]), np.append(q_poly[:,1], q_poly[0,1]), 
-                         color='black', linewidth=0.5, alpha=1.0)
-                # Label quads - use bounding box center for robust centering
-                q_ra_min, q_dec_min = np.min(q_poly, axis=0)
-                q_ra_max, q_dec_max = np.max(q_poly, axis=0)
-                qc_ra, qc_dec = (q_ra_min + q_ra_max)/2, (q_dec_min + q_dec_max)/2
-                plt.text(qc_ra, qc_dec, f"{v_label_str}\nQ{q_idx}", color='black', alpha=1.0,
-                         fontsize=8, ha='center', va='center')
+                         color='blue', linewidth=0.6, alpha=0.8)
+                
+                # Label quads - only for the first dither of each visit
+                if v_label not in labeled_v_labels:
+                    # Label quads - use bounding box center for robust centering
+                    q_ra_min, q_dec_min = np.min(q_poly, axis=0)
+                    q_ra_max, q_dec_max = np.max(q_poly, axis=0)
+                    qc_ra, qc_dec = (q_ra_min + q_ra_max)/2, (q_dec_min + q_dec_max)/2
+                    plt.text(qc_ra, qc_dec, f"{v_label_str}\nQ{q_idx}", color='blue', alpha=0.8,
+                             fontsize=8, ha='center', va='center', zorder=20)
+            
+            labeled_v_labels.add(v_label)
 
             # Calculate availability counts (internal data)
             quad_counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
@@ -335,6 +356,21 @@ def main():
             log_range = max_log_wt - min_log_wt
             if log_range == 0: log_range = 1
 
+        # Filter and group sources for efficient plotting
+        obs_c_ra = (min(all_ras) + max(all_ras)) / 2
+        obs_c_dec = (min(all_decs) + max(all_decs)) / 2
+        
+        # Categories to plot in bulk
+        # Format: category_name -> {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'linewidths': [], 'alphas': [], 'zorder': N}
+        cats = {
+            'ref_unused': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 4.5, 'marker': '*'},
+            'ref_used': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 1, 'marker': '*'},
+            'sci_normal': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 4, 'marker': 'o'},
+            'sci_observed': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 5, 'marker': 'o'},
+            'sci_highest': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 6, 'marker': 'o'},
+            'sci_highest_obs': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 7, 'marker': 'o'},
+        }
+
         for src in all_sources:
             if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
                 continue
@@ -342,43 +378,61 @@ def main():
             log_w = np.log10(max(1e-10, src['weight']))
             norm_wt = (log_w - min_log_wt) / log_range if log_range > 0 else 0.5
             norm_wt = max(0.0, min(1.0, norm_wt))
-            
-            # Ensure size is always positive to avoid matplotlib crash
-            size = max(1.0, 5 + 5 * (log_w - min_log_wt))
+            # Normalized size scaling: 20 to 65 range based on clamped norm_wt
+            size = 20 + 45 * norm_wt if log_range > 0 else 30
             pt_color = plt.cm.rainbow(norm_wt)
 
             if src['is_ref']:
                 is_used = src['id'] in used_ref_ids
-                plt.scatter(src['ra'], src['dec'], marker='*', s=50 if is_used else 30, color='0.50', 
-                            edgecolors='magenta' if is_used else 'black', 
-                            linewidths=0.5 if is_used else 0.5, 
-                            alpha=1.0 if is_used else 0.3, 
-                            zorder=-1 if not is_used else 0)
+                c = cats['ref_used'] if is_used else cats['ref_unused']
+                c['ras'].append(src['ra'])
+                c['decs'].append(src['dec'])
+                c['sizes'].append(50 if is_used else 30)
+                c['colors'].append('0.50')
+                c['edgecolors'].append('magenta' if is_used else 'black')
+                c['lws'].append(0.5)
+                c['alphas'].append(1.0 if is_used else 0.35)
             else:
                 is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                 is_observed = src['id'] in observed_ids
                 
-                edge_color = '0.50'
-                l_width = 0.5
-                z_ord = 4
-                pt_alpha = 1.0 if is_observed else 0.3
-                
-                if is_observed:
-                    edge_color = 'lime'
-                    l_width = 0.5
-                    z_ord = 5
-                
                 if is_highest:
-                    # Thick black outline for highest priority
-                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=1.0, 
-                                color=pt_color, edgecolors='black', linewidths=1.0, zorder=6)
+                    c = cats['sci_highest_obs'] if is_observed else cats['sci_highest']
+                    c['ras'].append(src['ra'])
+                    c['decs'].append(src['dec'])
+                    c['sizes'].append(size)
+                    c['colors'].append(pt_color)
+                    c['edgecolors'].append('black') # Changed from 'lime' to 'black'
+                    c['lws'].append(1.0)
+                    c['alphas'].append(1.0)
                     if is_observed:
-                        # Extra green ring outside the thick black outline
-                        plt.scatter(src['ra'], src['dec'], marker='o', s=size + 15, alpha=pt_alpha, 
-                                    color='none', edgecolors='lime', linewidths=1.0, zorder=7)
+                        # Extra ring for observed highest
+                        c_ring = cats['sci_highest_obs']
+                        # We use the same category but will plot twice if needed, or just handle in loop
+                        # Actually sci_highest_obs already covers it
+                        pass
                 else:
-                    plt.scatter(src['ra'], src['dec'], marker='o', s=size, alpha=pt_alpha, 
-                                color=pt_color, edgecolors=edge_color, linewidths=l_width, zorder=z_ord)
+                    c = cats['sci_observed'] if is_observed else cats['sci_normal']
+                    c['ras'].append(src['ra'])
+                    c['decs'].append(src['dec'])
+                    c['sizes'].append(size)
+                    c['colors'].append(pt_color)
+                    c['edgecolors'].append('black' if is_observed else '0.50')
+                    c['lws'].append(0.5)
+                    c['alphas'].append(1.0 if is_observed else 0.07)
+
+        # Vectorized plotting of categories
+        for name, data in cats.items():
+            if not data['ras']: continue
+            plt.scatter(data['ras'], data['decs'], marker=data['marker'], s=data['sizes'], 
+                        color=data['colors'], edgecolors=data['edgecolors'], 
+                        linewidths=data['lws'], alpha=data['alphas'], zorder=data['zorder'])
+            
+            # Special handling for highest observed: add black outer ring outside the green inner ring
+            if name == 'sci_highest_obs':
+                plt.scatter(data['ras'], data['decs'], marker='o', 
+                            s=[s+15 for s in data['sizes']], color='none', 
+                            edgecolors='black', linewidths=1.2, alpha=1.0, zorder=data['zorder']+0.5)
 
         if not all_ras: 
             plt.close()
@@ -387,7 +441,32 @@ def main():
         plt.xlabel('RA (Degrees)')
         plt.ylabel('Dec (Degrees)')
         plt.title(title)
-        plt.gca().invert_xaxis()
+        
+        # Preserve aspect ratio on the sky (RA * cos(Dec))
+        # Large on left (standard astro orientation)
+        ax = plt.gca()
+        cos_dec = np.cos(np.deg2rad(obs_c_dec))
+        ax.set_aspect(1.0 / cos_dec)
+        
+        # Calculate limits to make axes "equal" in sky size, adding margin
+        ra_min, ra_max = min(all_ras), max(all_ras)
+        dec_min, dec_max = min(all_decs), max(all_decs)
+        
+        # Effective width in RA (projected on sky)
+        width_eff = (ra_max - ra_min) * cos_dec
+        height = dec_max - dec_min
+        
+        # Determine the larger dimension and add 15% margin to accommodate legend
+        max_dim = max(width_eff, height)
+        margin = 0.15 * max_dim
+        L = max_dim + margin # Total sky size to cover
+        
+        # Set Dec limits (equal size L)
+        ax.set_ylim(obs_c_dec - L/2, obs_c_dec + L/2)
+        
+        # Set RA limits (L/cos_dec to get equivalent sky size L)
+        ra_range = L / cos_dec
+        ax.set_xlim(obs_c_ra + ra_range/2, obs_c_ra - ra_range/2) # Inverted for RA
 
         # Draw dispersion arrow (Q3 -> Q1 direction) with gradient
         try:
@@ -435,12 +514,35 @@ def main():
                             plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color=rainbow_color, 
                                      lw=3.5, zorder=10, solid_capstyle='butt')
                         
-                        # Black arrowhead starting exactly where red ends
-                        plt.annotate("", xy=(arrow_x + dx_total, arrow_y + dy_total), 
-                                     xytext=(arrow_x + dx_shaft, arrow_y + dy_shaft),
-                                     arrowprops=dict(arrowstyle='simple,head_width=1.0,head_length=1.0', 
-                                                     color='0.30', lw=0.5),
-                                     zorder=11)
+                        # Black arrowhead manual construction to avoid overlapping the line
+                        from matplotlib.patches import Polygon
+                        head_half_width_sky = 0.075 * total_len
+                        
+                        # Unit vectors for head (in RA/Dec plot units)
+                        ux, uy = unit_disp
+                        
+                        # Correct perp direction for visual aspect ratio
+                        # Visually, RA is squashed by cos_dec
+                        vx_vis = -uy
+                        vy_vis = ux * cos_dec
+                        norm_vis = np.sqrt(vx_vis**2 + vy_vis**2)
+                        vx_vis /= norm_vis
+                        vy_vis /= norm_vis
+                        
+                        # Convert back to RA/Dec data units for plotting
+                        v_ra = head_half_width_sky * vx_vis / cos_dec
+                        v_dec = head_half_width_sky * vy_vis
+                        
+                        tip = (arrow_x + dx_total, arrow_y + dy_total)
+                        base_center = (arrow_x + dx_shaft, arrow_y + dy_shaft)
+                        
+                        # Triangle points
+                        p1 = tip
+                        p2 = (base_center[0] + v_ra, base_center[1] + v_dec)
+                        p3 = (base_center[0] - v_ra, base_center[1] - v_dec)
+                        
+                        head_poly = Polygon([p1, p2, p3], color='0.30', zorder=11)
+                        plt.gca().add_patch(head_poly)
                                      
                         # Text "Dispersion" positioned above the entire arrow structure
                         tip_x, tip_y = arrow_x + dx_total, arrow_y + dy_total
@@ -456,51 +558,57 @@ def main():
             print(f"Could not draw dispersion arrow: {e}")
         
         # Legend construction
+        # Legend construction in strictly requested order
         from matplotlib.lines import Line2D
         custom_lines = []
         custom_labels = []
 
-        # 0. Catalog Name (at the bottom)
+        # 1. Catalog Name (Top)
         if group_cat_names:
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
             cat_list = ", ".join(sorted(group_cat_names))
             custom_labels.append(f'Catalog: {cat_list}')
 
-        # 1. Highest Priority
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='none', 
-                                   markeredgecolor='black', markeredgewidth=2.0, markersize=10, linestyle='None'))
+        # 2. Highest Priority (Red symbol)
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                                   markeredgecolor='black', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
         custom_labels.append('Highest Priority')
 
-        # 2. Weight scale (decreasing)
+        # 3. Observed Target (thin black outline)
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
+                                   markeredgecolor='black', markeredgewidth=0.5, markersize=7, alpha=1.0, linestyle='None'))
+        custom_labels.append('Observed Target')
+
+        # 4. Target (unobserved, gray and transparent as plotted)
+        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
+                                   markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.07, linestyle='None'))
+        custom_labels.append('Target')
+
+        # 5. Weight Samples (5 log-spaced samples)
         for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
             log_w = min_log_wt + frac * log_range
             w = 10**log_w
-            sz = 5 + 5 * frac * log_range
+            sz = 20 + 45 * frac # Matching the 20 to 65 scaling
             pt_color = plt.cm.rainbow(frac)
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
-                                       alpha=0.3, markersize=np.sqrt(sz), linestyle='None'))
+                                       alpha=1.0, markersize=np.sqrt(sz), linestyle='None'))
             custom_labels.append(f'Weight: {w:,.0f}')
 
-        # 3. Reference Object
+        # 6. Observed Reference Object
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='black', markeredgewidth=0.5, markersize=np.sqrt(50), 
-                                   alpha=0.3, linestyle='None'))
+                                   markeredgecolor='magenta', markeredgewidth=1.0, markersize=10, alpha=1.0, linestyle='None'))
+        custom_labels.append('Observed Reference Object')
+
+        # 7. Reference Object (unobserved, show semi-transparent as plotted)
+        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                   markeredgecolor='black', markeredgewidth=0.5, markersize=8, alpha=0.35, linestyle='None'))
         custom_labels.append('Reference Object')
-        
-        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='magenta', markeredgewidth=1.0, markersize=np.sqrt(150), 
-                                   alpha=1.0, linestyle='None'))
-        custom_labels.append('Reference Object (Used)')
 
-        # 4. Observed Target
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.8', 
-                                   markeredgecolor='lime', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
-        custom_labels.append('Observed Target (Green Outline)')
-
-        # 5. MSA Quadrants and Info
+        # 8. MSA Quadrants and Info
         if HAS_PYSIAF:
-            custom_lines.append(Line2D([0], [0], color='black', linewidth=0.5))
-            custom_labels.append('MSA Quadrants')
+            custom_lines.append(Line2D([0], [0], color='blue', linewidth=0.6))
+            custom_labels.append('MSA Quadrants / Pointings')
+
             
         plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left')
         
@@ -514,8 +622,13 @@ def main():
 
     # 1. Create plots for each Observation
     xml_stem = Path(xml_path).stem
+    prog_num = re.search(r'\d+', xml_stem).group() if re.search(r'\d+', xml_stem) else xml_stem
+    
     for obs_id, rows in sorted(obs_groups.items()):
-        plot_group(rows, f"MSA Coverage: Observation {obs_id}", f"{xml_stem}_Obs{obs_id}")
+        visit_labels = sorted(list(set(r['V_LABEL'] for r in rows)))
+        visit_str = ", ".join(visit_labels)
+        title = f"JWST {prog_num} Obs {obs_id} (Visit {visit_str})"
+        plot_group(rows, title, f"{xml_stem}_Obs{obs_id}")
     
     if 0:
         # Print availability summary
