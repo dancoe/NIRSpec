@@ -1876,7 +1876,7 @@ class NIRSpecMOSReviewer:
         write("⚡️ SHORTS")
         write("="*80)
         write("The following targets are located in rows or columns known to have electrical shorts.")
-        write("To prevent data contamination from 'glow', it is recommended to avoid these rows/columns.\n")
+        write("These rows / columns should be avoided to prevent data contamination:\n")
         
         for obs_num in sorted(shorts_data.keys(), key=int):
             sign = self.obs_info.get(obs_num, {}).get('sign')
@@ -2650,7 +2650,7 @@ class NIRSpecMOSReviewer:
         write("="*80)
 
         # 1. Target Acquisition
-        write("\n🎯 TARGET ACQUISITION")
+        write("\nTARGET ACQUISITION")
         msata_obs = [o for o in reviewed_obs if "MSATA" in (self.analytics.get(o, {}).get('ta_method') or "")]
         if msata_obs or (not reviewed_obs and self.stats.get('msata_count', 0) > 0):
             write("✅ MOS MSATA")
@@ -2658,11 +2658,11 @@ class NIRSpecMOSReviewer:
             write("⚠️ No MSATA detected")
 
         # 2. Bright Source Checking
-        write("\n🔆 BRIGHT SOURCE CHECKING")
+        write("\nBRIGHT SOURCE CHECKING")
         write("👁️ no bright sources")
 
         # 3. Parallels
-        write("\n🎨 PARALLELS")
+        write("\nPARALLELS")
         parallels = sorted({self.obs_info[o]['parallel'] for o in reviewed_obs if self.obs_info[o]['parallel']})
         if not parallels:
             write("no parallels")
@@ -2671,7 +2671,7 @@ class NIRSpecMOSReviewer:
                 write(f"{p}")
 
         # 4. Special Requirements
-        write("\n🔒 SPECIAL REQUIREMENTS")
+        write("\nSPECIAL REQUIREMENTS")
         srs = []
         for o in sorted(reviewed_obs, key=int):
             sr_data = self.analytics[o].get('special_reqs_data', {})
@@ -2691,7 +2691,7 @@ class NIRSpecMOSReviewer:
                 write(f"{sr}")
 
         # 5. Exposure Parameters
-        write("\n⏲️ EXPOSURE PARAMETERS")
+        write("\nEXPOSURE PARAMETERS")
         specs = self.stats.get('all_exposure_specs', [])
         
         for spec in specs:
@@ -2708,7 +2708,7 @@ class NIRSpecMOSReviewer:
                         write(f"⚠️ {spec['dur']:.0f} s integrations (> 1500s): {spec['g']} groups {spec['rp']}")
 
         # 6. Dithers and Nods
-        write("\n💃 DITHERS AND NODS")
+        write("\nDITHERS AND NODS")
         nods = sorted({self.analytics[o].get('nod_pattern') for o in reviewed_obs if self.analytics[o].get('nod_pattern')})
         if not nods:
             write("no nods")
@@ -2721,12 +2721,12 @@ class NIRSpecMOSReviewer:
                 write(f"{icon} {label}")
 
         # 7. Background Observations
-        write("\n🌌 BACKGROUND OBSERVATIONS")
+        write("\nBACKGROUND OBSERVATIONS")
         write("✅ 🧠 compact sources: 3 shutters make long enough slitlets")
 
         # 8. MOS
         # (Catalog section)
-        write("\n📂 CATALOG")
+        write("\nCATALOG")
         cat_info = self.stats.get('catalog_info', {})
         cat_warns = []
         reviewed_catalogs = {self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')}
@@ -2752,7 +2752,7 @@ class NIRSpecMOSReviewer:
         for w in cat_warns:
             write(f"⚠️ {w}")
 
-        write("\n🏗️ MOS OBSERVATION/VISIT STRUCTURE")
+        write("\nMOS OBSERVATION/VISIT STRUCTURE")
         pa_match = True
         for o in reviewed_obs:
             if o in self.analytics:
@@ -2763,13 +2763,13 @@ class NIRSpecMOSReviewer:
         else:
             write("⚠️ MSA Planned Aperture PA DOES NOT match Assigned APA")
 
-        write("\n🎭 CHECK MSA CONFIGURATIONS")
+        write("\nCHECK MSA CONFIGURATIONS")
         write("👁️ masks well designed and filled")
 
-        write("\n🗺️ CHECK MPT PLANS")
+        write("\nCHECK MPT PLANS")
         write("👁️ Check (extraction not yet implemented)")
 
-        write("\n🌊 EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
+        write("\nEXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
         analysis = self.stats.get('high_priority_analysis', {})
         if analysis:
             # Try to get the weights for the label, only for catalogs in reviewed observations
@@ -2794,11 +2794,11 @@ class NIRSpecMOSReviewer:
         else:
             write("👁️ depth analysis unavailable")
 
-        write("\n✂️ SPECTRAL CUTOFFS")
+        write("\nSPECTRAL CUTOFFS")
         write("⚠️ Wavelength coverage incomplete for some; could be filled by multiple pointings")
 
         # 9. Reference Stars
-        write("\n⭐ REFERENCE STARS")
+        write("\nREFERENCE STARS")
         ta_stars = self.exports_data.get('ta_stars', {})
         starred_visits = []
         for obs_num, visits in ta_stars.items():
