@@ -194,11 +194,21 @@ class NIRSpecMOSReviewer:
                 m = re.search(r'obs(\d+)(?:-exp(\d+))?', name_lower)
                 if m:
                     obs_num = str(int(m.group(1)))
-                    config_num = m.group(2)
-                    # Look up Configuration name from XML map
-                    cfg_label = self.config_mapping.get((obs_num, config_num)) if config_num else None
-                    label = f"Config {cfg_label}" if cfg_label else (f"Config c{int(config_num)}" if config_num else "")
-                    if self._parse_msa_exp_csv(csv_file, obs_num, label):
+                    exp_idx = m.group(2)
+                    
+                    # Priority for label:
+                    # 1. c(\d+) from -c#e#n#- pattern
+                    # 2. Config name from XML map using exp index
+                    # 3. c# from -exp# pattern
+                    
+                    cfg_match = re.search(r'-c(\d+)e(\d+)n(\d+)-', name_lower)
+                    if cfg_match:
+                        label = f"Config c{int(cfg_match.group(1))}"
+                    else:
+                        cfg_label = self.config_mapping.get((obs_num, exp_idx)) if exp_idx else None
+                        label = f"Config {cfg_label}" if cfg_label else (f"Config c{int(exp_idx)}" if exp_idx else "")
+                    
+                    if self._parse_msa_exp_csv(csv_file, obs_num, exp_idx, label=label):
                         self._record_file_used(csv_file)
             elif ("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv"):
                 if self._parse_visits_csv(csv_file):
@@ -739,7 +749,7 @@ class NIRSpecMOSReviewer:
                         if label: grouped[key]['labels'].add(label)
                         grouped[key]['files'].add(filename)
 
-            final_flags = []
+            final_entries = []
             for (tid, q, d, s, w, msg), data in grouped.items():
                 w_str = f" (weight {w:,.0f})" if w > 0 else ""
                 
@@ -761,13 +771,18 @@ class NIRSpecMOSReviewer:
                     if others: parts.append(", ".join(others))
                     label_str = ": ".join(parts) + ": " if parts else ""
 
-                file_list = f" [found in: {', '.join(sorted(list(data['files'])))}]"
-                final_flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} {msg}{file_list}")
+                entry = {
+                    'label_prefix': label_str,
+                    'main_msg': f"Target {tid}{w_str} in q{q}d{d}s{s} {msg}",
+                    'files': sorted(list(data['files']))
+                }
+                final_entries.append(entry)
 
-            if final_flags:
-                self.exports_data.setdefault('shorts', {})[obs_num] = sorted(final_flags)
-                for flag in sorted(final_flags):
-                    self.log("Shorts", flag, "WARNING", obs_num)
+            if final_entries:
+                self.exports_data.setdefault('shorts', {})[obs_num] = final_entries
+                # Also log summary for any other consumers
+                for ent in final_entries:
+                    self.log("Shorts", f"{ent['label_prefix']}{ent['main_msg']}", "WARNING", obs_num)
         
         self.stats['shorts_flags'] = self.exports_data.get('shorts', {})
 
@@ -1855,8 +1870,12 @@ class NIRSpecMOSReviewer:
             data = self.analytics.get(obs_num, {})
             target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
             write(f"Observation {obs_num} (Catalog {target}):")
-            for flag in shorts_data[obs_num]:
-                write(f"  ⚠️ {flag}")
+            
+            # entry is a dict with: 'label_prefix', 'main_msg', 'files'
+            for entry in shorts_data[obs_num]:
+                write(f"  ⚠️ {entry['label_prefix']}{entry['main_msg']}")
+                for f in entry['files']:
+                    write(f"    – {f}")
             write("")
 
     def _report_exposure_specs(self, write):
