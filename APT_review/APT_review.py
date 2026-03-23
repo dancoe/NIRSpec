@@ -121,11 +121,10 @@ class NIRSpecMOSReviewer:
         """Helper to map obs/exp index to Configuration name from XML early."""
         self.config_mapping = {} # (obs_num, exp_index) -> config_name
         if self._root is None: return
-        ns = self.namespaces
         for obs in self._root.findall(".//Observation"):
             num = obs.findtext("ObservationNumber")
             if not num: continue
-            for n_mos_uri in [ns.get('nsmos'), 'http://www.stsci.edu/JWST/APT/Template/NirspecMOS']:
+            for n_mos_uri in [NS.get('nsmos'), 'http://www.stsci.edu/JWST/APT/Template/NirspecMOS']:
                 if not n_mos_uri: continue
                 mos = obs.find(f".//{{{n_mos_uri}}}NirspecMOS")
                 if mos is not None:
@@ -349,7 +348,7 @@ class NIRSpecMOSReviewer:
                                     w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
                                     if d_idx is not None and s_idx is not None:
                                         if sid not in coords: coords[sid] = set()
-                                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label))
+                                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label, file_path.name))
 
                         except: pass
                     if pa_col and pa_val is None:
@@ -701,7 +700,7 @@ class NIRSpecMOSReviewer:
                         w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
                         
                         if sid not in coords: coords[sid] = set()
-                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label))
+                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label, file_path.name))
                         count += 1
                     except: pass
                 
@@ -719,10 +718,10 @@ class NIRSpecMOSReviewer:
         # "row and column that intersects with q4d16s36 (Wilhelm)"
         
         for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
-            # Grouping key (tid, q, d, s, w, msg) -> set of labels
+            # Grouping key (tid, q, d, s, w, msg) -> { 'labels': set, 'files': set }
             grouped = {}
             for tid, coord_set in target_map.items():
-                for q, d, s, w, label in coord_set:
+                for q, d, s, w, label, filename in coord_set:
                     msg = None
                     if q == 2:
                         if d == 211: msg = "shares Q2 Column 211 with short in q2d211s60"
@@ -736,15 +735,16 @@ class NIRSpecMOSReviewer:
                     
                     if msg:
                         key = (tid, q, d, s, w, msg)
-                        if key not in grouped: grouped[key] = set()
-                        if label: grouped[key].add(label)
+                        if key not in grouped: grouped[key] = {'labels': set(), 'files': set()}
+                        if label: grouped[key]['labels'].add(label)
+                        grouped[key]['files'].add(filename)
 
             final_flags = []
-            for (tid, q, d, s, w, msg), label_set in grouped.items():
+            for (tid, q, d, s, w, msg), data in grouped.items():
                 w_str = f" (weight {w:,.0f})" if w > 0 else ""
                 
                 # Format label string (collapse Configs)
-                labels = sorted(list(label_set))
+                labels = sorted(list(data['labels']))
                 if not labels:
                     label_str = ""
                 else:
@@ -761,7 +761,8 @@ class NIRSpecMOSReviewer:
                     if others: parts.append(", ".join(others))
                     label_str = ": ".join(parts) + ": " if parts else ""
 
-                final_flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} {msg}")
+                file_list = f" [found in: {', '.join(sorted(list(data['files'])))}]"
+                final_flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} {msg}{file_list}")
 
             if final_flags:
                 self.exports_data.setdefault('shorts', {})[obs_num] = sorted(final_flags)
