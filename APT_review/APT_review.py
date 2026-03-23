@@ -164,15 +164,18 @@ class NIRSpecMOSReviewer:
             if name_lower.endswith("-ta.csv") and "obs" in name_lower:
                 m = re.search(r'obs(\d+)(?:-(\d+))?', name_lower)
                 if m:
-                    obs_num = m.group(1)
-                    visit_num = m.group(2)
-                    if self._parse_ta_csv(csv_file, obs_num, visit_num):
+                    obs_num = str(int(m.group(1)))
+                    v_num = m.group(2)
+                    label = f"Visit {obs_num}:{int(v_num)}" if v_num else f"Visit {obs_num}:1"
+                    if self._parse_ta_csv(csv_file, obs_num, v_num, label=label):
                         self._record_file_used(csv_file)
             elif "-exp" in name_lower and name_lower.endswith(".csv") and "obs" in name_lower:
-                m = re.search(r'obs(\d+)', name_lower)
+                m = re.search(r'obs(\d+)(?:-exp(\d+))?', name_lower)
                 if m:
-                    obs_num = m.group(1)
-                    if self._parse_msa_exp_csv(csv_file, obs_num):
+                    obs_num = str(int(m.group(1)))
+                    config_num = m.group(2)
+                    label = f"Config c{int(config_num)}" if config_num else ""
+                    if self._parse_msa_exp_csv(csv_file, obs_num, label):
                         self._record_file_used(csv_file)
             elif ("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv"):
                 if self._parse_visits_csv(csv_file):
@@ -283,7 +286,7 @@ class NIRSpecMOSReviewer:
 
         return any_success
 
-    def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
+    def _parse_ta_csv(self, file_path, obs_num, visit_num=None, label=""):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
@@ -322,7 +325,7 @@ class NIRSpecMOSReviewer:
                                     w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
                                     if d_idx is not None and s_idx is not None:
                                         if sid not in coords: coords[sid] = set()
-                                        coords[sid].add((q_idx, d_idx, s_idx, w_val))
+                                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label))
 
                         except: pass
                     if pa_col and pa_val is None:
@@ -645,7 +648,7 @@ class NIRSpecMOSReviewer:
         # Fallback: CamelCase to space
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', tag_name)
 
-    def _parse_msa_exp_csv(self, file_path, obs_num):
+    def _parse_msa_exp_csv(self, file_path, obs_num, label=""):
         """Parse MSA configuration CSV to extract target IDs and shutter coordinates."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -674,7 +677,7 @@ class NIRSpecMOSReviewer:
                         w_val = float(str(row.get(w_col, '0')).strip()) if w_col else 0.0
                         
                         if sid not in coords: coords[sid] = set()
-                        coords[sid].add((q_idx, d_idx, s_idx, w_val))
+                        coords[sid].add((q_idx, d_idx, s_idx, w_val, label))
                         count += 1
                     except: pass
                 
@@ -694,29 +697,30 @@ class NIRSpecMOSReviewer:
         for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
             flags = []
             for tid, coord_set in target_map.items():
-                for q, d, s, w in coord_set:
+                for q, d, s, w, label in coord_set:
                     w_str = f" (weight {w:,.0f})" if w > 0 else ""
+                    label_str = f"{label}: " if label else ""
                     
                     # Q2 checks
                     if q == 2:
                         if d == 211:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Column 211 with short in q2d211s60")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Column 211 with short in q2d211s60")
                         if s == 60:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Row 60 with short in q2d211s60")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Row 60 with short in q2d211s60")
                     
                     # Q3 checks
                     elif q == 3:
                         if d == 353:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 353 with known short")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 353 with known short")
                         if d == 354:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 354 with known short")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 354 with known short")
                             
                     # Q4 checks
                     elif q == 4:
                         if d == 16:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36")
                         if s == 36:
-                            flags.append(f"Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36")
+                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36")
             
             if flags:
                 # Unique and sort
@@ -1810,7 +1814,7 @@ class NIRSpecMOSReviewer:
                 continue
             data = self.analytics.get(obs_num, {})
             target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
-            write(f"Observation {obs_num} ({target}):")
+            write(f"Observation {obs_num} (Catalog {target}):")
             for flag in shorts_data[obs_num]:
                 write(f"  ⚠️ {flag}")
             write("")
