@@ -215,16 +215,15 @@ class NIRSpecMOSReviewer:
         return dirs[0]
 
     def _run_automatic_exports(self, is_missing_msa, is_missing_visits):
-        """Attempt to export missing data. MSA targets supported; visits not yet."""
-        if is_missing_visits:
-            print("\n📝 visits not found. We can't get APT to export them automatically yet.")
-        
-        if not is_missing_msa:
+        """Attempt to export missing data. MSA targets and visits supported."""
+        if not is_missing_msa and not is_missing_visits:
             return True
 
         apt_dir = self._find_latest_apt_path()
         if not apt_dir:
-            print("⚠️ No APT installation found. Cannot export msatargets.")
+            msg = "msatargets" if is_missing_msa else "visits"
+            if is_missing_msa and is_missing_visits: msg = "msatargets and visits"
+            print(f"⚠️ No APT installation found. Cannot export {msg}.")
             return False
             
         apt_bin = apt_dir / "bin" / "apt"
@@ -232,28 +231,49 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found.")
             return False
 
-        cmd = [str(apt_bin), "-nogui", "-export", "msatargets", "-output", "msatargets", self.input_path.name]
-        print("\n📝 msatargets not found. We can get APT to export them:")
-        print(f"   {shlex.join(cmd)}")
+        any_success = False
         
-        # Prompt user, defaulting to 'Y' (Enter to continue)
-        user_input = input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
-        if user_input and user_input != 'y':
-            print("🛑 Export cancelled by user.")
-            return False
+        # 1. MSA Targets
+        if is_missing_msa:
+            cmd = [str(apt_bin), "-nogui", "-export", "msatargets", "-output", "msatargets", self.input_path.name]
+            print("\n📝 msatargets not found. We can get APT to export them:")
+            print(f"   {shlex.join(cmd)}")
+            
+            user_input = input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
+            if not user_input or user_input == 'y':
+                output_dir = self.input_path.parent / "msatargets"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                print(f"📡 Exporting msatargets using APT...")
+                try:
+                    subprocess.run(cmd, cwd=str(self.input_path.parent))
+                    any_success = True
+                except Exception as e:
+                    print(f"❌ Error during msatargets export: {e}")
+            else:
+                print("🛑 msatargets export cancelled by user.")
 
-        # Create the subdirectory to help APT along and avoid [SEVERE] errors
-        output_dir = self.input_path.parent / "msatargets"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        print(f"📡 Exporting msatargets using APT...")
-        try:
-            # We don't capture output to avoid buffer filling issues that can cause hangs.
-            subprocess.run(cmd, cwd=str(self.input_path.parent))
-            return True
-        except Exception as e:
-            print(f"❌ Error during msatargets export: {e}")
-            return False
+        # 2. Visits Coverage (CSV)
+        if is_missing_visits:
+            cmd = [str(apt_bin), "-nogui", "-export", "csv", "-output", "visits", self.input_path.name]
+            print("\n📝 visits not found. We can get APT to export them:")
+            print(f"   {shlex.join(cmd)}")
+            
+            user_input = input("\nProceed with automatic export of visit coverage? [Y/n]: ").strip().lower()
+            if not user_input or user_input == 'y':
+                # Create the subdirectory to help APT along and avoid [SEVERE] errors
+                output_dir = self.input_path.parent / "visits"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                
+                print(f"📡 Exporting visit coverage using APT...")
+                try:
+                    subprocess.run(cmd, cwd=str(self.input_path.parent))
+                    any_success = True
+                except Exception as e:
+                    print(f"❌ Error during visits export: {e}")
+            else:
+                print("🛑 visits export cancelled by user.")
+
+        return any_success
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None):
         try:
@@ -695,13 +715,13 @@ class NIRSpecMOSReviewer:
                         sign = "🤷🏻"
                     elif is_completed:
                         # If explicitly included, it's 🔎, otherwise ☑️
-                        if self.include_set and obs_num in self.include_set:
+                        if self.include_set and int(obs_num) in self.include_set:
                             sign = "🔎"
                         else:
                             sign = "☑️"
-                    elif self.include_set and obs_num not in self.include_set:
+                    elif self.include_set and int(obs_num) not in self.include_set:
                         sign = "🙈"
-                    elif self.exclude_set and obs_num in self.exclude_set:
+                    elif self.exclude_set and int(obs_num) in self.exclude_set:
                         sign = "🙈"
                     else:
                         sign = "🔎"
@@ -2688,11 +2708,12 @@ class NIRSpecMOSReviewer:
         write(f"📄 {display_apt}\n   Modified: {apt_date}")
         
         # Display directories searched for complementary files
-        if self.searched_dirs:
-            write(f"   Searching for complementary exports in:")
-            abs_dirs = sorted(list(set([str(d.absolute()) for d in self.searched_dirs if d.exists()])))
-            for d in abs_dirs:
-                write(f"     - {d}")
+        # Temporarily disabled per user request
+        # if self.searched_dirs:
+        #     write(f"   Searching for complementary exports in:")
+        #     abs_dirs = sorted(list(set([str(d.absolute()) for d in self.searched_dirs if d.exists()])))
+        #     for d in abs_dirs:
+        #         write(f"     - {d}")
         
         # 2. Categorize other files
         other_files = [p for p in self.files_used.keys() if p != apt_path_abs]
@@ -2707,10 +2728,17 @@ class NIRSpecMOSReviewer:
         
         for p in other_files:
             lower_p = p.lower()
-            if p.endswith('-TA.csv'):
+            path_obj = Path(p)
+            name_lower = path_obj.name.lower()
+            parent_name_lower = path_obj.parent.name.lower()
+            
+            if name_lower.endswith('-ta.csv'):
                 groups['TA Exports']['files'].append(p)
-            elif p.endswith('_visits.csv'):
+            elif name_lower.endswith('_visits.csv') or (("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv")):
                 groups['Visit Exports']['files'].append(p)
+                # If it's not the default pattern, show *.csv
+                if not name_lower.endswith('_visits.csv'):
+                    groups['Visit Exports']['pattern'] = '*.csv'
             elif 'msa.csv' in lower_p:
                 groups['Catalogs']['files'].append(p)
             elif '-obs' in lower_p:
