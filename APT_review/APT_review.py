@@ -117,8 +117,30 @@ class NIRSpecMOSReviewer:
         if p.exists():
             self.files_used[str(p)] = p.stat().st_mtime
 
+    def _build_config_map(self):
+        """Helper to map obs/exp index to Configuration name from XML early."""
+        self.config_mapping = {} # (obs_num, exp_index) -> config_name
+        if self._root is None: return
+        ns = self.namespaces
+        for obs in self._root.findall(".//Observation"):
+            num = obs.findtext("ObservationNumber")
+            if not num: continue
+            for n_mos_uri in [ns.get('nsmos'), 'http://www.stsci.edu/JWST/APT/Template/NirspecMOS']:
+                if not n_mos_uri: continue
+                mos = obs.find(f".//{{{n_mos_uri}}}NirspecMOS")
+                if mos is not None:
+                    pointings = mos.find(f"{{{n_mos_uri}}}Pointings")
+                    if pointings is not None:
+                        for i, pt in enumerate(pointings.findall(f"{{{n_mos_uri}}}Pointing")):
+                            cfg = pt.find(f"{{{n_mos_uri}}}Configuration")
+                            if cfg is not None:
+                                cfg_name = cfg.get('Name')
+                                if cfg_name:
+                                    self.config_mapping[(num, str(i+1))] = cfg_name
+
     def _load_exports(self, _is_retry=False):
         """Search for and parse exported files (diag, csv) to supplement XML data."""
+        self._build_config_map()
         potential_dirs = []
         if self.exports_path:
             potential_dirs.append(self.exports_path)
@@ -174,7 +196,9 @@ class NIRSpecMOSReviewer:
                 if m:
                     obs_num = str(int(m.group(1)))
                     config_num = m.group(2)
-                    label = f"Config c{int(config_num)}" if config_num else ""
+                    # Look up Configuration name from XML map
+                    cfg_label = self.config_mapping.get((obs_num, config_num)) if config_num else None
+                    label = f"Config {cfg_label}" if cfg_label else (f"Config c{int(config_num)}" if config_num else "")
                     if self._parse_msa_exp_csv(csv_file, obs_num, label):
                         self._record_file_used(csv_file)
             elif ("visit" in name_lower or parent_name_lower == "visits") and name_lower.endswith(".csv"):
@@ -695,41 +719,56 @@ class NIRSpecMOSReviewer:
         # "row and column that intersects with q4d16s36 (Wilhelm)"
         
         for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
-            flags = []
+            # Grouping key (tid, q, d, s, w, msg) -> set of labels
+            grouped = {}
             for tid, coord_set in target_map.items():
                 for q, d, s, w, label in coord_set:
-                    w_str = f" (weight {w:,.0f})" if w > 0 else ""
-                    label_str = f"{label}: " if label else ""
-                    
-                    # Q2 checks
+                    msg = None
                     if q == 2:
-                        if d == 211:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Column 211 with short in q2d211s60")
-                        if s == 60:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q2 Row 60 with short in q2d211s60")
-                    
-                    # Q3 checks
+                        if d == 211: msg = "shares Q2 Column 211 with short in q2d211s60"
+                        elif s == 60: msg = "shares Q2 Row 60 with short in q2d211s60"
                     elif q == 3:
-                        if d == 353:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 353 with known short")
-                        if d == 354:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q3 Column 354 with known short")
-                            
-                    # Q4 checks
+                        if d == 353: msg = "shares Q3 Column 353 with known short"
+                        elif d == 354: msg = "shares Q3 Column 354 with known short"
                     elif q == 4:
-                        if d == 16:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36")
-                        if s == 36:
-                            flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36")
-            
-            if flags:
-                # Unique and sort
-                unique_flags = sorted(list(set(flags)))
-                short_flags[obs_num] = unique_flags
-                for flag in unique_flags:
+                        if d == 16: msg = "shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36"
+                        elif s == 36: msg = "shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36"
+                    
+                    if msg:
+                        key = (tid, q, d, s, w, msg)
+                        if key not in grouped: grouped[key] = set()
+                        if label: grouped[key].add(label)
+
+            final_flags = []
+            for (tid, q, d, s, w, msg), label_set in grouped.items():
+                w_str = f" (weight {w:,.0f})" if w > 0 else ""
+                
+                # Format label string (collapse Configs)
+                labels = sorted(list(label_set))
+                if not labels:
+                    label_str = ""
+                else:
+                    configs = []
+                    others = []
+                    for l in labels:
+                        if l.startswith("Config "): configs.append(l.replace("Config ", ""))
+                        else: others.append(l)
+                    
+                    parts = []
+                    if configs:
+                        prefix = "Configs " if len(configs) > 1 else "Config "
+                        parts.append(f"{prefix}{','.join(configs)}")
+                    if others: parts.append(", ".join(others))
+                    label_str = ": ".join(parts) + ": " if parts else ""
+
+                final_flags.append(f"{label_str}Target {tid}{w_str} in q{q}d{d}s{s} {msg}")
+
+            if final_flags:
+                self.exports_data.setdefault('shorts', {})[obs_num] = sorted(final_flags)
+                for flag in sorted(final_flags):
                     self.log("Shorts", flag, "WARNING", obs_num)
         
-        self.stats['shorts_flags'] = short_flags
+        self.stats['shorts_flags'] = self.exports_data.get('shorts', {})
 
     def perform_review(self):
         # 0. Parse Visit Statuses from XML
