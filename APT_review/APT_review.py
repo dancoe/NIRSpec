@@ -728,10 +728,23 @@ class NIRSpecMOSReviewer:
         # "row and column that intersects with q4d16s36 (Wilhelm)"
         
         for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
-            # Grouping key (tid, q, d, s, w, msg) -> { 'labels': set, 'files': set }
+            # Lookup catalog weights for these targets
+            cat_name = self.obs_info.get(obs_num, {}).get('target')
+            cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
+
+            # Grouping key (tid, q, d, s, effective_w, msg) -> { 'labels': set, 'files': set }
             grouped = {}
             for tid, coord_set in target_map.items():
+                # Global lookup for weight if not in primary catalog for this observation
+                cat_w = cat_sources.get(tid, {}).get('weight', 0.0)
+                if cat_w == 0.0:
+                    for cd in self.catalogs.values():
+                        if tid in cd['sources']:
+                            cat_w = cd['sources'][tid]['weight']
+                            break
+                            
                 for q, d, s, w, label, filename in coord_set:
+                    effective_w = w if w > 0 else cat_w
                     msg = None
                     if q == 2:
                         if d == 211: msg = "shares Q2 Column 211 with short in q2d211s60"
@@ -744,7 +757,7 @@ class NIRSpecMOSReviewer:
                         elif s == 36: msg = "shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36"
                     
                     if msg:
-                        key = (tid, q, d, s, w, msg)
+                        key = (tid, q, d, s, effective_w, msg)
                         if key not in grouped: grouped[key] = {'labels': set(), 'files': set()}
                         if label: grouped[key]['labels'].add(label)
                         grouped[key]['files'].add(filename)
@@ -779,6 +792,8 @@ class NIRSpecMOSReviewer:
                 final_entries.append(entry)
 
             if final_entries:
+                # Sort by label prefix (e.g. Config c1 before c3)
+                final_entries.sort(key=lambda x: (x['label_prefix'], x['main_msg']))
                 self.exports_data.setdefault('shorts', {})[obs_num] = final_entries
                 # Also log summary for any other consumers
                 for ent in final_entries:
