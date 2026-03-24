@@ -2111,7 +2111,6 @@ class NIRSpecMOSReviewer:
     def _report_ref_star_detail(self, write):
         """Per-visit listing of reference stars used, with magnitudes from the catalog."""
         # Check for data first...
-        write("\nPER-VISIT REFERENCE STAR DETAIL")
         # (Table follows)
 
         mag_cols = ['NRS_F110W', 'NRS_F140W', 'NRS_CLEAR']
@@ -2175,7 +2174,7 @@ class NIRSpecMOSReviewer:
 
                 # Build header
                 col_w = 10
-                hdr = f"  {'ID':<10} {'Quad':>4}"
+                hdr = f"  {'ID':>6} {'Quad':>4}"
                 for c in display_cols:
                     hdr += f"  {c:>{col_w}}"
                 write(hdr)
@@ -2194,7 +2193,7 @@ class NIRSpecMOSReviewer:
                 for star in sorted(star_rows, key=sort_key):
                     sid = star['id']
                     q   = star['quad']
-                    row_str = f"  {sid:<10} {q:>4}"
+                    row_str = f"  {sid:>6} {q:>4}"
                     src = cat_sources.get(sid)
                     for c in display_cols:
                         val = (src or {}).get('mags', {}).get(c)
@@ -2208,7 +2207,6 @@ class NIRSpecMOSReviewer:
         write("\n" + "="*60)
         write("🛒 REFERENCE STAR AVAILABILITY")
         write("="*60)
-        write("Counts: Used Ref / Available Ref / Available Science\n")
         
         # Column headers
         header = f"{'Visit':<8} | {'Catalog':<30} | {'     Q1':<12} | {'     Q2':<12} | {'     Q3':<12} | {'     Q4'}"
@@ -2445,7 +2443,7 @@ class NIRSpecMOSReviewer:
                         elif pct > 0: icon = icons['FEW']
                         else: icon = icons['EMPTY']
                         
-                        cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:>3.0f}%)"
+                        cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:.0f}%)"
                         
                         s = ""
                         w = target_waves.get(gf)
@@ -2467,7 +2465,7 @@ class NIRSpecMOSReviewer:
                         else:
                             row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {' ' * max_cfg_w}"
                         
-                        row += f" | {gf:<18} | {cell:<16} | {s}"
+                        row += f" | {gf:<18} | {cell:<15} | {s}"
                         write(row)
                 write("-" * len(header))                
 
