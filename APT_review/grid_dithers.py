@@ -4,9 +4,9 @@ import os
 
 def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
     # Create the base grid in the positive quadrant (Q1)
-    # Range aligned so rotated points hit the edges (x=0.370, y=0.434):
-    x_grid = np.linspace(0.02, 0.370, nx)
-    y_grid = np.linspace(0.02, 0.434, ny)
+    # Range aligned so grid points hit the edges (x=0.370, y=0.434):
+    x_grid = np.linspace(0.0, 0.370, nx)
+    y_grid = np.linspace(0.0, 0.434, ny)
     
     xv, yv = np.meshgrid(x_grid, y_grid)
     pts = np.vstack([xv.ravel(), yv.ravel()]).T
@@ -35,8 +35,9 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
     extra = []
     
     if num_extra > 0:
-        # (0,0) is always first
-        if num_extra >= 1: extra.append([0.0, 0.0])
+        # (0,0) is always first (except for 7x5 which includes it in the grid)
+        if num_extra >= 1 and extra_pts_type != '7x5':
+            extra.append([0.0, 0.0])
         
         # Then edges or corner
         if extra_pts_type == '8x4':
@@ -48,9 +49,10 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
             extra.append([0.0, 0.434])  # Top
             extra.append([0.474, 0.487]) # 80% Corner
         elif extra_pts_type == '7x5':
-            # Center + Top Right + Left Middle Edge
-            extra.append([0.474, 0.487])  # Top Right
-            extra.append([-0.37, 0.0])   # Left Middle Edge
+            # 3 extreme points 80% under bars
+            extra.append([0.474, 0.487])   # Top Right
+            extra.append([-0.474, 0.0])    # Left Middle
+            extra.append([0.0, -0.487])    # Bottom Middle
         else:
             # For 6x6, we only needed 2 more: (0,0) and the corner
             extra.append([0.474, 0.487])
