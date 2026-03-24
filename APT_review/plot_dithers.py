@@ -74,16 +74,26 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
         
         # Draw grid lines between reflected points
         if show_grid_lines and nx_eff and ny_eff:
-            # The first nx_eff * ny_eff points were the raster grid
-            Ngrid = nx_eff * ny_eff
-            if len(mirror_x) >= Ngrid:
-                mx_grid = mirror_x[:Ngrid].reshape(ny_eff, nx_eff)
-                my_grid = mirror_y[:Ngrid].reshape(ny_eff, nx_eff)
+            # Filter out extreme test points (> ~0.4 arcsec / shutters)
+            # The grid is within [0, 0.37] and [0, 0.434]
+            # Test points are at 0.474 or 0.487
+            is_grid = (mirror_x < 0.41) & (mirror_y < 0.46)
+            gx = mirror_x[is_grid]
+            gy = mirror_y[is_grid]
+            
+            if len(gx) == nx_eff * ny_eff:
+                # Re-sort to ensure perfect raster order for plotting lines
+                # (since extra points might have shifted the original order)
+                sort_idx = np.lexsort((gx, gy))
+                gx_sorted = gx[sort_idx]
+                gy_sorted = gy[sort_idx]
                 
-                # Draw horizontal lines
+                mx_grid = gx_sorted.reshape(ny_eff, nx_eff)
+                my_grid = gy_sorted.reshape(ny_eff, nx_eff)
+                
+                # Draw grid
                 for r in range(ny_eff):
                     ax.plot(mx_grid[r, :], my_grid[r, :], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
-                # Draw vertical lines
                 for c in range(nx_eff):
                     ax.plot(mx_grid[:, c], my_grid[:, c], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
 
