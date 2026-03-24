@@ -39,8 +39,9 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
     
     for i in range(len(pts_rot)):
         x_val, y_val = pts_rot[i]
-        # Points "close to the bars" in the base grid
-        is_edge = (x_val > 0.28) or (y_val > 0.33)
+        # Points "close to the bars" in the base grid: 
+        # x ~ 0 is the left/right bar, y ~ 0 is bottom bar, y ~ 0.434 is top bar.
+        is_edge = (x_val < 0.1) or (y_val < 0.1) or (y_val > 0.33)
         
         if diagonal_bias and is_edge:
             # Force Top-Right or Bottom-Left for edge points
