@@ -4,9 +4,12 @@ import os
 
 def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard'):
     # Create the base grid in the positive quadrant (Q1)
-    # Range is halfway under the bars: 0.435 in X, 0.467 in Y
-    x_grid = np.linspace(0.02, 0.435, nx)
-    y_grid = np.linspace(0.02, 0.467, ny)
+    # Range aligned so rotated points hit the edges:
+    # x_grid max of 0.370 and y_grid max of 0.454 ensure:
+    # 1. Rotated Bottom-Right (max x, min y) is at x' ~ 0.370 (edge)
+    # 2. Rotated Top-Right (max x, max y) is at y' ~ 0.434 (top edge) and x' ~ 0.39 (under bar)
+    x_grid = np.linspace(0.02, 0.370, nx)
+    y_grid = np.linspace(0.02, 0.454, ny)
     
     xv, yv = np.meshgrid(x_grid, y_grid)
     pts = np.vstack([xv.ravel(), yv.ravel()]).T

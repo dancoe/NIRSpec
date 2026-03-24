@@ -18,7 +18,7 @@ The tools provided here allow for the design of custom rotated grids, with three
 This script generates the dither coordinates. It creates a base grid in the positive quadrant, rotates it by a specified angle (default: -3.0°), and then distributes the points across all four quadrants using a cyclic sign-flipping pattern.
 
 - **Quadrant Cycling**: Each set of 4 points in the sequence maps to Q1, Q2, Q3, and Q4 in order, ensuring that even a short exposure sequence samples all four quadrants. Offset by row for improved spatial coverage.
-- **Rotation**: A small rotation (default: -3.0°) ensures that the points do not fall on the same Y-rows when folded into a single quadrant, maximizing sub-pixel sampling.
+- **Rotation & Framing**: A small rotation (default: -3.0°) is applied. The grid limits are calibrated (approx. 0.370 in X, 0.454 in Y) so that when rotated, the bottom-right grid corner aligns with the sidebar edge ($x' = 0.370$) and the top-right grid corner aligns with the top bar edge ($y' = 0.434$).
 - **Extended Sampling**: The pattern can be configured to "go under" the MSA bars to test the full sampling distribution.
 - **Extra Test Points**:
     - **6x6 Mode**: Includes (0,0) and a corner point.
