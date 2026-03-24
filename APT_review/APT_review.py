@@ -742,8 +742,11 @@ class NIRSpecMOSReviewer:
 
             # Grouping key (tid, q, d, s, effective_w, msg) -> { 'labels': set, 'files': set }
             grouped = {}
+            # Track all configs per target to see which ones are "clear"
+            target_configs = {} # tid -> set of (label, is_short, effective_w)
+            
             for tid, coord_set in target_map.items():
-                # Global lookup for weight if not in primary catalog for this observation
+                if tid not in target_configs: target_configs[tid] = set()
                 cat_w = cat_sources.get(tid, {}).get('weight', 0.0)
                 if cat_w == 0.0:
                     for cd in self.catalogs.values():
@@ -764,6 +767,7 @@ class NIRSpecMOSReviewer:
                         if d == 16: msg = "shares Q4 Column 16 with short \"Wilhelm\" in q4d16s36"
                         elif s == 36: msg = "shares Q4 Row 36 with short \"Wilhelm\" in q4d16s36"
                     
+                    target_configs[tid].add((label, msg is not None, effective_w))
                     if msg:
                         key = (tid, q, d, s, effective_w, msg)
                         if key not in grouped: grouped[key] = {'labels': set(), 'files': set()}
@@ -771,14 +775,15 @@ class NIRSpecMOSReviewer:
                         grouped[key]['files'].add(filename)
 
             final_entries = []
+            shorted_tids = set()
             for (tid, q, d, s, w, msg), data in grouped.items():
+                shorted_tids.add(tid)
                 w_str = f" (weight {w:,.0f})" if w > 0 else ""
                 
                 # Format label string (collapse Configs)
                 labels = sorted(list(data['labels']))
-                if not labels:
-                    label_str = ""
-                else:
+                label_str = ""
+                if labels:
                     configs = []
                     others = []
                     for l in labels:
@@ -795,17 +800,49 @@ class NIRSpecMOSReviewer:
                 entry = {
                     'label_prefix': label_str,
                     'main_msg': f"Target {tid}{w_str} in q{q}d{d}s{s} {msg}",
-                    'files': sorted(list(data['files']))
+                    'files': sorted(list(data['files'])),
+                    'tid': tid,
+                    'is_rescue': False
                 }
                 final_entries.append(entry)
 
+            # Add rescue notes for targets that have some clear configs
+            rescue_entries = []
+            for tid in sorted(shorted_tids):
+                all_cfg_data = target_configs.get(tid, set())
+                short_labels = {l for l, is_s, w in all_cfg_data if is_s}
+                all_labels   = {l for l, is_s, w in all_cfg_data}
+                clear_labels = all_labels - short_labels
+                
+                if clear_labels:
+                    configs = sorted([l.replace("Config ", "") for l in clear_labels if l.startswith("Config ")])
+                    others  = sorted([l for l in clear_labels if not l.startswith("Config ")])
+                    
+                    parts = []
+                    if configs:
+                        prefix = "Configs " if len(configs) > 1 else "Config "
+                        parts.append(f"{prefix}{','.join(configs)}")
+                    if others: parts.append(", ".join(others))
+                    label_str = ": ".join(parts) + ": " if parts else ""
+                    
+                    rescue_entries.append({
+                        'label_prefix': label_str,
+                        'main_msg': f"Target {tid} clear of shorts 🤞",
+                        'files': [],
+                        'tid': tid,
+                        'is_rescue': True
+                    })
+            
+            final_entries.extend(rescue_entries)
+
             if final_entries:
-                # Sort by label prefix (e.g. Config c1 before c3)
-                final_entries.sort(key=lambda x: (x['label_prefix'], x['main_msg']))
+                # Sort by TID first, then is_rescue (False before True), then message
+                final_entries.sort(key=lambda x: (x.get('tid', ''), x.get('is_rescue', False), x['main_msg']))
                 self.exports_data.setdefault('shorts', {})[obs_num] = final_entries
                 # Also log summary for any other consumers
                 for ent in final_entries:
-                    self.log("Shorts", f"{ent['label_prefix']}{ent['main_msg']}", "WARNING", obs_num)
+                    icon = "🛟 " if ent.get('is_rescue') else "⚠️ "
+                    self.log("Shorts", f"{icon}{ent['label_prefix']}{ent['main_msg']}", "WARNING", obs_num)
         
         self.stats['shorts_flags'] = self.exports_data.get('shorts', {})
 
@@ -1930,9 +1967,10 @@ class NIRSpecMOSReviewer:
             target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
             write(f"Observation {obs_num} (Catalog {target}):")
             
-            # entry is a dict with: 'label_prefix', 'main_msg', 'files'
+            # entry is a dict with: 'label_prefix', 'main_msg', 'files', 'is_rescue'
             for entry in shorts_data[obs_num]:
-                write(f"  ⚠️ {entry['label_prefix']}{entry['main_msg']}")
+                icon = "🛟 " if entry.get('is_rescue') else "⚠️ "
+                write(f"  {icon}{entry['label_prefix']}{entry['main_msg']}")
                 for f in entry['files']:
                     write(f"    – {f}")
             write("")
