@@ -2,7 +2,9 @@ import numpy as np
 import subprocess
 import os
 
-def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
+def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard', random_quadrants=True, seed=42):
+    if seed is not None:
+        np.random.seed(seed)
     # Create the base grid in the positive quadrant (Q1)
     # Range aligned so grid points hit the edges (x=0.370, y=0.434):
     x_grid = np.linspace(0.0, 0.370, nx)
@@ -20,16 +22,21 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
     pts_zero = pts - center
     pts_rot = pts_zero @ R.T + center
     
-    # Distribute across 4 quadrants with row-shifting for better spatial sampling
+    # Distribute across 4 quadrants
     sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
     distributed_pts = np.zeros_like(pts_rot)
-    for r in range(ny):
-        for c in range(nx):
-            i = r * nx + c
-            # After each row, skip ahead the starting quadrant by an increasing amount
+    
+    for i in range(len(pts_rot)):
+        if random_quadrants:
+            s_idx = np.random.randint(0, 4)
+        else:
+            # Row-triangular shift: (r(r+1)/2 + c) % 4
+            r = i // nx
+            c = i % nx
             s_idx = ((r * (r + 1)) // 2 + c) % 4
-            sign_x, sign_y = sign_patterns[s_idx]
-            distributed_pts[i] = pts_rot[i] * [sign_x, sign_y]
+        
+        sign_x, sign_y = sign_patterns[s_idx]
+        distributed_pts[i] = pts_rot[i] * [sign_x, sign_y]
     
     # Extra points to bring total to 38
     num_extra = 38 - (nx * ny)
@@ -71,17 +78,20 @@ def main():
     parser = argparse.ArgumentParser(description="Generate NIRSpec MOS dither patterns.")
     parser.add_argument("--type", type=str, default="6x6", choices=["6x6", "8x4", "7x5"], help="Grid type")
     parser.add_argument("--rotation", type=float, default=0.0, help="Rotation in degrees")
+    parser.add_argument("--randomize", action="store_true", default=True, help="Randomize quadrant for each grid point")
+    parser.add_argument("--no-randomize", action="store_false", dest="randomize", help="Use deterministic row-triangular quadrant cycling")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
     if args.type == "6x6":
-        pts = generate_grid(6, 6, rotation_deg=args.rotation, extra_pts_type='6x6')
+        pts = generate_grid(6, 6, rotation_deg=args.rotation, extra_pts_type='6x6', random_quadrants=args.randomize, seed=args.seed)
         out_name = args.output or "grid_6x6_dithers.png"
     elif args.type == "8x4":
-        pts = generate_grid(4, 8, rotation_deg=args.rotation, extra_pts_type='8x4')
+        pts = generate_grid(4, 8, rotation_deg=args.rotation, extra_pts_type='8x4', random_quadrants=args.randomize, seed=args.seed)
         out_name = args.output or "grid_8x4_dithers.png"
     else: # 7x5
-        pts = generate_grid(5, 7, rotation_deg=args.rotation, extra_pts_type='7x5')
+        pts = generate_grid(5, 7, rotation_deg=args.rotation, extra_pts_type='7x5', random_quadrants=args.randomize, seed=args.seed)
         out_name = args.output or "grid_7x5_dithers.png"
     
     x_str = ",".join([f"{p[0]:.4f}" for p in pts])
