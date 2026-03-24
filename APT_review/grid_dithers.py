@@ -72,10 +72,10 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
         extra.append([0.0, 0.434])
         extra.append([0.474, 0.487])
     elif extra_pts_type in ['7x5', '6x4']:
-        # 3 extreme points 80% under bars
-        extra.append([0.474, 0.487])   # Top Right
-        extra.append([-0.474, 0.0])    # Left Middle
-        extra.append([0.0, -0.487])    # Bottom Middle
+        # extreme points 80% under bars
+        extra.append([0.474, 0.487])    # Top Right (Corner)
+        extra.append([-0.474, -0.487])  # Bottom Left (Corner)
+        extra.append([-0.474, 0.0])     # Left Middle (Symmetry)
     else:
         # For 6x6, we only needed 1 more: the corner
         extra.append([0.474, 0.487])
@@ -131,6 +131,7 @@ def main():
         f"--output={out_name}",
         "--quadrants",
         "--reflected",
+        f"--rotation={args.rotation}",
         f"--nx_eff={nx_eff}",
         f"--ny_eff={ny_eff}"
     ]

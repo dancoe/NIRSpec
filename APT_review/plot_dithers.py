@@ -4,7 +4,7 @@ import argparse
 import os
 import numpy as np
 
-def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False, show_grid_lines=True, nx_eff=None, ny_eff=None):
+def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False, show_grid_lines=True, nx_eff=None, ny_eff=None, rotation_deg=0.0):
     """
     Generate a high-fidelity geometric plot of the dither pattern relative to MSA shutter geometry.
     """
@@ -82,9 +82,18 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
             gy = mirror_y[is_grid]
             
             if len(gx) == nx_eff * ny_eff:
-                # Re-sort to ensure perfect raster order for plotting lines
-                # (since extra points might have shifted the original order)
-                sort_idx = np.lexsort((gx, gy))
+                # Re-sort using tilted axis projection to ensure proper raster order
+                # regardless of grid rotation. Sort by Y-tilted then X-tilted.
+                theta = np.radians(rotation_deg)
+                c, s = np.cos(theta), np.sin(theta)
+                # Projection on unrotated axes:
+                # x_orig = (x-cx)*c + (y-cy)*s
+                # y_orig = -(x-cx)*s + (y-cy)*c
+                # We can just use the absolute coordinates since shift is constant
+                y_key = -gx * s + gy * c
+                x_key = gx * c + gy * s
+                
+                sort_idx = np.lexsort((x_key, y_key))
                 gx_sorted = gx[sort_idx]
                 gy_sorted = gy[sort_idx]
                 
@@ -140,6 +149,7 @@ def main():
     parser.add_argument("--output", "-o", required=True, help="Output plot filename")
     parser.add_argument("--quadrants", action="store_true", help="Color by quadrant")
     parser.add_argument("--reflected", action="store_true", help="Show reflected dithers at top right")
+    parser.add_argument("--rotation", type=float, default=0.0, help="Rotation in degrees")
     parser.add_argument("--grid-lines", action="store_true", default=True, help="Draw grid lines between points")
     parser.add_argument("--no-grid-lines", action="store_false", dest="grid_lines", help="Hide grid lines")
     parser.add_argument("--nx_eff", type=int, help="Effective grid X dimension")
@@ -156,7 +166,8 @@ def main():
                            color_quadrants=args.quadrants, 
                            show_reflected=args.reflected,
                            show_grid_lines=args.grid_lines,
-                           nx_eff=args.nx_eff, ny_eff=args.ny_eff)
+                           nx_eff=args.nx_eff, ny_eff=args.ny_eff,
+                           rotation_deg=args.rotation)
     except Exception as e:
         import traceback
         traceback.print_exc()
