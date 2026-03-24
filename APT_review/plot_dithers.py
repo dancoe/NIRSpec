@@ -36,12 +36,24 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
     def get_quad_colors(px, py):
         qc = []
         for xi, yi in zip(px, py):
-            # Mapping Red/Green and Blue/Yellow as diagonal opposites
-            if xi > 0 and yi > 0: qc.append('#d14747') # Q1: Muted Red
-            elif xi < 0 and yi > 0: qc.append('#d1d147') # Q2: Muted Yellow
-            elif xi < 0 and yi < 0: qc.append('#47d147') # Q3: Muted Green
-            elif xi > 0 and yi < 0: qc.append('#4747d1') # Q4: Muted Blue
-            else: qc.append('#4d4d4d') # Origin/Axis at 30% gray
+            # Center Point
+            if np.isclose(xi, 0, atol=1e-5) and np.isclose(yi, 0, atol=1e-5):
+                qc.append('#b0b0b0') # Muted Gray
+                continue
+            
+            # Quadrants
+            if xi > 1e-5 and yi > 1e-5: qc.append('#d14747') # Q1: Muted Red
+            elif xi < -1e-5 and yi > 1e-5: qc.append('#d1d147') # Q2: Muted Yellow
+            elif xi < -1e-5 and yi < -1e-5: qc.append('#47d147') # Q3: Muted Green
+            elif xi > 1e-5 and yi < -1e-5: qc.append('#4747d1') # Q4: Muted Blue
+            else:
+                # Axes
+                if np.isclose(xi, 0, atol=1e-5):
+                    if yi > 0: qc.append('#d18c47') # Q1/Q2: Muted Orange
+                    else: qc.append('#47d18c')      # Q3/Q4: Muted Teal/Cyan
+                else: # np.isclose(yi, 0, atol=1e-5)
+                    if xi < 0: qc.append('#8cd147') # Q2/Q3: Muted Lime/Chartreuse
+                    else: qc.append('#8c47d1')      # Q4/Q1: Muted Purple/Violet
         return qc
 
     main_colors = get_quad_colors(x, y)

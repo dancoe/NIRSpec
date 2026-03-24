@@ -21,14 +21,15 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
     pts_rot = pts_zero @ R.T + center
     
     # Distribute across 4 quadrants with row-shifting for better spatial sampling
-    signs = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
-    distributed_pts = []
-    for i, p in enumerate(pts_rot):
-        # Shift starting quadrant by row number: (row + col) % 4
-        s_idx = (i // nx + i % nx) % 4
-        distributed_pts.append(p * signs[s_idx])
-    
-    distributed_pts = np.array(distributed_pts)
+    sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
+    distributed_pts = np.zeros_like(pts_rot)
+    for r in range(ny):
+        for c in range(nx):
+            i = r * nx + c
+            # After each row, skip ahead the starting quadrant by an increasing amount
+            s_idx = ((r * (r + 1)) // 2 + c) % 4
+            sign_x, sign_y = sign_patterns[s_idx]
+            distributed_pts[i] = pts_rot[i] * [sign_x, sign_y]
     
     # Extra points to bring total to 38
     num_extra = 38 - (nx * ny)
