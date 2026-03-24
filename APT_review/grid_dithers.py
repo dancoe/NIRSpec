@@ -109,23 +109,10 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
-    nx, ny = 4, 6 # Default 6x4
-    if args.type == "6x6":
-        nx, ny = 6, 6
-        pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type='6x6', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
-        out_name = args.output or "grid_6x6_dithers.png"
-    elif args.type == "8x4":
-        nx, ny = 4, 8
-        pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type='8x4', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
-        out_name = args.output or "grid_8x4_dithers.png"
-    elif args.type == "6x4":
-        nx, ny = 4, 6
-        pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type='6x4', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
-        out_name = args.output or "grid_6x4_dithers.png"
-    else: # 7x5
-        nx, ny = 5, 7
-        pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type='7x5', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
-        out_name = args.output or "grid_7x5_dithers.png"
+    nx_map = {"6x6": (6, 6), "8x4": (4, 8), "6x4": (4, 6), "7x5": (5, 7)}
+    nx, ny = nx_map.get(args.type, (4, 6))
+    pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type=args.type, random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
+    out_name = args.output or f"grid_{args.type}_dithers.png"
     
     x_str = ",".join([f"{p[0]:.4f}" for p in pts])
     y_str = ",".join([f"{p[1]:.4f}" for p in pts])
