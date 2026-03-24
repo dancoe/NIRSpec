@@ -3,6 +3,9 @@
 ## [Unreleased] - 2026-03-24
 
 ### Added
+- **Refactoring**:
+    - Moved dither pattern plotting logic to a standalone script `plot_dithers.py`.
+    - `APT_review.py` now calls `plot_dithers.py` via subprocess, similar to `msa_coverage_plot.py`.
 - **Dither Pattern Visualization**:
     - Added `--dithers` flag to `APT_review.py` to output a focused dither configuration table and generate high-fidelity geometric plots.
     - Dither plots feature accurate MSA geometry (0.27" x 0.53" pitch), gray shading for bars, and dual axes (Shutters and Arcseconds).

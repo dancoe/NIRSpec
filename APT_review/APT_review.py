@@ -3209,14 +3209,13 @@ class NIRSpecMOSReviewer:
                 print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
                 
     def generate_dithers_plot(self):
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            print("Warning: matplotlib not found. Dither plots skipped.")
-            return
-
+        """
+        Generate dither pattern plots for each observation by calling plot_dithers.py.
+        """
+        import subprocess
+        plot_script = Path(__file__).parent / "plot_dithers.py"
+        
         for obs_num in sorted(self.analytics.keys(), key=int):
-            # Only plot for the observations we are reviewing
             if str(obs_num) not in [str(o) for o in self.reviewed_obs_nums]: continue
             
             configs = self.analytics[obs_num].get('configs', [])
@@ -3227,73 +3226,34 @@ class NIRSpecMOSReviewer:
             ids = []
             for pt in configs:
                 try:
-                    xi = float(pt.get('disp_offset') or 0)
-                    yi = float(pt.get('cross_offset') or 0)
+                    xi = str(pt.get('disp_offset') or 0.0)
+                    yi = str(pt.get('cross_offset') or 0.0)
                     x.append(xi)
                     y.append(yi)
-                    ids.append(pt['id'])
+                    ids.append(str(pt['id']))
                 except: pass
             
             if not x: continue
-            if all(v == 0 for v in x) and all(v == 0 for v in y):
-                continue # No dithers to plot
-                
-            # Shutter dimensions in arcsec
-            sw, sh = 0.20, 0.46
-            # Pitch in arcsec
-            pw, ph = 0.27, 0.53
-            
-            # Figure aspect ratio 27:53
-            fig, ax = plt.subplots(figsize=(4, 4 * (53/27)))
-            
-            # Shade bars (MSA geometry)
-            # Center of shutter is at (0,0) in shutter units
-            # Opening is sw/pw wide in shutter units
-            xr = (sw/pw) / 2.0
-            yr = (sh/ph) / 2.0
-            
-            # Draw gray bars in background WITHOUT overlap in corners
-            bar_alpha = 0.25
-            # Left & Right full-height
-            ax.axvspan(-0.5, -xr, color='gray', alpha=bar_alpha, zorder=0)
-            ax.axvspan(xr, 0.5, color='gray', alpha=bar_alpha, zorder=0)
-            # Top & Bottom only between the vertical bars
-            ax.axhspan(yr, 0.5, xmin=(0.5-xr), xmax=(0.5+xr), color='gray', alpha=bar_alpha, zorder=0)
-            ax.axhspan(-0.5, -yr, xmin=(0.5-xr), xmax=(0.5+xr), color='gray', alpha=bar_alpha, zorder=0)
-            
-            ax.plot(x, y, 'bo', markersize=8, zorder=5)
-            ax.plot(x, y, 'b-', alpha=0.3, zorder=4)
-            
-            for i, (xi, yi) in enumerate(zip(x, y)):
-                ax.annotate(ids[i], (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9, zorder=6)
-            
-            # Bottom/Left Axes: Shutters
-            ax.set_xlim(-0.5, 0.5)
-            ax.set_ylim(-0.5, 0.5)
-            ax.set_xlabel("Dispersion (shutters)")
-            ax.set_ylabel("Cross-Dispersion (shutters)")
-            
-            # Top/Right Axes: Arcseconds (centered at 0,0)
-            # 1 shutter = 0.27" (X) or 0.53" (Y)
-            def s2a_x(s): return s * pw
-            def a2s_x(a): return a / pw
-            def s2a_y(s): return s * ph
-            def a2s_y(a): return a / ph
-            
-            # Note: secondary_axis introduced in 3.1
-            if hasattr(ax, 'secondary_xaxis'):
-                secax_x = ax.secondary_xaxis('top', functions=(s2a_x, a2s_x))
-                secax_x.set_xlabel('Dispersion (arcsec)')
-                secax_y = ax.secondary_yaxis('right', functions=(s2a_y, a2s_y))
-                secax_y.set_ylabel('Cross-Dispersion (arcsec)')
-            
-            ax.set_title(f"Program {self.pid} Obs {obs_num} Dither Pattern")
-            ax.grid(True, linestyle='--', alpha=0.5, zorder=1)
+            if all(v == '0.0' for v in x) and all(v == '0.0' for v in y): continue
             
             plot_file = self.input_path.parent / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
-            plt.savefig(plot_file, bbox_inches='tight', dpi=150)
-            plt.close(fig)
-            print(f"Dither pattern plot saved to: {plot_file}")
+            
+            cmd = [
+                sys.executable, str(plot_script),
+                "--pid", str(self.pid),
+                "--obs", str(obs_num),
+                "--x", ",".join(x),
+                "--y", ",".join(y),
+                "--ids", ",".join(ids),
+                "--output", str(plot_file)
+            ]
+            
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: Failed to generate dither plot for Obs {obs_num}: {e}")
+            except FileNotFoundError:
+                print(f"Warning: plot_dithers.py script not found at {plot_script}. Dither plots skipped.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")

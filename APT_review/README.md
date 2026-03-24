@@ -95,6 +95,7 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 *   **`APT_download.py`**: Utility to download `.aptx` files from STScI links.
 *   **`export_all.py`**: Automates the export of `msatargets` for multiple programs.
 *   **`consolidated_shorts_report.py`**: Compiles a single report of shorts and review status across multiple programs.
+*   **`plot_dithers.py`**: Generates high-fidelity geometric dither pattern plots.
 
 ### OPTIONAL
 *   **`msa_coverage_plot.py`**: Plots NIRSpec MSA quadrants overlaid on catalogs.
