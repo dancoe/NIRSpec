@@ -95,7 +95,8 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 *   **`APT_download.py`**: Utility to download `.aptx` files from STScI links.
 *   **`export_all.py`**: Automates the export of `msatargets` for multiple programs.
 *   **`consolidated_shorts_report.py`**: Compiles a single report of shorts and review status across multiple programs.
-*   **`plot_dithers.py`**: Generates high-fidelity geometric dither pattern plots.
+*   **`plot_dithers.py`**: Generates high-fidelity geometric dither pattern plots. Supports quadrant coloring (`--quadrants`) and reflected dither visualization (`--reflected`).
+*   **`grid_dithers.py`**: Designs and plots a custom 6x6 rotated dither pattern that cycles through MSA quadrants.
 
 ### OPTIONAL
 *   **`msa_coverage_plot.py`**: Plots NIRSpec MSA quadrants overlaid on catalogs.
@@ -174,6 +175,8 @@ The plot includes:
 * **Gray shading for MSA bars** (0.20" x 0.46" shutter opening).
 * **Dual Axes**: Shutters (Bottom/Left) and Arcseconds (Top/Right).
 * **Precise Aspect Ratio**: 27:53 to match NIRSpec MOS geometry.
+* **Quadrant Coloring**: (`--quadrants`) Colors points by MSA quadrant (Q1=Red, Q2=Blue, Q3=Green, Q4=Purple).
+* **Reflected Dithers**: (`--reflected`) Shows an inset plot with all dither points reflected across both axes.
 
 ---
 
@@ -300,3 +303,5 @@ The script automates the tedious data extraction, but it is **not a substitute f
 *   **[APT_exports.md](docs/APT_exports.md)** — Guide to the supplementary CSV exports and PySIAF integration.
 *   **[ReviewChecklist.md](docs/ReviewChecklist.md)** — the full manual review checklist.
 *   **[SpotlightChecklist.md](docs/SpotlightChecklist.md)** — technical checklist focused on modern MOS bottlenecks (clustering, timing, strategy).
+*   **[Shorts.md](docs/Shorts.md)** — Automated electrical shorts reporting and multi-program batch review.
+*   **[Dithers.md](docs/Dithers.md)** — Custom dither pattern design and high-fidelity 6x6 rotated grid visualization.
