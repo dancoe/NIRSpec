@@ -34,7 +34,7 @@ TA_MAG_LIMITS = {
 }
 
 class NIRSpecMOSReviewer:
-    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, **kwargs):
+    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, **kwargs):
         self.input_path = Path(input_file).absolute()
         self.exports_path = Path(exports_dir) if exports_dir else None
         self.output_path = Path(output_file) if output_file else None
@@ -102,6 +102,9 @@ class NIRSpecMOSReviewer:
         self._root = None
         self._main_xml_arcname = None
         self._temp_dir = tempfile.mkdtemp()
+        self.shorts_only = shorts_only
+        self.dithers_only = dithers_only
+        self.auto_yes = auto_yes
         
         try:
             self._load_xml()
@@ -109,8 +112,6 @@ class NIRSpecMOSReviewer:
             self.check_program_tooldata() # Load error_text early
             self.check_targets() # Populates target_name_map
             self._pre_process_observations() # Populates obs_info and reviewed_obs_nums
-            self.shorts_only = shorts_only
-            self.auto_yes = kwargs.get('auto_yes', False)
             self._load_exports()
             self.perform_review()
         finally:
@@ -901,7 +902,7 @@ class NIRSpecMOSReviewer:
 
             # Parallel
             parallel_node = obs.find(f"{{{NS['apt']}}}CoordinatedParallelSet/{{{NS['apt']}}}CoordinatedParallel")
-            parallel_str = ""
+            parallel_str = "None"
             if parallel_node is not None:
                 p_temp_node = parallel_node.find(f"{{{NS['apt']}}}Template")
                 p_mode = ""
@@ -970,7 +971,7 @@ class NIRSpecMOSReviewer:
                 if int(obs_num) not in self.include_set: continue
             else:
                 if is_unplanned: pass
-                elif is_completed: continue
+                elif is_completed: pass # Include in analysis for reporting purposes
                 elif self.exclude_set and int(obs_num) in self.exclude_set: continue
 
             self.reviewed_obs_nums.append(obs_num)
@@ -1803,7 +1804,10 @@ class NIRSpecMOSReviewer:
                 general_issues.append((item['status'], f"{item['category']}: {item['message']}"))
 
         # ── Section calls – reorder freely ──────────────────────────────
-        if self.shorts_only:
+        if self.dithers_only:
+            self._report_header(write)
+            self._report_configs_pointings(write)
+        elif self.shorts_only:
             # Skip header for consolidated report cleanliness
             self._report_review_ready_summary(write)
             self._report_shorts(write)
@@ -1915,8 +1919,8 @@ class NIRSpecMOSReviewer:
         # Observation-specific (Warnings/Errors only)
         for obs_num_str in sorted(obs_map.keys(), key=int):
             sign = self.obs_info.get(obs_num_str, {}).get('sign')
-            if sign not in ["🔎", "👷"]:
-                continue # Skip detailed findings for excluded/completed/drafts
+            if sign not in ["🔎", "👷", "☑️"]:
+                continue # Skip detailed findings for excluded/drafts
             obs_findings = [f for f in obs_map[obs_num_str] if f[0] not in ['SUCCESS', 'INFO']]
             if obs_findings:
                 data = self.analytics.get(obs_num_str, {})
@@ -1961,7 +1965,7 @@ class NIRSpecMOSReviewer:
         
         for obs_num in sorted(shorts_data.keys(), key=int):
             sign = self.obs_info.get(obs_num, {}).get('sign')
-            if sign not in ["🔎", "👷"]:
+            if sign not in ["🔎", "👷", "☑️"]:
                 continue
             data = self.analytics.get(obs_num, {})
             target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
@@ -2000,6 +2004,7 @@ class NIRSpecMOSReviewer:
         write("="*145)
         
         write("\nDispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.")
+        write("Q4 FP1 LS = Q4 Field Point 1 Long Slit")
         
         # Track duplicate pointings across the whole project for the final summary
         duplicate_pointings_found = []
@@ -2007,7 +2012,7 @@ class NIRSpecMOSReviewer:
         for obs_num in sorted(self.analytics.keys(), key=int):
             if 'configs' in self.analytics[obs_num]:
                 write(f"\nObservation {obs_num}")
-                header = f"  # | {'Config':<8} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Offset':<12} | {'Pointing'}"
+                header = f"  # | {'Config':<12} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Dither'}"
                 write(header)
                 write("-" * len(header))
                 
@@ -2016,23 +2021,29 @@ class NIRSpecMOSReviewer:
                 
                 for pt in self.analytics[obs_num]['configs']:
                     offset_str = "None"
+                    d_raw, c_raw = pt.get('disp_offset') or "0", pt.get('cross_offset') or "0"
                     if pt.get('disp_offset') or pt.get('cross_offset'):
-                        d, c = pt.get('disp_offset') or "0", pt.get('cross_offset') or "0"
                         try:
-                            offset_str = f"({float(d):g}, {float(c):g})"
+                            dv, cv = float(d_raw), float(c_raw)
+                            # Using :>7.3f to align signs and decimals without excessive whitespace.
+                            offset_str = f"({dv:>7.3f}, {cv:>7.3f})"
                         except:
-                            offset_str = f"({d}, {c})"
+                            offset_str = f"({d_raw:>7}, {c_raw:>7})"
                 
-                    row = f" {pt['id']:>2} | {pt['config']:<8} | {pt['gf']:<18} | {pt['nod']:<20} | {pt['total_ints']:<10} | {pt['total_time']:<10.3f} | {offset_str:<12} | {pt['pointing']}"
+                    cfg_alias = pt['config']
+                    cfg_alias = cfg_alias.replace("Field Point", "FP").replace("Long Slit", "LS").replace("FP ", "FP")
+                    
+                    row = f" {pt['id']:>2} | {cfg_alias:<12} | {pt['gf']:<18} | {pt['nod']:<20} | {pt['total_ints']:<10} | {pt['total_time']:<10.3f} | {offset_str}"
                     write(row)
                     
-                    key = (pt['pointing'], pt['config'])
+                    # Uniqueness key includes offsets to recognize them as different pointings/dithers
+                    key = (p_str, cfg_name, d_raw, c_raw) = (pt['pointing'], pt['config'], d_raw, c_raw)
                     if key not in pointing_counts:
                         pointing_counts[key], config_gf_map[key] = [], []
                     pointing_counts[key].append(pt['id'])
                     config_gf_map[key].append(pt['gf'])
                 
-                for (p_str, cfg_name), indices in pointing_counts.items():
+                for (p_str, cfg_name, d_val, c_val), indices in pointing_counts.items():
                     if len(indices) > 1:
                         # Only warn if the gratings are the same
                         gfs = config_gf_map[(p_str, cfg_name)]
@@ -2047,17 +2058,30 @@ class NIRSpecMOSReviewer:
                 self.log("Configurations", warning, "WARNING")
 
     def _report_parallels_dithers(self, write, icons):
-        if not any(self.analytics[o].get('parallel') != "None" for o in self.analytics):
+        def has_manual_offsets(o):
+            return any(pt.get('disp_offset') and pt.get('disp_offset') != "0.0" 
+                       for pt in self.analytics[o].get('configs', []))
+                       
+        if not any(self.analytics[o].get('parallel') != "None" or self.analytics[o].get('dither') != "NONE" 
+                   or has_manual_offsets(o) for o in self.analytics):
             return
-        write("\n" + "="*90)
-        write("🎨 PARALLELS & DITHERS SUMMARY")
-        write("="*90)
+        write("\n" + "="*95)
+        write("🎨 COORDINATED PARALLELS & DITHERS")
+        write("="*95)
         write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
-        write("-" * 90)
+        write("-" * 95)
         for obs_num in sorted(self.analytics.keys(), key=int):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            if self.obs_info.get(obs_num, {}).get('sign') not in ["🔎", "👷", "☑️"]: continue
             p = self.analytics[obs_num].get('parallel', "None")
             d = self.analytics[obs_num].get('dither',   "NONE")
+            
+            # If dither is NONE but there are offsets, call it 'Manual Offsets'
+            if d == "NONE":
+                has_offsets = any(pt.get('disp_offset') and pt.get('disp_offset') != "0.0" 
+                                 for pt in self.analytics[obs_num].get('configs', []))
+                if has_offsets:
+                    d = "(manual offsets)"
+            
             status = icons['SUCCESS']
             if p != "None" and "JOINT" not in d.upper():
                 status = icons['INFO']
@@ -2079,7 +2103,7 @@ class NIRSpecMOSReviewer:
             write(f"{obs_num:<5} | {d['apa_range']:<35} | {d['bg_lim']:<20} | {others_str}")
 
     def _report_msa_strategy(self, write):
-        if not any(self.analytics[o].get('msa_configs') or self.analytics[o].get('nod_pattern')
+        if not any(self.analytics[o].get('msa_configs') or self.analytics[o].get('nod_pattern') or self.analytics[o].get('dither') != "NONE"
                    for o in self.analytics):
             return
         write("\n" + "="*140)
@@ -2711,7 +2735,7 @@ class NIRSpecMOSReviewer:
 
     def _report_spar_review(self, write, icons):
         """ Consolidation of review checks in a checklist format. """
-        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"]
+        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') in ["🔎", "👷", "☑️"]]
         
         write("\n" + "="*80)
         write("✍️ SPAR REVIEW")
@@ -2786,7 +2810,24 @@ class NIRSpecMOSReviewer:
                 is_standard = "3 shutter" in n.lower() or "3-shutter" in n.lower()
                 icon = "✅" if is_standard else "🧠"
                 label = "standard 3-shutter slitlet nods" if is_standard else n
+                if n == "NONE": label = "no nods"
                 write(f"{icon} {label}")
+        
+        # Check for dithers as well
+        dithers = sorted({self.analytics[o].get('dither') for o in reviewed_obs if self.analytics[o].get('dither')})
+        if dithers and any(d != "NONE" for d in dithers):
+            for d in dithers:
+                if d == "NONE": continue
+                write(f"✅ dither pattern: {d}")
+        
+        # Check if any offsets exist in configs
+        has_offsets = False
+        for o in reviewed_obs:
+            if any(pt.get('disp_offset') and pt.get('disp_offset') != "0.0" for pt in self.analytics[o].get('configs', [])):
+                has_offsets = True
+                break
+        if has_offsets:
+            write(f"✅ custom configuration offsets (dithers) detected")
 
         # 7. Background Observations
         write("\nBACKGROUND OBSERVATIONS")
@@ -3166,6 +3207,93 @@ class NIRSpecMOSReviewer:
                 print(f"Warning: MSA coverage plot generation failed.")
             except Exception as e:
                 print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
+                
+    def generate_dithers_plot(self):
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("Warning: matplotlib not found. Dither plots skipped.")
+            return
+
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            # Only plot for the observations we are reviewing
+            if str(obs_num) not in [str(o) for o in self.reviewed_obs_nums]: continue
+            
+            configs = self.analytics[obs_num].get('configs', [])
+            if not configs: continue
+            
+            x = []
+            y = []
+            ids = []
+            for pt in configs:
+                try:
+                    xi = float(pt.get('disp_offset') or 0)
+                    yi = float(pt.get('cross_offset') or 0)
+                    x.append(xi)
+                    y.append(yi)
+                    ids.append(pt['id'])
+                except: pass
+            
+            if not x: continue
+            if all(v == 0 for v in x) and all(v == 0 for v in y):
+                continue # No dithers to plot
+                
+            # Shutter dimensions in arcsec
+            sw, sh = 0.20, 0.46
+            # Pitch in arcsec
+            pw, ph = 0.27, 0.53
+            
+            # Figure aspect ratio 27:53
+            fig, ax = plt.subplots(figsize=(4, 4 * (53/27)))
+            
+            # Shade bars (MSA geometry)
+            # Center of shutter is at (0,0) in shutter units
+            # Opening is sw/pw wide in shutter units
+            xr = (sw/pw) / 2.0
+            yr = (sh/ph) / 2.0
+            
+            # Draw gray bars in background WITHOUT overlap in corners
+            bar_alpha = 0.25
+            # Left & Right full-height
+            ax.axvspan(-0.5, -xr, color='gray', alpha=bar_alpha, zorder=0)
+            ax.axvspan(xr, 0.5, color='gray', alpha=bar_alpha, zorder=0)
+            # Top & Bottom only between the vertical bars
+            ax.axhspan(yr, 0.5, xmin=(0.5-xr), xmax=(0.5+xr), color='gray', alpha=bar_alpha, zorder=0)
+            ax.axhspan(-0.5, -yr, xmin=(0.5-xr), xmax=(0.5+xr), color='gray', alpha=bar_alpha, zorder=0)
+            
+            ax.plot(x, y, 'bo', markersize=8, zorder=5)
+            ax.plot(x, y, 'b-', alpha=0.3, zorder=4)
+            
+            for i, (xi, yi) in enumerate(zip(x, y)):
+                ax.annotate(ids[i], (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=9, zorder=6)
+            
+            # Bottom/Left Axes: Shutters
+            ax.set_xlim(-0.5, 0.5)
+            ax.set_ylim(-0.5, 0.5)
+            ax.set_xlabel("Dispersion (shutters)")
+            ax.set_ylabel("Cross-Dispersion (shutters)")
+            
+            # Top/Right Axes: Arcseconds (centered at 0,0)
+            # 1 shutter = 0.27" (X) or 0.53" (Y)
+            def s2a_x(s): return s * pw
+            def a2s_x(a): return a / pw
+            def s2a_y(s): return s * ph
+            def a2s_y(a): return a / ph
+            
+            # Note: secondary_axis introduced in 3.1
+            if hasattr(ax, 'secondary_xaxis'):
+                secax_x = ax.secondary_xaxis('top', functions=(s2a_x, a2s_x))
+                secax_x.set_xlabel('Dispersion (arcsec)')
+                secax_y = ax.secondary_yaxis('right', functions=(s2a_y, a2s_y))
+                secax_y.set_ylabel('Cross-Dispersion (arcsec)')
+            
+            ax.set_title(f"Program {self.pid} Obs {obs_num} Dither Pattern")
+            ax.grid(True, linestyle='--', alpha=0.5, zorder=1)
+            
+            plot_file = self.input_path.parent / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
+            plt.savefig(plot_file, bbox_inches='tight', dpi=150)
+            plt.close(fig)
+            print(f"Dither pattern plot saved to: {plot_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
@@ -3177,14 +3305,18 @@ if __name__ == "__main__":
     parser.add_argument("--exports_dir", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
     parser.add_argument("--noplots", action="store_true", help="Do not generate MSA coverage plots")
     parser.add_argument("--shorts_only", action="store_true", help="Only perform electrical shorts check")
-    parser.add_argument("--exports", "-e", action="store_true", help="Automatically answer yes to all prompts (for automatic STScI exports).")
+    parser.add_argument("--exports", "-e", action="store_true", help="Automatically answer yes to all prompts.")
+    parser.add_argument("--dithers", action="store_true", help="Only output dither tables and generate dither plots.")
     args = parser.parse_args()
 
     # --obs is a friendly alias for --include
     include = args.obs or args.include
 
-    # Default output: <stem>_review.txt (or _shorts.txt if --shorts_only) next to the input file
-    suffix = "_shorts.txt" if args.shorts_only else "_review.txt"
+    # Default output suffixes
+    suffix = "_review.txt"
+    if args.shorts_only: suffix = "_shorts.txt"
+    if args.dithers: suffix = "_dithers.txt"
+    
     output = args.output or str(Path(args.apt_file).with_name(Path(args.apt_file).stem + suffix))
 
     reviewer = NIRSpecMOSReviewer(
@@ -3194,8 +3326,11 @@ if __name__ == "__main__":
         exclude=args.exclude,
         exports_dir=args.exports_dir,
         shorts_only=args.shorts_only,
+        dithers_only=args.dithers,
         auto_yes=args.exports
     )
     reviewer.print_report()
-    if not args.noplots:
+    if args.dithers:
+        reviewer.generate_dithers_plot()
+    elif not args.noplots:
         reviewer.generate_plots()

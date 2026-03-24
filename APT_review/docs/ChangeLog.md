@@ -1,5 +1,27 @@
 # Change Log
 
+## [Unreleased] - 2026-03-24
+
+### Added
+- **Dither Pattern Visualization**:
+    - Added `--dithers` flag to `APT_review.py` to output a focused dither configuration table and generate high-fidelity geometric plots.
+    - Dither plots feature accurate MSA geometry (0.27" x 0.53" pitch), gray shading for bars, and dual axes (Shutters and Arcseconds).
+    - Precise 27:53 aspect ratio implementation to reflect physical instrument proportions.
+- **Enhanced Analysis Coverage**:
+    - Updated `_pre_process_observations` to include `COMPLETED` observations in the analysis and reporting, ensuring full review coverage for all programs.
+
+### Changed
+- **Pointings & Dither Report**:
+    - Renamed the "Pointings" column to "Dither" in the configuration table for clarity.
+    - Improved numerical alignment in the dither table to ensure signs, digits, and decimal points match vertically.
+    - Optimized abbreviation mapping for configuration names (e.g., "Field Point" -> "FP", "Long Slit" -> "LS").
+    - Added a specific abbreviation legend above the configuration table (e.g., `Q4 FP1 LS = Q4 Field Point 1 Long Slit`).
+    - Added detection for "Manual Offsets" in coordinated dither reporting when standard patterns are not present.
+
+### Fixed
+- Fixed an `UnboundLocalError` (AttributeError) in the pointing count loop where variables were incorrectly unpacked after the 4-tuple key update.
+- Fixed a duplicate pointing warning bug by including dither offsets in the uniqueness key.
+
 ## [Unreleased] - 2026-03-23
 
 ### Added

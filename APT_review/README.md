@@ -164,6 +164,16 @@ This mode skips the detailed report and only outputs known electrical shorts and
 python APT_review.py program.aptx --shorts_only
 ```
 
+### 7. Dither Pattern Visualization
+Output only the configuration/dither table and generate high-fidelity geometric plots of the dither pattern relative to the MSA shutter geometry (0.27" x 0.53" pitch).
+```bash
+python APT_review.py program.aptx --dithers
+```
+The plot includes:
+* **Gray shading for MSA bars** (0.20" x 0.46" shutter opening).
+* **Dual Axes**: Shutters (Bottom/Left) and Arcseconds (Top/Right).
+* **Precise Aspect Ratio**: 27:53 to match NIRSpec MOS geometry.
+
 ---
 
 ## ⚡️ Electrical Shorts Automation
