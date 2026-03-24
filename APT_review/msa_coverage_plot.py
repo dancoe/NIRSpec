@@ -402,9 +402,10 @@ def main():
                     c['decs'].append(src['dec'])
                     c['sizes'].append(size)
                     c['colors'].append(pt_color)
-                    c['edgecolors'].append('black') # Changed from 'lime' to 'black'
+                    # For unobserved highest, we'll plot the edge separately to keep alpha=1.0
+                    c['edgecolors'].append('black' if is_observed else 'none')
                     c['lws'].append(1.0)
-                    c['alphas'].append(1.0)
+                    c['alphas'].append(1.0 if is_observed else 0.07)
                     if is_observed:
                         # Extra ring for observed highest
                         c_ring = cats['sci_highest_obs']
@@ -427,6 +428,11 @@ def main():
             plt.scatter(data['ras'], data['decs'], marker=data['marker'], s=data['sizes'], 
                         color=data['colors'], edgecolors=data['edgecolors'], 
                         linewidths=data['lws'], alpha=data['alphas'], zorder=data['zorder'])
+            
+            # Sub-pass for outlines of unobserved highest priority targets
+            if name == 'sci_highest':
+                plt.scatter(data['ras'], data['decs'], marker='o', s=data['sizes'], 
+                            color='none', edgecolors='black', linewidths=1.0, alpha=1.0, zorder=data['zorder']+0.1)
             
             # Special handling for highest observed: add black outer ring outside the green inner ring
             if name == 'sci_highest_obs':

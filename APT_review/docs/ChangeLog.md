@@ -10,12 +10,29 @@
     - Created `export_all.py` to automate batch CLI exports with subdirectory support.
     - Created `consolidated_shorts_report.py` to generate a clean, resumable summary `.txt` report across 60+ programs.
     - Modified `print_report` to skip technical headers in shorts-only mode for cleaner consolidated reporting.
-- **Reporting**:
-    - Final report now summarizes "Observations ready for review" (`🔎`, `✅`, `👷`) based on status and design completion.
-
-### Changed
 - **Directory Structure**:
     - Automation tools now support organizing programs into individual subdirectories (e.g., `data/shorts-check/{pid}/`).
+
+### Changed
+- **High Priority Target Analysis**:
+    - Added **Rank** column to the analysis table.
+    - Added **Configs** column to show which configurations observe each target.
+    - Narrowed Grating/Filter column widths for a more compact layout.
+    - Optimized success summary at the top of the visit report (e.g., `# / 20 high-priority targets observed`).
+- **Pointings Report**:
+    - Added **Grating / Filter** column to the configurations table.
+    - Updated duplicate pointing warnings to be "grating-aware." Redundant warnings are now suppressed if multiple observations of the same pointing use different gratings.
+    - Standardized report banner widths to 145 chars for consistent alignment.
+- **Wavelength Data Integration**:
+    - Restored full support for `-exp` export files in wavelength parsing.
+    - Added logic to infer Grating/Filter combinations from configuration mapping if missing from filename.
+- **MSATA Summary**:
+    - Consolidated multiple TA/MSATA headers into a single unified "⭐ MSATA & REFERENCE STARS" section.
+    - Simplified sub-headers for reference star usage and availability.
+
+### Fixed
+- Fixed a bug causing duplicate rows in the High Priority Target table by unifying target ID handling.
+- Fixed a `TypeError` in `_report_high_priority_targets` when filtering visit results.
 
 ## [Unreleased] - 2026-03-17
 
