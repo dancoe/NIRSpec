@@ -23,7 +23,7 @@ This script generates the dither coordinates. It creates a base grid in the posi
 - **Extra Test Points**:
     - **6x6 Mode**: Includes (0,0) and a corner point.
     - **8x4 Mode**: Includes (0,0), four edge points (Left, Right, Top, Bottom at the opening boundaries), and a corner point.
-    - **7x5 Mode**: Includes (0,0), Top-Right corner (80% under), and Bottom-Left corner (80% under).
+    - **7x5 Mode**: Includes (0,0), Top-Right corner (80% under), and Bottom-Right corner (80% under).
 
 ### [plot_dithers.py](../plot_dithers.py)
 

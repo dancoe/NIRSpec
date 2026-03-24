@@ -50,7 +50,7 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard'):
         elif extra_pts_type == '7x5':
             # Center + 2 corners
             extra.append([0.474, 0.487])  # Top Right
-            extra.append([-0.474, -0.487]) # Bottom Left
+            extra.append([0.474, -0.487]) # Bottom Right
         else:
             # For 6x6, we only needed 2 more: (0,0) and the corner
             extra.append([0.474, 0.487])
