@@ -15,9 +15,10 @@
 
 ### Changed
 - **High Priority Target Analysis**:
-    - Added **Rank** column to the analysis table.
-    - Added **Configs** column to show which configurations observe each target.
-    - Narrowed Grating/Filter column widths for a more compact layout.
+    - Restructured to list each Grating/Filter on a separate line for each target ID.
+    - Added dedicated **Grating / Filter** and **Coverage** columns for improved readability and alignment.
+    - Added **Rank** and **Configs** columns to the analysis table.
+    - Wavelength coverage is now displayed for each specific grating to show gaps and cutoffs more clearly.
     - Optimized success summary at the top of the visit report (e.g., `# / 20 high-priority targets observed`).
 - **Pointings Report**:
     - Added **Grating / Filter** column to the configurations table.

@@ -2398,8 +2398,8 @@ class NIRSpecMOSReviewer:
                     if sid == "...": continue
                     rank = analysis[cat_name]['ranks'].get(sid, 0)
                     weight = self.catalogs[cat_name]['sources'][sid]['weight']
-                    v_res = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {})
-                    cfgs = ", ".join(sorted(v_res.get('configs', [])))
+                    res_val = analysis_data.get(str(sid), {}).get(str(obs_num), {}).get(v_key, {})
+                    cfgs = ", ".join(sorted(res_val.get('configs', [])))
                     max_rank_w = max(max_rank_w, len(str(rank)))
                     max_id_w = max(max_id_w, len(str(sid)))
                     max_weight_w = max(max_weight_w, len(f"{weight:.0f}"))
@@ -2413,12 +2413,9 @@ class NIRSpecMOSReviewer:
                 write(f"{any_obs_count:>2}/{len(top_20)} high-priority targets observed")
                 write(f"{all_in_all:>2}/{len(top_20)} high-priority targets observed in ALL exposures")
                 write("-" * 60)
-                
+
                 # Header
-                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}}"
-                for gf in gfs:
-                    header += f" | {gf:<16}"
-                header += " | Wavelength Coverage"
+                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating / Filter':<18} | {'Coverage':<16} | Wavelength Coverage"
                 write(header)
                 write("-" * len(header))
                 
@@ -2429,16 +2426,18 @@ class NIRSpecMOSReviewer:
                     
                     weight = self.catalogs[cat_name]['sources'][sid]['weight']
                     rank = analysis[cat_name]['ranks'].get(sid, 0)
-                    v_res = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {})
-                    cfg_set = v_res.get('configs', set())
-                    cfg_str = ", ".join(sorted(cfg_set)) if cfg_set else ""
+                    sid_str = str(sid)
+                    v_res = analysis_data.get(sid_str, {}).get(str(obs_num), {}).get(v_key, {})
+                    target_waves = self.exports_data['wavelengths'].get(str(obs_num), {}).get(sid_str, {})
                     
-                    row = f"{str(sid):>{max_id_w}} | {weight:>{max_weight_w}.0f} | {str(rank):>{max_rank_w}} | {cfg_str:<{max_cfg_w}}"
-                    for gf in gfs:
+                    target_gfs = sorted([g for g in v_res.keys() if g != 'configs'])
+                    if not target_gfs: 
+                        target_gfs = sorted(gfs)
+                    
+                    for i, gf in enumerate(target_gfs):
                         res = v_res.get(gf, {'n_obs': 0, 'n_total': 0})
-                        n_obs = res['n_obs']
-                        n_total = res['n_total']
-                        pct = (n_obs / n_total) * 100 if n_total > 0 else 0
+                        n_obs, n_total = res['n_obs'], res['n_total']
+                        pct = (n_obs / n_total * 100) if n_total > 0 else 0
                         
                         if pct >= 100: icon = icons['FULL']
                         elif pct >= 70: icon = icons['MOSTLY']
@@ -2447,42 +2446,30 @@ class NIRSpecMOSReviewer:
                         else: icon = icons['EMPTY']
                         
                         cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:>3.0f}%)"
-                        row += f" | {cell:<16}"
-                    
-                    # 3. Wavelength Coverage (last column)
-                    target_waves = self.exports_data['wavelengths'].get(str(obs_num), {}).get(str(sid), {})
-                    v_target_res = analysis_data.get(sid, {}).get(obs_num, {}).get(v_key, {})
-                    wave_summaries = []
-                    for gf in gfs:
-                        if v_target_res.get(gf, {}).get('n_obs', 0) == 0: continue
-                        w = target_waves.get(gf)
-                        if not w: continue
-                        
-                        try:
-                            n1_min = float(w.get('n1_min', 0))
-                            n1_max = float(w.get('n1_max', 0))
-                            n2_min = float(w.get('n2_min', 0))
-                            n2_max = float(w.get('n2_max', 0))
-                        except: continue
-
-                        n1_full = (n1_min == -1 and n1_max == -2)
-                        n2_full = (n2_min == -1 and n2_max == -2)
-                        n1_gap = (n1_min == n1_max) or (n1_min == 0 and n1_max == 0)
-                        n2_gap = (n2_min == n2_max) or (n2_min == 0 and n2_max == 0)
                         
                         s = ""
-                        if n1_full and n2_full: s = f"{icons['FULL']} FULL"
-                        elif n1_full and n2_gap: s = f"{icons['FULL']} FULL (NRS1)"
-                        elif n2_full and n1_gap: s = f"{icons['FULL']} FULL (NRS2)"
-                        elif n1_max > 0 and n2_min > 0: s = f"{icons['MOSTLY']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
-                        elif n1_gap and n2_min > 0: s = f"🌓 CUTOFF: {n2_min:.2f} µm – (NRS1)"
-                        elif n2_gap and n1_max > 0: s = f"🌗 CUTOFF: (NRS2) – {n1_max:.2f} µm"
-                        if s: wave_summaries.append(s)
-                    
-                    if wave_summaries:
-                        row += f" | {', '.join(wave_summaries)}"
-                    write(row)
-                
+                        w = target_waves.get(gf)
+                        if w:
+                            try:
+                                n1_min, n1_max, n2_min, n2_max = float(w.get('n1_min', 0)), float(w.get('n1_max', 0)), float(w.get('n2_min', 0)), float(w.get('n2_max', 0))
+                                if n1_min == -1 and n1_max == -2 and n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL"
+                                elif n1_min == -1 and n1_max == -2: s = f"{icons['FULL']} FULL (NRS1)"
+                                elif n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL (NRS2)"
+                                elif n1_max > 0 and n2_min > 0: s = f"{icons['MOSTLY']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
+                                elif (n1_min == n1_max or n1_min == 0) and n2_min > 0: s = f"🌓 CUTOFF: {n2_min:.2f} µm – (NRS1)"
+                                elif (n2_min == n2_max or n2_min == 0) and n1_max > 0: s = f"🌗 CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                            except: pass
+                        
+                        if i == 0:
+                            cfg_set = v_res.get('configs', set())
+                            cfg_str = ", ".join(sorted(cfg_set)) if cfg_set else ""
+                            row = f"{sid_str:>{max_id_w}} | {weight:>{max_weight_w}.0f} | {str(rank):>{max_rank_w}} | {cfg_str:<{max_cfg_w}}"
+                        else:
+                            row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {' ' * max_cfg_w}"
+                        
+                        row += f" | {gf:<18} | {cell:<16} | {s}"
+                        write(row)
+                write("-" * len(header))                
 
     def _report_observing_description(self, write):
         """Observing description and MAZ justification (Title/PI moved to SUMMARY)."""
