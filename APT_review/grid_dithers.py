@@ -96,7 +96,7 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate NIRSpec MOS dither patterns.")
-    parser.add_argument("--type", type=str, default="6x4", choices=["6x6", "8x4", "7x5", "6x4"], help="Grid type")
+    parser.add_argument("--type", type=str, default="6x4", choices=["6x6", "8x4", "7x5", "6x4", "4x3"], help="Grid type")
     parser.add_argument("--rotation", type=float, default=-3.0, help="Rotation in degrees")
     parser.add_argument("--randomize", action="store_true", default=False, help="Randomize quadrant for each grid point")
     parser.add_argument("--no-randomize", action="store_false", dest="randomize", help="Use deterministic row-triangular quadrant cycling")
@@ -108,11 +108,33 @@ def main():
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
-    nx_map = {"6x6": (6, 6), "8x4": (4, 8), "6x4": (4, 6), "7x5": (5, 7)}
-    nx, ny = nx_map.get(args.type, (4, 6))
+    nx_map = {"6x6": (6, 6), "8x4": (4, 8), "6x4": (4, 6), "7x5": (5, 7), "4x3": (3, 4)}
+    nx, ny = nx_map.get(args.type, (3, 4))
+    
     pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type=args.type, 
                         random_quadrants=args.randomize, seed=args.seed, 
                         high_density=args.high_density, diagonal_bias=args.diagonal_bias)
+    
+    # If 4x3, add corner clusters until we have 38 points
+    if args.type == "4x3" and len(pts) < 38:
+        needed = 38 - len(pts)
+        corner_pts = []
+        # Clusters of points near Top-Right (Q1) and Bottom-Left (Q3)
+        # Coordinates near (0.37, 0.43) and (-0.37, -0.43)
+        for _ in range(needed):
+            corner = np.random.choice([0, 1])
+            if corner == 0: # Top Right
+                cx, cy = 0.37, 0.434
+            else: # Bottom Left
+                cx, cy = -0.37, -0.434
+            
+            # Scatter tightly near corner
+            px = cx + np.random.uniform(-0.05, 0.05)
+            py = cy + np.random.uniform(-0.05, 0.05)
+            corner_pts.append([px, py])
+        
+        pts = np.vstack([pts, corner_pts])
+        
     out_name = args.output or f"grid_{args.type}_dithers.png"
     
     x_str = ",".join([f"{p[0]:.4f}" for p in pts])
