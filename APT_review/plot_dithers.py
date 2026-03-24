@@ -93,18 +93,14 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
                 
                 # Draw grid
                 for r in range(ny_eff):
-                    ax.plot(mx_grid[r, :], my_grid[r, :], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
+                    ax.plot(mx_grid[r, :], my_grid[r, :], color='gray', alpha=0.3, linewidth=0.8, zorder=3)
                 for c in range(nx_eff):
-                    ax.plot(mx_grid[:, c], my_grid[:, c], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
+                    ax.plot(mx_grid[:, c], my_grid[:, c], color='gray', alpha=0.3, linewidth=0.8, zorder=3)
 
-    # Draw lines connecting the main sequence points (light gray)
-    ax.plot(x, y, color='gray', linestyle='-', alpha=0.2, zorder=4)
-    
-    # Render labels (numbered points) - hidden by default if grid lines are shown
-    if not show_grid_lines:
-        for i, (xi, yi) in enumerate(zip(x, y)):
-            label = str(ids[i]) if i < len(ids) else str(i+1)
-            ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, alpha=0.7, zorder=6)
+    # Render labels (numbered points)
+    for i, (xi, yi) in enumerate(zip(x, y)):
+        label = str(ids[i]) if i < len(ids) else str(i+1)
+        ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, alpha=0.7, zorder=6)
     
     # Bottom/Left Axes: Shutters
     ax.set_xlim(-0.5, 0.5)
