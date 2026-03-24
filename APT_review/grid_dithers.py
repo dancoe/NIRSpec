@@ -96,11 +96,11 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate NIRSpec MOS dither patterns.")
-    parser.add_argument("--type", type=str, default="6x4", choices=["6x6", "8x4", "7x5", "6x4", "4x3"], help="Grid type")
+    parser.add_argument("--type", type=str, default="7x5", choices=["6x6", "8x4", "7x5", "6x4", "4x3"], help="Grid type")
     parser.add_argument("--rotation", type=float, default=-3.0, help="Rotation in degrees")
     parser.add_argument("--randomize", action="store_true", default=False, help="Randomize quadrant for each grid point")
     parser.add_argument("--no-randomize", action="store_false", dest="randomize", help="Use deterministic row-triangular quadrant cycling")
-    parser.add_argument("--high-density", action="store_true", default=True, help="Double density along top and right edges")
+    parser.add_argument("--high-density", action="store_true", default=False, help="Double density along top and right edges")
     parser.add_argument("--no-high-density", action="store_false", dest="high_density", help="Disable high-density edge points")
     parser.add_argument("--diagonal-bias", action="store_true", default=True, help="Prioritize Top-Right and Bottom-Left quadrants")
     parser.add_argument("--no-diagonal-bias", action="store_false", dest="diagonal_bias", help="Allow all 4 quadrants")
