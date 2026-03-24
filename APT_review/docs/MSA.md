@@ -58,3 +58,6 @@ The following regions should be avoided for both science targets and MSATA refer
 - **q2d211s60**: Avoid Row 60 and Column 211 of Quadrant 2.
 - **Q3 columns d353 and d354**: Avoid all shutters in Columns 353 and 354 of Quadrant 3.
 - **q4d16s36 (Wilhelm)**: Avoid Row 36 and Column 16 of Quadrant 4.
+
+### Automated Check
+The `APT_review.py` script automatically checks all exported `msatargets` CSV files for these known electrical shorts and flags them in the **SHORTS** section of the report. To run only this check, use the `--shorts_only` flag.

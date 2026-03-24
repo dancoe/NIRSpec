@@ -8,6 +8,7 @@
 * Aperture PA planned vs. assigned
 *   Total Charged Time vs. Allocated
 *   **Electrical Shorts (SHORTS)**: Flags targets in problematic MSA rows/columns
+*   **Automation**: Focused shorts-only report (`--shorts_only`) and multi-program consolidated reporting.
 *   and more...
 
 `msa_coverage_plot.py` optionally generates plots of the MSA coverage on the sky, including:
@@ -91,6 +92,9 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 
 ### Core Files
 *   **`APT_review.py`**: The primary script. It handles XML parsing, catalog checks, and report generation using only the **Python Standard Library**.
+*   **`APT_download.py`**: Utility to download `.aptx` files from STScI links.
+*   **`export_all.py`**: Automates the export of `msatargets` for multiple programs.
+*   **`consolidated_shorts_report.py`**: Compiles a single report of shorts and review status across multiple programs.
 
 ### OPTIONAL
 *   **`msa_coverage_plot.py`**: Plots NIRSpec MSA quadrants overlaid on catalogs.
@@ -153,6 +157,39 @@ python APT_review.py program.aptx --obs "1,3-5,10"
 
 # Exclude specific observations from the active set
 python APT_review.py program.aptx --exclude "2,6-8"
+
+### 6. Perform Electrical Shorts Check only
+This mode skips the detailed report and only outputs known electrical shorts and observation review status.
+```bash
+python APT_review.py program.aptx --shorts_only
+```
+
+---
+
+## ⚡️ Electrical Shorts Automation
+
+For large-scale reviews (e.g., checking multiple programs for electrical shorts), a set of scripts facilitates the workflow:
+
+| Tool | Purpose |
+|------|---------|
+| `APT_download.py` | Downloads `.aptx` files for a list of Program IDs or URLs into `data/shorts-check/`. |
+| `export_all.py` | Runs the APT CLI to export `msatargets` for all downloaded programs into their respective subdirectories. |
+| `consolidated_shorts_report.py` | Runs `APT_review.py --shorts_only` on all programs and compiles a single summary report. |
+
+### Usage:
+1.  **Download programs:**
+    ```bash
+    python APT_download.py 9496 9695 10208
+    ```
+2.  **Export data:** (Requires APT installed and path configured in `export_all.py`)
+    ```bash
+    python export_all.py
+    ```
+3.  **Generate consolidated report:**
+    ```bash
+    python consolidated_shorts_report.py
+    ```
+    This creates `data/shorts-check/consolidated_shorts_report.md`.
 ```
 
 ---

@@ -34,7 +34,7 @@ TA_MAG_LIMITS = {
 }
 
 class NIRSpecMOSReviewer:
-    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None):
+    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, **kwargs):
         self.input_path = Path(input_file).absolute()
         self.exports_path = Path(exports_dir) if exports_dir else None
         self.output_path = Path(output_file) if output_file else None
@@ -106,8 +106,12 @@ class NIRSpecMOSReviewer:
         try:
             self._load_xml()
             self.catalogs = self._parse_all_catalogs(self._root)
-            self._load_exports()
             self.check_program_tooldata() # Load error_text early
+            self.check_targets() # Populates target_name_map
+            self._pre_process_observations() # Populates obs_info and reviewed_obs_nums
+            self.shorts_only = shorts_only
+            self.auto_yes = kwargs.get('auto_yes', False)
+            self._load_exports()
             self.perform_review()
         finally:
             shutil.rmtree(self._temp_dir)
@@ -230,7 +234,8 @@ class NIRSpecMOSReviewer:
         
         if (is_missing_msa or is_missing_visits) and not _is_retry:
             if self.input_path.exists() and self.input_path.suffix.lower() == '.aptx':
-                if self._run_automatic_exports(is_missing_msa, is_missing_visits):
+                # Only export for observations we're analyzing
+                if self._run_automatic_exports(is_missing_msa, is_missing_visits, self.reviewed_obs_nums):
                     # Re-run search to pick up the newly exported files
                     self._load_exports(_is_retry=True)
                     return
@@ -258,10 +263,13 @@ class NIRSpecMOSReviewer:
         dirs.sort(key=sort_key, reverse=True)
         return dirs[0]
 
-    def _run_automatic_exports(self, is_missing_msa, is_missing_visits):
+    def _run_automatic_exports(self, is_missing_msa, is_missing_visits, obs_list=None):
         """Attempt to export missing data. MSA targets and visits supported."""
         if not is_missing_msa and not is_missing_visits:
             return True
+
+        if obs_list is not None and len(obs_list) == 0:
+            return False
 
         apt_dir = self._find_latest_apt_path()
         if not apt_dir:
@@ -275,15 +283,20 @@ class NIRSpecMOSReviewer:
             print(f"⚠️ {apt_bin} not found.")
             return False
 
+        obs_flag = []
+        # if obs_list:
+        #     sorted_obs = sorted(list(obs_list), key=int)
+        #     obs_flag = ["-obs", ",".join(sorted_obs)]
+
         any_success = False
         
         # 1. MSA Targets
         if is_missing_msa:
-            cmd = [str(apt_bin), "-nogui", "-export", "msatargets", "-output", "msatargets", self.input_path.name]
+            cmd = [str(apt_bin), "-nogui", "-export", "msatargets", "-output", "msatargets"] + obs_flag + [self.input_path.name]
             print("\n📝 msatargets not found. We can get APT to export them:")
             print(f"   {shlex.join(cmd)}")
             
-            user_input = input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
+            user_input = "y" if self.auto_yes else input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
             if not user_input or user_input == 'y':
                 output_dir = self.input_path.parent / "msatargets"
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -298,11 +311,11 @@ class NIRSpecMOSReviewer:
 
         # 2. Visits Coverage (CSV)
         if is_missing_visits:
-            cmd = [str(apt_bin), "-nogui", "-export", "csv", "-output", "visits", self.input_path.name]
+            cmd = [str(apt_bin), "-nogui", "-export", "csv", "-output", "visits"] + obs_flag + [self.input_path.name]
             print("\n📝 visits not found. We can get APT to export them:")
             print(f"   {shlex.join(cmd)}")
             
-            user_input = input("\nProceed with automatic export of visit coverage? [Y/n]: ").strip().lower()
+            user_input = "y" if self.auto_yes else input("\nProceed with automatic export of visit coverage? [Y/n]: ").strip().lower()
             if not user_input or user_input == 'y':
                 # Create the subdirectory to help APT along and avoid [SEVERE] errors
                 output_dir = self.input_path.parent / "visits"
@@ -801,8 +814,9 @@ class NIRSpecMOSReviewer:
         
         self.stats['shorts_flags'] = self.exports_data.get('shorts', {})
 
-    def perform_review(self):
-        # 0. Parse Visit Statuses from XML
+    def _pre_process_observations(self):
+        """Identify which observations exist and which should be analyzed for the report."""
+        # 1. Parse Visit Statuses from XML
         self.obs_status = {} # int -> str
         for vs in (self.findall(self._root, 'VisitStatus') or []):
             vid = vs.get('VisitId') # PPPPPMMMVVV
@@ -816,9 +830,121 @@ class NIRSpecMOSReviewer:
                         self.obs_status[obs_num] = "COMPLETED"
                 except: pass
 
-        # self.catalogs already parsed in __init__
-        # 1. Proposal Info
-        # ... (rest of logic remains same, but using self.obs_status in loop)
+        # 2. Iterate through Observations
+        self.all_obs_nums = []
+        self.reviewed_obs_nums = []
+        self._obs_node_map = {} # obs_num -> element
+        
+        obs_parent = self.find(self._root, 'DataRequests')
+        if obs_parent is None: return
+
+        for obs in self.findall(obs_parent, 'Observation'):
+            obs_num_str = obs.findtext(f"{{{NS['apt']}}}Number")
+            if not obs_num_str: continue
+            
+            obs_num = obs_num_str
+            self.all_obs_nums.append(obs_num)
+            self._obs_node_map[obs_num] = obs
+            
+            # Metadata
+            label = obs.findtext(f"{{{NS['apt']}}}Label") or ""
+            status = self.obs_status.get(obs_num, "UNKNOWN")
+            target_id = obs.findtext(f"{{{NS['apt']}}}TargetID") or "Unknown"
+            
+            target_name = target_id
+            if target_id.isdigit():
+                target_name = self.target_name_map.get(target_id, target_id)
+            elif ' ' in target_id:
+                parts = target_id.split(' ', 1)
+                if parts[0].isdigit():
+                    target_name = parts[1]
+
+            # Mode/Template
+            template_node = obs.find(f"{{{NS['apt']}}}Template")
+            prime_template = "Unknown"
+            if template_node is not None:
+                children = list(template_node)
+                if children:
+                    prime_template = children[0].tag.split('}')[-1]
+
+            # Parallel
+            parallel_node = obs.find(f"{{{NS['apt']}}}CoordinatedParallelSet/{{{NS['apt']}}}CoordinatedParallel")
+            parallel_str = ""
+            if parallel_node is not None:
+                p_temp_node = parallel_node.find(f"{{{NS['apt']}}}Template")
+                p_mode = ""
+                if p_temp_node is not None:
+                    p_children = list(p_temp_node)
+                    if p_children:
+                        p_mode = p_children[0].tag.split('}')[-1]
+                parallel_str = self.abbreviate_mode(p_mode)
+
+            is_mos = (prime_template in ["NirspecMOS", "NirspecMultiObjectSpectroscopy"])
+            is_completed = (status == "COMPLETED")
+            
+            # Determine Sign (for status table)
+            if not is_mos:
+                sign = "🤷🏻"
+            elif is_completed:
+                if self.include_set and int(obs_num) in self.include_set:
+                    sign = "🔎"
+                else:
+                    sign = "☑️"
+            elif self.include_set and int(obs_num) not in self.include_set:
+                sign = "🙈"
+            elif self.exclude_set and int(obs_num) in self.exclude_set:
+                sign = "🙈"
+            else:
+                sign = "🔎"
+
+            self.obs_info[obs_num] = {
+                'label': label,
+                'status': status,
+                'target': target_name,
+                'mode': self.abbreviate_mode(prime_template),
+                'parallel': parallel_str,
+                'sign': sign
+            }
+
+            # Extract TA Parameters (Filter/Readout) from visits
+            for visit in self.findall(obs, 'Visit'):
+                v_num = visit.get('Number')
+                rs_bin = visit.get('ReferenceStarBin')
+                if rs_bin and v_num:
+                    if obs_num not in self.exports_data['ta_params']:
+                        self.exports_data['ta_params'][obs_num] = {}
+                    self.exports_data['ta_params'][obs_num][v_num] = rs_bin
+
+            # Determine if "Under Construction"
+            is_unplanned = False
+            mos_template = self.find(template_node, 'nsmos:NirspecMOS') if template_node is not None else None
+            xml_pa = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS) if mos_template is not None else None
+            if xml_pa:
+                try:
+                    val = float(re.search(r'[\d\.]+', xml_pa).group())
+                    err_text = self.stats['program_metadata'].get('error_text', "")
+                    if f"created with an Aperture PA of {val:.4f}" in err_text:
+                        is_unplanned = True
+                except: pass
+            
+            if is_unplanned:
+                self.obs_info[obs_num]['sign'] = "👷"
+                self.obs_info[obs_num]['unplanned'] = True
+
+            # Decide whether to analyze for the report
+            if not is_mos: continue
+            
+            if self.include_set:
+                if int(obs_num) not in self.include_set: continue
+            else:
+                if is_unplanned: pass
+                elif is_completed: continue
+                elif self.exclude_set and int(obs_num) in self.exclude_set: continue
+
+            self.reviewed_obs_nums.append(obs_num)
+
+    def perform_review(self):
+        # 1. Proposal Info (always load this)
         prop_info = self.find(self._root, 'ProposalInformation')
         if prop_info is not None:
             self.pid = prop_info.findtext(f"{{{NS['apt']}}}ProposalID")
@@ -837,127 +963,20 @@ class NIRSpecMOSReviewer:
                 lname = pi.findtext(f".//{{{NS['apt']}}}LastName")
                 if fname and lname:
                     self.stats['program_metadata']['pi'] = f"{fname} {lname}"
-            
+
+        if self.shorts_only:
+            self.check_shorts()
+            return
+
         # Add Export-derived findings to general results
         for item in self.exports_data['failed_shutters']:
             self.log("MSA Strategy", item['msg'], "WARNING", int(item['obs']))
 
-        # 2. Targets & Catalog Checks
-        self.check_targets()
-
-        # 3. Observations
-        self.all_obs_nums = []
-        self.reviewed_obs_nums = []
-        obs_parent = self.find(self._root, 'DataRequests')
-        if obs_parent is not None:
-            for obs in self.findall(obs_parent, 'Observation'):
-                obs_num_str = obs.findtext(f"{{{NS['apt']}}}Number")
-                if obs_num_str:
-                    obs_num = obs_num_str
-                    self.all_obs_nums.append(obs_num)
-                    
-                    # Collect metadata for table
-                    label = obs.findtext(f"{{{NS['apt']}}}Label") or ""
-                    status = self.obs_status.get(obs_num, "UNKNOWN")
-                    target_id = obs.findtext(f"{{{NS['apt']}}}TargetID") or "Unknown"
-                    target_name = target_id
-                    if target_id.isdigit():
-                        target_name = self.target_name_map.get(target_id, target_id)
-                    elif ' ' in target_id:
-                        parts = target_id.split(' ', 1)
-                        if parts[0].isdigit():
-                            target_name = parts[1]
-
-                    # Mode/Template
-                    template_node = obs.find(f"{{{NS['apt']}}}Template")
-                    prime_template = "Unknown"
-                    if template_node is not None:
-                        children = list(template_node)
-                        if children:
-                            prime_template = children[0].tag.split('}')[-1]
-
-                    # Parallel
-                    parallel_node = obs.find(f"{{{NS['apt']}}}CoordinatedParallelSet/{{{NS['apt']}}}CoordinatedParallel")
-                    parallel_str = ""
-                    if parallel_node is not None:
-                        p_temp_node = parallel_node.find(f"{{{NS['apt']}}}Template")
-                        p_mode = ""
-                        if p_temp_node is not None:
-                            p_children = list(p_temp_node)
-                            if p_children:
-                                p_mode = p_children[0].tag.split('}')[-1]
-                        parallel_str = self.abbreviate_mode(p_mode)
-
-                    is_mos = (prime_template in ["NirspecMOS", "NirspecMultiObjectSpectroscopy"])
-                    is_completed = (status == "COMPLETED")
-                    
-                    # Determine Sign
-                    if not is_mos:
-                        sign = "🤷🏻"
-                    elif is_completed:
-                        # If explicitly included, it's 🔎, otherwise ☑️
-                        if self.include_set and int(obs_num) in self.include_set:
-                            sign = "🔎"
-                        else:
-                            sign = "☑️"
-                    elif self.include_set and int(obs_num) not in self.include_set:
-                        sign = "🙈"
-                    elif self.exclude_set and int(obs_num) in self.exclude_set:
-                        sign = "🙈"
-                    else:
-                        sign = "🔎"
-
-                    self.obs_info[obs_num] = {
-                        'label': label,
-                        'status': status,
-                        'target': target_name,
-                        'mode': self.abbreviate_mode(prime_template),
-                        'parallel': parallel_str,
-                        'sign': sign
-                    }
-
-                    # Extract TA Parameters (Filter/Readout) from visits
-                    for visit in self.findall(obs, 'Visit'):
-                        v_num = visit.get('Number')
-                        rs_bin = visit.get('ReferenceStarBin')
-                        if rs_bin and v_num:
-                            if obs_num not in self.exports_data['ta_params']:
-                                self.exports_data['ta_params'][obs_num] = {}
-                            self.exports_data['ta_params'][obs_num][v_num] = rs_bin
-
-                    # Determine if it's "Not Designed" (e.g. Planning status)
-                    is_unplanned = False
-                    mos_template = self.find(template_node, 'nsmos:NirspecMOS') if template_node is not None else None
-                    xml_pa = mos_template.findtext(f"{{{NS['nsmos']}}}AperturePA", namespaces=NS) if mos_template is not None else None
-                    if xml_pa:
-                        try:
-                            val = float(re.search(r'[\d\.]+', xml_pa).group())
-                            # Check for PA mismatch in program error text
-                            err_text = self.stats['program_metadata'].get('error_text', "")
-                            if f"created with an Aperture PA of {val:.4f}" in err_text:
-                                is_unplanned = True
-                        except: pass
-                    
-                    if is_unplanned:
-                        self.obs_info[obs_num]['sign'] = "👷"
-                        self.obs_info[obs_num]['unplanned'] = True
-
-                    # Processing logic for actual review execution
-                    if not is_mos: continue # Only review MOS
-                    
-                    if self.include_set:
-                        if int(obs_num) not in self.include_set: continue
-                    else:
-                        # Default filters
-                        if is_unplanned: 
-                            # Continue to review for PA summary, but it's not a full review
-                            pass
-                        elif is_completed: continue
-                        elif self.exclude_set and int(obs_num) in self.exclude_set: continue
-
-                    self.reviewed_obs_nums.append(obs_num)
-                    sign = self.obs_info.get(obs_num, {}).get('sign')
-                    self.review_observation(obs, is_full_review=(sign == "🔎"))
+        # 2. Observation detailed reviews
+        for obs_num in self.reviewed_obs_nums:
+            obs = self._obs_node_map[obs_num]
+            sign = self.obs_info.get(obs_num, {}).get('sign')
+            self.review_observation(obs, is_full_review=(sign == "🔎"))
                         
         # 5. Cross-Observation Checks (Spotlight Tool)
         self.check_program_strategy()
@@ -1588,13 +1607,9 @@ class NIRSpecMOSReviewer:
                         break
                 
                 total_ints = nod_mult * s_ints
+                total_time = s_dur * total_ints # Corrected calculation
                 disp_offset = pt.findtext(f"{{{n_mos}}}DispersionOffset", namespaces=NS)
                 cross_offset = pt.findtext(f"{{{n_mos}}}CrossDispersionOffset", namespaces=NS)
-                
-                # User correction: Total exposure time is 5076.934s for this program
-                # We calculate duration per integration as 5076.934 / 3 = 1692.311
-                total_time = 5076.934 # Standard for this program
-                s_dur = total_time / total_ints if total_ints > 0 else 0
                 
                 # Update the stats for Exposure Specs as well to be consistent
                 for spec_stat in self.stats['all_exposure_specs']:
@@ -1621,35 +1636,6 @@ class NIRSpecMOSReviewer:
                     'cross_offset': cross_offset
                 })
             self.analytics[num]['configs'] = pts_data
-            self.analytics[num]['has_leakcal'] = has_leakcal
-
-            # MSA Configuration details (slitlets, primaries, fillers)
-            msa_configs = []
-            seen_configs = set()
-            # Direct child search to avoid matching <nsmos:Configuration> tags inside <nsmos:ConfigurationPointing>
-            for cfg_node in mos_template.findall(f"{{{NS['nsmos']}}}Configuration", NS):
-                cfg_name = cfg_node.get('Name')
-                if not cfg_name or cfg_name in seen_configs: continue
-                
-                slitlets = cfg_node.findtext(f"{{{NS['ns']}}}slitlets") or ""
-                primaries = cfg_node.findtext(f"{{{NS['ns']}}}primaries") or ""
-                fillers = cfg_node.findtext(f"{{{NS['ns']}}}fillers") or ""
-
-                n_slitlets = len([s for s in slitlets.split('|') if s.strip()]) if slitlets else 0
-                primary_ids = primaries.split()
-                n_primaries = len(primary_ids)
-                n_fillers = len(fillers.split()) if fillers else 0
-                
-                msa_configs.append({
-                    'name': cfg_name,
-                    'n_slitlets': n_slitlets,
-                    'n_primaries': n_primaries,
-                    'n_fillers': n_fillers,
-                    'primary_ids': primary_ids
-                })
-                seen_configs.add(cfg_name)
-            self.analytics[num]['msa_configs'] = msa_configs
-            self.analytics[num]['primary_candidate_set'] = mos_template.findtext(f"{{{NS['nsmos']}}}PrimaryCandidateSet", namespaces=NS) or ""
             self.analytics[num]['has_leakcal'] = has_leakcal
             # if not has_leakcal:
             #    self.log("MOS Strategy", "No Leakcal (ALLCLOSED) exposure found. (Recommended for diffuse emission)", "INFO", num)
@@ -1739,30 +1725,37 @@ class NIRSpecMOSReviewer:
                 general_issues.append((item['status'], f"{item['category']}: {item['message']}"))
 
         # ── Section calls – reorder freely ──────────────────────────────
-        self._report_header(write)                                    # Title banner
-        self._report_observing_description(write)                     # Program title, PI, observing description, MAZ justification
-        self._report_observation_table(write)                         # All observations summary table
-        self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
-        self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
-        self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
-        self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
-        self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
-        self._report_parallels_dithers(write, icons)                  # Coordinated parallel sets and dither types
-        self._report_special_requirements(write)                      # Aperture PA ranges, background limited, other SRs
-        self._report_msa_strategy(write)                              # MSA config slitlets, primaries, fillers, leakcal, conf images
-        self._report_msata_ref_stars(write, icons)                    # MSATA reference star counts and quadrant coverage
-        self._report_ref_star_detail(write)                           # Per-visit ref star listing with catalog magnitudes
-        self._report_availability(write)                             # Available objects per quadrant
-        self._report_target_catalogs(write)                           # Source counts, ref stars, accuracy, weight filters per catalog
-        self._report_high_priority_targets(write, icons)              # Top 20 weighted targets coverage
-        self.stats['shorts_flags'] = self.stats.get('shorts_flags', {})
-        self._report_shorts(write)                                   # Electrical shorts flags
-        self._report_catalogs(write, icons)                           # Detailed catalog checks (s/n, accuracy, etc.)
-        self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
-        self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
-        self._report_spar_review(write, icons)                       # New SPAR Review summary
-        self._report_files_used(write, icons)                         # Files used and modification dates
-        self._report_msa_plots_note(write)                            # Final note on plots
+        if self.shorts_only:
+            # Skip header for consolidated report cleanliness
+            self._report_review_ready_summary(write)
+            self._report_shorts(write)
+            if not self.stats.get('shorts_flags'):
+                write("\n✅ No electrical shorts contamination found.")
+        else:
+            self._report_header(write)                                    # Title banner
+            self._report_observing_description(write)                     # Program title, PI, observing description, MAZ justification
+            self._report_observation_table(write)                         # All observations summary table
+            self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
+            self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
+            self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
+            self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
+            self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
+            self._report_parallels_dithers(write, icons)                  # Coordinated parallel sets and dither types
+            self._report_special_requirements(write)                      # Aperture PA ranges, background limited, other SRs
+            self._report_msa_strategy(write)                              # MSA config slitlets, primaries, fillers, leakcal, conf images
+            self._report_msata_ref_stars(write, icons)                    # MSATA reference star counts and quadrant coverage
+            self._report_ref_star_detail(write)                           # Per-visit ref star listing with catalog magnitudes
+            self._report_availability(write)                             # Available objects per quadrant
+            self._report_target_catalogs(write)                           # Source counts, ref stars, accuracy, weight filters per catalog
+            self._report_high_priority_targets(write, icons)              # Top 20 weighted targets coverage
+            self.stats['shorts_flags'] = self.stats.get('shorts_flags', {})
+            self._report_shorts(write)                                   # Electrical shorts flags
+            self._report_catalogs(write, icons)                           # Detailed catalog checks (s/n, accuracy, etc.)
+            self._report_submission_errors(write, icons)                  # APT submission errors/warnings from ErrorText
+            self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
+            self._report_spar_review(write, icons)                       # New SPAR Review summary
+            self._report_files_used(write, icons)                         # Files used and modification dates
+            self._report_msa_plots_note(write)                            # Final note on plots
         # ────────────────────────────────────────────────────────────────
 
         # Save to file if requested
@@ -1772,6 +1765,16 @@ class NIRSpecMOSReviewer:
             print(f"\nReport saved to: {self.output_path}")
 
     # ── Report section methods ───────────────────────────────────────────
+
+    def _report_review_ready_summary(self, write):
+        # We want to identify any observations where sign is "🔎"
+        ready = [obs_num for obs_num, info in self.obs_info.items() 
+                 if info.get('sign') == "🔎"]
+        
+        if ready:
+            write(f"\n🔎 Observations ready for review: {', '.join(sorted(ready, key=int))}\n")
+        else:
+            write("\n✅ No observations currently flagged as 'ready for review' (🔎).\n")
 
     def _report_header(self, write):
         meta = self.stats.get('program_metadata', {})
@@ -3076,23 +3079,28 @@ if __name__ == "__main__":
     parser.add_argument("--output", "-o", help="Path to save the report. Defaults to <stem>_review.txt")
     parser.add_argument("--obs", help="Observations to review (e.g. '3' or '1,3-5,10'). Alias for --include.")
     parser.add_argument("--include", "-i", help="Observations to include (e.g. '1,3-5,10')")
-    parser.add_argument("--exclude", "-e", help="Observations to exclude (e.g. '2,6-8')")
-    parser.add_argument("--exports", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
+    parser.add_argument("--exclude", "-x", help="Observations to exclude (e.g. '2,6-8')")
+    parser.add_argument("--exports_dir", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
     parser.add_argument("--noplots", action="store_true", help="Do not generate MSA coverage plots")
+    parser.add_argument("--shorts_only", action="store_true", help="Only perform electrical shorts check")
+    parser.add_argument("--exports", "-e", action="store_true", help="Automatically answer yes to all prompts (for automatic STScI exports).")
     args = parser.parse_args()
 
     # --obs is a friendly alias for --include
     include = args.obs or args.include
 
-    # Default output: <stem>_review.txt next to the input file
-    output = args.output or str(Path(args.apt_file).with_name(Path(args.apt_file).stem + "_review.txt"))
+    # Default output: <stem>_review.txt (or _shorts.txt if --shorts_only) next to the input file
+    suffix = "_shorts.txt" if args.shorts_only else "_review.txt"
+    output = args.output or str(Path(args.apt_file).with_name(Path(args.apt_file).stem + suffix))
 
     reviewer = NIRSpecMOSReviewer(
         args.apt_file,
         output_file=output,
         include=include,
         exclude=args.exclude,
-        exports_dir=args.exports
+        exports_dir=args.exports_dir,
+        shorts_only=args.shorts_only,
+        auto_yes=args.exports
     )
     reviewer.print_report()
     if not args.noplots:

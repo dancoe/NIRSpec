@@ -1,5 +1,22 @@
 # Change Log
 
+## [Unreleased] - 2026-03-23
+
+### Added
+- **Electrical Shorts Automation**:
+    - Added `--shorts_only` flag to `APT_review.py` for focused reporting.
+    - Added `--exports` (`-e`) flag to `APT_review.py` for fully automated non-interactive STScI exports.
+    - Created `APT_download.py` for multi-PID mass downloads and automatic subdirectory creation.
+    - Created `export_all.py` to automate batch CLI exports with subdirectory support.
+    - Created `consolidated_shorts_report.py` to generate a clean, resumable summary `.txt` report across 60+ programs.
+    - Modified `print_report` to skip technical headers in shorts-only mode for cleaner consolidated reporting.
+- **Reporting**:
+    - Final report now summarizes "Observations ready for review" (`🔎`, `✅`, `👷`) based on status and design completion.
+
+### Changed
+- **Directory Structure**:
+    - Automation tools now support organizing programs into individual subdirectories (e.g., `data/shorts-check/{pid}/`).
+
 ## [Unreleased] - 2026-03-17
 
 ### Changed
