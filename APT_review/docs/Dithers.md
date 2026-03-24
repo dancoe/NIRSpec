@@ -6,18 +6,22 @@ This document describes the tools and methodologies for designing and visualizin
 
 The NIRSpec MOS (Multi-Object Spectroscopy) dither pattern involves small shifts (sub-shutter) to ensure even spatial sampling, recover from MSA failed shutters (stuck closed), and improve spectral resolution (sub-pixel sampling).
 
-The tools provided here allow for the design of a **6x6 rotated grid** that cycles through the four quadrants of the MSA shutter geometry.
+The tools provided here allow for the design of custom rotated grids, with two primary options:
+- **6x6 Grid**: A balanced square grid (36 points) + 2 extra points (Origin and Corner) = 38 total.
+- **8x4 Grid**: A taller, narrower grid (32 points) + 6 extra points (Origin, 4 Edges, and Corner) = 38 total.
 
 ## Tools
 
 ### [grid_dithers.py](../grid_dithers.py)
 
-This script generates the dither coordinates. It create a 6x6 grid in the positive quadrant, rotates it by a specified angle (e.g., -3.0°), and then distributes the points across all four quadrants using a cyclic sign-flipping pattern.
+This script generates the dither coordinates. It creates a base grid in the positive quadrant, rotates it by a specified angle (default: -3.0°), and then distributes the points across all four quadrants using a cyclic sign-flipping pattern.
 
 - **Quadrant Cycling**: Each set of 4 points in the sequence maps to Q1, Q2, Q3, and Q4 in order, ensuring that even a short exposure sequence samples all four quadrants.
-- **Rotation**: A small rotation (e.g., -3.0°) ensures that the points do not fall on the same Y-rows when folded into a single quadrant, maximizing sub-pixel sampling.
+- **Rotation**: A small rotation (default: -3.0°) ensures that the points do not fall on the same Y-rows when folded into a single quadrant, maximizing sub-pixel sampling.
 - **Extended Sampling**: The pattern can be configured to "go under" the MSA bars to test the full sampling distribution.
-- **Origin & Test Points**: Includes (0,0) and specific edge cases (e.g., 80% under the bar) for verification.
+- **Extra Test Points**:
+    - **6x6 Mode**: Includes (0,0) and a corner point.
+    - **8x4 Mode**: Includes (0,0), four edge points (Left, Right, Top, Bottom at the opening boundaries), and a corner point.
 
 ### [plot_dithers.py](../plot_dithers.py)
 
@@ -29,13 +33,19 @@ A visualization utility that renders the shutter geometry and dither points.
 
 ## Usage Example
 
-To generate and visualize a 6x6 rotated grid:
+To generate and visualize the **8x4** grid:
 
 ```bash
-python3 grid_dithers.py
+python3 grid_dithers.py --type 8x4
 ```
 
-This will automatically call `plot_dithers.py` with the following flags:
+To generate the default **6x6** grid:
+
+```bash
+python3 grid_dithers.py --type 6x6
+```
+
+These commands automatically call `plot_dithers.py` with the following flags:
 - `--quadrants`: To show the quadrant distribution.
 - `--reflected`: To show the integrated sampling grid in the top-right.
 
