@@ -17,9 +17,9 @@ The tools provided here allow for the design of custom rotated grids, with three
 
 This script generates the dither coordinates. It creates a base grid in the positive quadrant, rotates it by a specified angle, and then distributes the points across all four quadrants.
 
-- **High-Density Edges**: By default, the script doubles the sampling density along the top and right edges of the positive quadrant (adding a row/column at the midpoints between the last two indices). This prioritizes sampling coverage at the shutter boundaries.
-- **Quadrant Assignment**: By default, the script implements a deterministic row-triangular shift: $Q_{idx} = ((r(r+1))/2 + c) \pmod 4$. Each grid point can optionally be assigned to a random quadrant using the `--randomize` flag (reproducible with `--seed`).
-- **Rotation & Framing**: The primary grid limits are calibrated to (0.370 in X, 0.434 in Y) ensuring perfect alignment with the shutter opening edges when the rotation is 0.0°. Grid coordinates start at (0.0, 0.0) to maximize sampling reach.
+- **Geometric Visualization**: In the "Folded Sampling" view (top-right quadrant), grid lines are now drawn by default to connect the primary sampling points. This highlights the geometric coverage within a single shutter opening.
+- **Minimalist Aesthetic**: To reduce visual clutter and focus on sampling density, point sequence numbers (labels) are hidden by default when grid lines are active.
+- **High-Density Edges**: By default, the script doubles the sampling density along the top and right edges of the positive quadrant. This prioritize sampling coverage at the shutter boundaries.
 - **Extended Sampling**: The pattern can be configured to "go under" the MSA bars to test the full sampling distribution.
 - **Aesthetic Coloring**: Points are color-coded by physical quadrant. Centered points (0,0) are muted gray, and points falling exactly on an axis use intermediate "opponent" colors (Orange, Lime, Cyan, Purple) to clearly distinguish their ambiguous quadrant status.
 - **Extra Test Points**:

@@ -4,7 +4,7 @@ import argparse
 import os
 import numpy as np
 
-def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False):
+def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False, show_grid_lines=True, nx_eff=None, ny_eff=None):
     """
     Generate a high-fidelity geometric plot of the dither pattern relative to MSA shutter geometry.
     """
@@ -71,12 +71,30 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
         # Use main_colors (original quadrant color) - no outlines for a cleaner look
         ax.scatter(mirror_x, mirror_y, c=main_colors, s=60, edgecolors='none', 
                    alpha=0.5, zorder=6, marker='o', label='Folded Sampling')
+        
+        # Draw grid lines between reflected points
+        if show_grid_lines and nx_eff and ny_eff:
+            # The first nx_eff * ny_eff points were the raster grid
+            Ngrid = nx_eff * ny_eff
+            if len(mirror_x) >= Ngrid:
+                mx_grid = mirror_x[:Ngrid].reshape(ny_eff, nx_eff)
+                my_grid = mirror_y[:Ngrid].reshape(ny_eff, nx_eff)
+                
+                # Draw horizontal lines
+                for r in range(ny_eff):
+                    ax.plot(mx_grid[r, :], my_grid[r, :], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
+                # Draw vertical lines
+                for c in range(nx_eff):
+                    ax.plot(mx_grid[:, c], my_grid[:, c], color='cyan', alpha=0.3, linewidth=0.8, zorder=3)
 
+    # Draw lines connecting the main sequence points (light gray)
     ax.plot(x, y, color='gray', linestyle='-', alpha=0.2, zorder=4)
     
-    for i, (xi, yi) in enumerate(zip(x, y)):
-        label = str(ids[i]) if i < len(ids) else str(i+1)
-        ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, alpha=0.7, zorder=6)
+    # Render labels (numbered points) - hidden by default if grid lines are shown
+    if not show_grid_lines:
+        for i, (xi, yi) in enumerate(zip(x, y)):
+            label = str(ids[i]) if i < len(ids) else str(i+1)
+            ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, alpha=0.7, zorder=6)
     
     # Bottom/Left Axes: Shutters
     ax.set_xlim(-0.5, 0.5)
@@ -99,6 +117,7 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
         secax_y.set_ylabel('Cross-Dispersion (arcsec)')
 
     ax.set_title(f"Program {pid} Obs {obs_num} Dither Pattern")
+    # Keep the plot's dashed grid lines as requested (SCRATCH: removed then kept)
     ax.grid(True, linestyle='--', alpha=0.3, zorder=1)
     
     plt.savefig(output_file, bbox_inches='tight', dpi=150)
@@ -115,6 +134,10 @@ def main():
     parser.add_argument("--output", "-o", required=True, help="Output plot filename")
     parser.add_argument("--quadrants", action="store_true", help="Color by quadrant")
     parser.add_argument("--reflected", action="store_true", help="Show reflected dithers at top right")
+    parser.add_argument("--grid-lines", action="store_true", default=True, help="Draw grid lines between points")
+    parser.add_argument("--no-grid-lines", action="store_false", dest="grid_lines", help="Hide grid lines")
+    parser.add_argument("--nx_eff", type=int, help="Effective grid X dimension")
+    parser.add_argument("--ny_eff", type=int, help="Effective grid Y dimension")
     
     args = parser.parse_args()
     
@@ -125,7 +148,9 @@ def main():
         
         plot_dither_pattern(x, y, ids, args.pid, args.obs, args.output, 
                            color_quadrants=args.quadrants, 
-                           show_reflected=args.reflected)
+                           show_reflected=args.reflected,
+                           show_grid_lines=args.grid_lines,
+                           nx_eff=args.nx_eff, ny_eff=args.ny_eff)
     except Exception as e:
         import traceback
         traceback.print_exc()
