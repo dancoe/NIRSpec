@@ -7,3 +7,4 @@ data/STScI_exports.md
 **/.DS_Store
 __pycache__/
 *.aptx
+dither_plots/
