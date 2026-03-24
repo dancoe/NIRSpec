@@ -32,18 +32,19 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
     pts_rot = pts_zero @ R.T + center
     
     # Distribute across quadrants
-    if diagonal_bias:
-        # Prioritize Top-Right (Q1) and Bottom-Left (Q3)
-        sign_patterns = [[1, 1], [-1, -1]]
-    else:
-        sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
-        
-    distributed_pts = np.zeros_like(pts_rot)
+    sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
     num_signs = len(sign_patterns)
     
+    # Soft bias toward Q1/Q3 (Red/Green) if requested
+    # Weights for Q1, Q2, Q3, Q4: [0.42, 0.08, 0.42, 0.08]
+    p = [0.42, 0.08, 0.42, 0.08] if diagonal_bias else [0.25, 0.25, 0.25, 0.25]
+    
+    distributed_pts = np.zeros_like(pts_rot)
+    
     for i in range(len(pts_rot)):
-        if random_quadrants:
-            s_idx = np.random.randint(0, num_signs)
+        if random_quadrants or diagonal_bias:
+            # We use randomized sampling to achieve bias if requested
+            s_idx = np.random.choice(num_signs, p=p)
         else:
             s_idx = i % num_signs
         

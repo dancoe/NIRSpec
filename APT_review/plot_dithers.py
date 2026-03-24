@@ -100,11 +100,9 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
                 mx_grid = gx_sorted.reshape(ny_eff, nx_eff)
                 my_grid = gy_sorted.reshape(ny_eff, nx_eff)
                 
-                # Draw grid
+                # Only draw horizontal lines as requested (avoid crossing issues with vertical lines)
                 for r in range(ny_eff):
                     ax.plot(mx_grid[r, :], my_grid[r, :], color='gray', alpha=0.3, linewidth=0.8, zorder=3)
-                for c in range(nx_eff):
-                    ax.plot(mx_grid[:, c], my_grid[:, c], color='gray', alpha=0.3, linewidth=0.8, zorder=3)
 
     # Render labels (numbered points)
     for i, (xi, yi) in enumerate(zip(x, y)):
