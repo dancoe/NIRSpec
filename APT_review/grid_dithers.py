@@ -2,7 +2,7 @@ import numpy as np
 import subprocess
 import os
 
-def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard', random_quadrants=True, seed=42):
+def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_quadrants=False, seed=42, high_density=True):
     if seed is not None:
         np.random.seed(seed)
     # Create the base grid in the positive quadrant (Q1)
@@ -12,6 +12,25 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard', random_qu
     
     xv, yv = np.meshgrid(x_grid, y_grid)
     pts = np.vstack([xv.ravel(), yv.ravel()]).T
+    
+    if high_density:
+        # Add points in between the top/right edges and their penultimate neighbors
+        dx = x_grid[1] - x_grid[0]
+        dy = y_grid[1] - y_grid[0]
+        
+        # New row between top row and penultimate
+        y_mid = y_grid[-1] - dy/2.0
+        new_row = np.vstack([x_grid, np.full_like(x_grid, y_mid)]).T
+        
+        # New col between right col and penultimate
+        x_mid = x_grid[-1] - dx/2.0
+        new_col = np.vstack([np.full_like(y_grid, x_mid), y_grid]).T
+        
+        # Corner point at the intersection
+        corner = np.array([[x_mid, y_mid]])
+        
+        pts = np.vstack([pts, new_row, new_col, corner])
+        # Update ny, nx for sign-flipping logic? No, just use len(pts) later
     
     # Rotate this grid around its center
     center = np.mean(pts, axis=0)
@@ -76,22 +95,27 @@ def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard', random_qu
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate NIRSpec MOS dither patterns.")
-    parser.add_argument("--type", type=str, default="6x6", choices=["6x6", "8x4", "7x5"], help="Grid type")
-    parser.add_argument("--rotation", type=float, default=0.0, help="Rotation in degrees")
-    parser.add_argument("--randomize", action="store_true", default=True, help="Randomize quadrant for each grid point")
+    parser.add_argument("--type", type=str, default="6x4", choices=["6x6", "8x4", "7x5", "6x4"], help="Grid type")
+    parser.add_argument("--rotation", type=float, default=-3.0, help="Rotation in degrees")
+    parser.add_argument("--randomize", action="store_true", default=False, help="Randomize quadrant for each grid point")
     parser.add_argument("--no-randomize", action="store_false", dest="randomize", help="Use deterministic row-triangular quadrant cycling")
+    parser.add_argument("--high-density", action="store_true", default=True, help="Double density along top and right edges")
+    parser.add_argument("--no-high-density", action="store_false", dest="high_density", help="Disable high-density edge points")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
     if args.type == "6x6":
-        pts = generate_grid(6, 6, rotation_deg=args.rotation, extra_pts_type='6x6', random_quadrants=args.randomize, seed=args.seed)
+        pts = generate_grid(6, 6, rotation_deg=args.rotation, extra_pts_type='6x6', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
         out_name = args.output or "grid_6x6_dithers.png"
     elif args.type == "8x4":
-        pts = generate_grid(4, 8, rotation_deg=args.rotation, extra_pts_type='8x4', random_quadrants=args.randomize, seed=args.seed)
+        pts = generate_grid(4, 8, rotation_deg=args.rotation, extra_pts_type='8x4', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
         out_name = args.output or "grid_8x4_dithers.png"
+    elif args.type == "6x4":
+        pts = generate_grid(4, 6, rotation_deg=args.rotation, extra_pts_type='7x5', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
+        out_name = args.output or "grid_6x4_dithers.png"
     else: # 7x5
-        pts = generate_grid(5, 7, rotation_deg=args.rotation, extra_pts_type='7x5', random_quadrants=args.randomize, seed=args.seed)
+        pts = generate_grid(5, 7, rotation_deg=args.rotation, extra_pts_type='7x5', random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
         out_name = args.output or "grid_7x5_dithers.png"
     
     x_str = ",".join([f"{p[0]:.4f}" for p in pts])
