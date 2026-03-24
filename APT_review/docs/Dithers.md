@@ -18,12 +18,12 @@ The tools provided here allow for the design of custom rotated grids, with three
 This script generates the dither coordinates. It creates a base grid in the positive quadrant, rotates it by a specified angle (default: -3.0°), and then distributes the points across all four quadrants using a cyclic sign-flipping pattern.
 
 - **Quadrant Cycling**: Each set of 4 points in the sequence maps to Q1, Q2, Q3, and Q4 in order, ensuring that even a short exposure sequence samples all four quadrants. Offset by row for improved spatial coverage.
-- **Rotation & Framing**: A small rotation (default: -3.0°) is applied. The grid limits are calibrated (approx. 0.370 in X, 0.454 in Y) so that when rotated, the bottom-right grid corner aligns with the sidebar edge ($x' = 0.370$) and the top-right grid corner aligns with the top bar edge ($y' = 0.434$).
+- **Rotation & Framing**: The primary grid limits are calibrated to (0.370 in X, 0.434 in Y) ensuring perfect alignment with the shutter opening edges when the rotation is 0.0°.
 - **Extended Sampling**: The pattern can be configured to "go under" the MSA bars to test the full sampling distribution.
 - **Extra Test Points**:
     - **6x6 Mode**: Includes (0,0) and a corner point.
     - **8x4 Mode**: Includes (0,0), four edge points (Left, Right, Top, Bottom at the opening boundaries), and a corner point.
-    - **7x5 Mode**: Includes (0,0), Top-Right corner (80% under), and Bottom-Right corner (80% under).
+    - **7x5 Mode**: Includes (0,0), Top-Right corner (80% under), and Left-Middle-Edge (on the sidebar).
 
 ### [plot_dithers.py](../plot_dithers.py)
 

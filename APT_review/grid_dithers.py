@@ -2,14 +2,11 @@ import numpy as np
 import subprocess
 import os
 
-def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard'):
+def generate_grid(nx, ny, rotation_deg=0.0, extra_pts_type='standard'):
     # Create the base grid in the positive quadrant (Q1)
-    # Range aligned so rotated points hit the edges:
-    # x_grid max of 0.370 and y_grid max of 0.454 ensure:
-    # 1. Rotated Bottom-Right (max x, min y) is at x' ~ 0.370 (edge)
-    # 2. Rotated Top-Right (max x, max y) is at y' ~ 0.434 (top edge) and x' ~ 0.39 (under bar)
+    # Range aligned so rotated points hit the edges (x=0.370, y=0.434):
     x_grid = np.linspace(0.02, 0.370, nx)
-    y_grid = np.linspace(0.02, 0.454, ny)
+    y_grid = np.linspace(0.02, 0.434, ny)
     
     xv, yv = np.meshgrid(x_grid, y_grid)
     pts = np.vstack([xv.ravel(), yv.ravel()]).T
@@ -51,9 +48,9 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard'):
             extra.append([0.0, 0.434])  # Top
             extra.append([0.474, 0.487]) # 80% Corner
         elif extra_pts_type == '7x5':
-            # Center + 2 corners
+            # Center + Top Right + Left Middle Edge
             extra.append([0.474, 0.487])  # Top Right
-            extra.append([0.474, -0.487]) # Bottom Right
+            extra.append([-0.37, 0.0])   # Left Middle Edge
         else:
             # For 6x6, we only needed 2 more: (0,0) and the corner
             extra.append([0.474, 0.487])
@@ -70,7 +67,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate NIRSpec MOS dither patterns.")
     parser.add_argument("--type", type=str, default="6x6", choices=["6x6", "8x4", "7x5"], help="Grid type")
-    parser.add_argument("--rotation", type=float, default=-3.0, help="Rotation in degrees")
+    parser.add_argument("--rotation", type=float, default=0.0, help="Rotation in degrees")
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
