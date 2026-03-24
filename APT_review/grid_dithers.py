@@ -2,14 +2,13 @@ import numpy as np
 import subprocess
 import os
 
-def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_quadrants=False, seed=42, high_density=True):
+def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_quadrants=False, seed=42, high_density=True, diagonal_bias=True):
     if seed is not None:
         np.random.seed(seed)
-    # Create the base grid in the positive quadrant (Q1)
-    # Range aligned so grid points hit the edges (x=0.370, y=0.434):
+    # ... grid creation code omitted for brevity but remains the same ...
+    # xv, yv = meshgrid...
     x_grid = np.linspace(0.0, 0.370, nx)
     y_grid = np.linspace(0.0, 0.434, ny)
-    
     xv, yv = np.meshgrid(x_grid, y_grid)
     pts = np.vstack([xv.ravel(), yv.ravel()]).T
     
@@ -17,42 +16,36 @@ def generate_grid(nx, ny, rotation_deg=-3.0, extra_pts_type='standard', random_q
         # Add points in between the top/right edges and their penultimate neighbors
         dx = x_grid[1] - x_grid[0]
         dy = y_grid[1] - y_grid[0]
-        
-        # New row between top row and penultimate
         y_mid = y_grid[-1] - dy/2.0
         new_row = np.vstack([x_grid, np.full_like(x_grid, y_mid)]).T
-        
-        # New col between right col and penultimate
         x_mid = x_grid[-1] - dx/2.0
         new_col = np.vstack([np.full_like(y_grid, x_mid), y_grid]).T
-        
-        # Corner point at the intersection
         corner = np.array([[x_mid, y_mid]])
-        
         pts = np.vstack([pts, new_row, new_col, corner])
-        # Update ny, nx for sign-flipping logic? No, just use len(pts) later
     
     # Rotate this grid around its center
     center = np.mean(pts, axis=0)
     theta = np.radians(rotation_deg)
     c, s = np.cos(theta), np.sin(theta)
     R = np.array(((c, -s), (s, c)))
-    
     pts_zero = pts - center
     pts_rot = pts_zero @ R.T + center
     
-    # Distribute across 4 quadrants
-    sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
+    # Distribute across quadrants
+    if diagonal_bias:
+        # Prioritize Top-Right (Q1) and Bottom-Left (Q3)
+        sign_patterns = [[1, 1], [-1, -1]]
+    else:
+        sign_patterns = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
+        
     distributed_pts = np.zeros_like(pts_rot)
+    num_signs = len(sign_patterns)
     
     for i in range(len(pts_rot)):
         if random_quadrants:
-            s_idx = np.random.randint(0, 4)
+            s_idx = np.random.randint(0, num_signs)
         else:
-            # Row-triangular shift: (r(r+1)/2 + c) % 4
-            r = i // nx
-            c = i % nx
-            s_idx = ((r * (r + 1)) // 2 + c) % 4
+            s_idx = i % num_signs
         
         sign_x, sign_y = sign_patterns[s_idx]
         distributed_pts[i] = pts_rot[i] * [sign_x, sign_y]
@@ -105,13 +98,17 @@ def main():
     parser.add_argument("--no-randomize", action="store_false", dest="randomize", help="Use deterministic row-triangular quadrant cycling")
     parser.add_argument("--high-density", action="store_true", default=True, help="Double density along top and right edges")
     parser.add_argument("--no-high-density", action="store_false", dest="high_density", help="Disable high-density edge points")
+    parser.add_argument("--diagonal-bias", action="store_true", default=True, help="Prioritize Top-Right and Bottom-Left quadrants")
+    parser.add_argument("--no-diagonal-bias", action="store_false", dest="diagonal_bias", help="Allow all 4 quadrants")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     parser.add_argument("--output", type=str, default=None, help="Output PNG filename")
     args = parser.parse_args()
     
     nx_map = {"6x6": (6, 6), "8x4": (4, 8), "6x4": (4, 6), "7x5": (5, 7)}
     nx, ny = nx_map.get(args.type, (4, 6))
-    pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type=args.type, random_quadrants=args.randomize, seed=args.seed, high_density=args.high_density)
+    pts = generate_grid(nx, ny, rotation_deg=args.rotation, extra_pts_type=args.type, 
+                        random_quadrants=args.randomize, seed=args.seed, 
+                        high_density=args.high_density, diagonal_bias=args.diagonal_bias)
     out_name = args.output or f"grid_{args.type}_dithers.png"
     
     x_str = ",".join([f"{p[0]:.4f}" for p in pts])
