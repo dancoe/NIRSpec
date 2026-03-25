@@ -40,11 +40,15 @@ If you must modify an APT file programmatically:
 3. **Validate early**: After modification, try opening the file in APT to check if it can still parse the file.
 
 ## 🚀 How to run
-
-Currently, `APT_edit.py` is configured for a specific program and dither text file. Run it from the root directory of the repository:
+Run the script from the root of the repository:
 
 ```bash
-python3 APT_edit.py
+python3 APT_edit.py <Program>.aptx --dithers <DitherFile>.txt
 ```
 
-This will read `data/9278/JWST9278.aptx` and `data/9278/JWST9278_dithers_zigzag.txt`, producing `data/9278/JWST9278_mod.aptx`.
+Example for Program 9278:
+```bash
+python3 APT_edit.py data/9278/JWST9278.aptx --dithers data/9278/JWST9278_dithers_zigzag.txt
+```
+
+This will produce `data/9278/JWST9278_mod.aptx` by default.

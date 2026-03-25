@@ -89,7 +89,21 @@ def modify_apt_regex(apt_file, dither_txt, output_file):
     print(f"Saved modified APT to {output_file}")
 
 if __name__ == "__main__":
-    apt_file = "data/9278/JWST9278.aptx"
-    dither_txt = "data/9278/JWST9278_dithers_zigzag.txt"
-    output_file = "data/9278/JWST9278_mod.aptx"
-    modify_apt_regex(apt_file, dither_txt, output_file)
+    import argparse
+    parser = argparse.ArgumentParser(description="Programmatically edit JWST APT (.aptx) files.")
+    parser.add_argument("apt_file", help="Path to the input .aptx file")
+    parser.add_argument("--dithers", help="Path to the dither text file containing zigzag patterns")
+    parser.add_argument("--output", help="Path to the output .aptx file (default: adds _mod to input filename)")
+
+    args = parser.parse_args()
+    
+    if not args.dithers:
+        parser.error("--dithers <file> is required.")
+
+    input_path = Path(args.apt_file)
+    if args.output:
+        output_file = args.output
+    else:
+        output_file = str(input_path.parent / f"{input_path.stem}_mod.aptx")
+    
+    modify_apt_regex(args.apt_file, args.dithers, output_file)
