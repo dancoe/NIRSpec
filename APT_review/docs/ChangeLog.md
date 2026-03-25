@@ -27,6 +27,7 @@
 - Fixed a `KeyError: (pointing_str, config_name)` in `_report_configs_pointings` by using the correct 4-tuple uniqueness key to lookup the grating/filter mapping.
 - Fixed a bug in `_report_high_priority_targets` where wavelength coverage info was "recycled" from other visits. Information is now only displayed for targets actually observed (`n_obs > 0`) in the current visit.
 - **New Feature**: Added a "Summary of Top 20 Targets Across Visits" matrix to the `HIGH PRIORITY TARGET ANALYSIS` section. This table provides a high-level overview of which visits (e.g., 1:1, 1:2) each priority target was observed in, using a simplified single-column format for clarity.
+- **MSA Coverage Plot Enhancement**: Added source ID text labels above highest priority targets in the MSA coverage plots for easier cross-referencing with the report.
 
 ## [Unreleased] - 2026-03-23
 

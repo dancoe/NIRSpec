@@ -412,6 +412,12 @@ def main():
                         # We use the same category but will plot twice if needed, or just handle in loop
                         # Actually sci_highest_obs already covers it
                         pass
+                    
+                    # Add numeric label for ID above highest priority targets
+                    # Positioned with a tiny vertical offset (deg)
+                    plt.text(src['ra'], src['dec'] + 0.0003, str(src['id']),
+                             color='black', fontsize=7, ha='center', va='bottom',
+                             zorder=12, weight='bold')
                 else:
                     c = cats['sci_observed'] if is_observed else cats['sci_normal']
                     c['ras'].append(src['ra'])
