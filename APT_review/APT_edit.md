@@ -38,3 +38,13 @@ If you must modify an APT file programmatically:
 1. **Target only what you need**: Avoid rebuilding the entire XML tree.
 2. **Preserve order**: When rebuilding the ZIP, maintain the original file order.
 3. **Validate early**: After modification, try opening the file in APT to check if it can still parse the file.
+
+## 🚀 How to run
+
+Currently, `APT_edit.py` is configured for a specific program and dither text file. Run it from the root directory of the repository:
+
+```bash
+python3 APT_edit.py
+```
+
+This will read `data/9278/JWST9278.aptx` and `data/9278/JWST9278_dithers_zigzag.txt`, producing `data/9278/JWST9278_mod.aptx`.
