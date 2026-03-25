@@ -51,4 +51,8 @@ Example for Program 9278:
 python3 APT_edit.py data/9278/JWST9278.aptx --dithers data/9278/JWST9278_dithers_zigzag.txt
 ```
 
-This will produce `data/9278/JWST9278_mod.aptx` by default.
+By default, this will produce `data/9278/JWST9278_mod.aptx`. You can specify a different output filename using the `--output` flag:
+
+```bash
+python3 APT_edit.py JWST9278.aptx --dithers dithers.txt --output custom_name.aptx
+```
