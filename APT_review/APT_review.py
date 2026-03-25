@@ -2508,7 +2508,9 @@ class NIRSpecMOSReviewer:
                         cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:.0f}%)"
                         
                         s = ""
-                        w = target_waves.get(gf)
+                        w = None
+                        if n_obs > 0:
+                            w = target_waves.get(gf)
                         if w:
                             try:
                                 n1_min, n1_max, n2_min, n2_max = float(w.get('n1_min', 0)), float(w.get('n1_max', 0)), float(w.get('n2_min', 0)), float(w.get('n2_max', 0))

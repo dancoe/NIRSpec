@@ -25,6 +25,7 @@
 - Fixed an `UnboundLocalError` (AttributeError) in the pointing count loop where variables were incorrectly unpacked after the 4-tuple key update.
 - Fixed a duplicate pointing warning bug by including dither offsets in the uniqueness key.
 - Fixed a `KeyError: (pointing_str, config_name)` in `_report_configs_pointings` by using the correct 4-tuple uniqueness key to lookup the grating/filter mapping.
+- Fixed a bug in `_report_high_priority_targets` where wavelength coverage info was "recycled" from other visits. Information is now only displayed for targets actually observed (`n_obs > 0`) in the current visit.
 
 ## [Unreleased] - 2026-03-23
 
