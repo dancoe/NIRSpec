@@ -414,8 +414,8 @@ def main():
                         pass
                     
                     # Add numeric label for ID above highest priority targets
-                    # Positioned with a tiny vertical offset (deg)
-                    plt.text(src['ra'], src['dec'] + 0.0003, str(src['id']),
+                    # Positioned with a slightly larger vertical offset (deg) to avoid outline overlap
+                    plt.text(src['ra'], src['dec'] + 0.0007, str(src['id']),
                              color='black', fontsize=7, ha='center', va='bottom',
                              zorder=12, weight='bold')
                 else:
