@@ -2410,33 +2410,23 @@ class NIRSpecMOSReviewer:
             # Cross-visit summary for high-priority targets
             if len(v_keys) > 1:
                 write(f"\n[Catalog {cat_name}: Summary of Top 20 Targets Across Visits]")
-                summary_header = f"{'ID':>6} | {'Weight':>10} | {'Rank':>4}"
-                for v_key in v_keys:
-                    summary_header += f" | {obs_num}:{v_key:<2}"
-                summary_header += " | Summary"
+                summary_header = f"{'ID':>6} | {'Weight':>10} | {'Rank':>4} | Visits"
                 write(summary_header)
-                write("-" * len(summary_header))
+                write("-" * 45)
                 
                 for s in analysis[cat_name]['top_20']:
                     sid_str = str(s['id'])
                     weight = self.catalogs[cat_name]['sources'][sid_str]['weight']
                     rank = analysis[cat_name]['ranks'].get(sid_str, 0)
-                    row = f"{sid_str:>6} | {weight:>10.0f} | {str(rank):>4}"
                     
                     obs_v = []
                     for v_key in v_keys:
-                        observed = sid_str in analysis[cat_name]['observed_in_visit'].get((obs_num, v_key), set())
-                        icon = icons['FULL'] if observed else icons['EMPTY']
-                        row += f" | {icon:^4}"
-                        if observed: obs_v.append(v_key)
+                        if sid_str in analysis[cat_name]['observed_in_visit'].get((obs_num, v_key), set()):
+                            obs_v.append(f"{obs_num}:{v_key}")
                     
-                    if not obs_v: summary = "Neither"
-                    elif len(obs_v) == len(v_keys): summary = "Both" if len(v_keys) == 2 else "All"
-                    else: summary = f"Visit {obs_num}:{', '.join(obs_v)} only"
-                    
-                    row += f" | {summary}"
-                    write(row)
-                write("-" * len(summary_header))
+                    visits_str = ", ".join(obs_v) if obs_v else icons['EMPTY']
+                    write(f"{sid_str:>6} | {weight:>10.0f} | {str(rank):>4} | {visits_str}")
+                write("-" * 45)
             
             for v_key in v_keys:
                 # Find all GFs and their total possible exposures in this visit
