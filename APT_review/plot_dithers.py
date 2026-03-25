@@ -4,7 +4,7 @@ import argparse
 import os
 import numpy as np
 
-def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False, show_grid_lines=True, nx_eff=None, ny_eff=None, rotation_deg=0.0):
+def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=False, show_reflected=False, show_grid_lines=True, nx_eff=None, ny_eff=None, rotation_deg=0.0, title=None):
     """
     Generate a high-fidelity geometric plot of the dither pattern relative to MSA shutter geometry.
     """
@@ -107,7 +107,7 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
     # Render labels (numbered points)
     for i, (xi, yi) in enumerate(zip(x, y)):
         label = str(ids[i]) if i < len(ids) else str(i+1)
-        ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8, alpha=0.7, zorder=6)
+        ax.annotate(label, (xi, yi), textcoords="offset points", xytext=(0,5), ha='center', fontsize=8, alpha=0.7, zorder=6)
     
     # Bottom/Left Axes: Shutters
     ax.set_xlim(-0.5, 0.5)
@@ -129,7 +129,10 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
         secax_y = ax.secondary_yaxis('right', functions=(s2a_y, a2s_y))
         secax_y.set_ylabel('Cross-Dispersion (arcsec)')
 
-    ax.set_title(f"Program {pid} Obs {obs_num} Dither Pattern")
+    if title:
+        ax.set_title(title)
+    else:
+        ax.set_title(f"Program {pid} Obs {obs_num} Dither Pattern")
     # Keep the plot's dashed grid lines as requested (SCRATCH: removed then kept)
     ax.grid(True, linestyle='--', alpha=0.3, zorder=1)
     
@@ -152,6 +155,7 @@ def main():
     parser.add_argument("--no-grid-lines", action="store_false", dest="grid_lines", help="Hide grid lines")
     parser.add_argument("--nx_eff", type=int, help="Effective grid X dimension")
     parser.add_argument("--ny_eff", type=int, help="Effective grid Y dimension")
+    parser.add_argument("--title", help="Custom plot title")
     
     args = parser.parse_args()
     
@@ -165,7 +169,8 @@ def main():
                            show_reflected=args.reflected,
                            show_grid_lines=args.grid_lines,
                            nx_eff=args.nx_eff, ny_eff=args.ny_eff,
-                           rotation_deg=args.rotation)
+                           rotation_deg=args.rotation,
+                           title=args.title)
     except Exception as e:
         import traceback
         traceback.print_exc()

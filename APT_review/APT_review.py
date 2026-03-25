@@ -2046,7 +2046,7 @@ class NIRSpecMOSReviewer:
                 for (p_str, cfg_name, d_val, c_val), indices in pointing_counts.items():
                     if len(indices) > 1:
                         # Only warn if the gratings are the same
-                        gfs = config_gf_map[(p_str, cfg_name)]
+                        gfs = config_gf_map[(p_str, cfg_name, d_val, c_val)]
                         if len(set(gfs)) <= 1:
                             write(f"  ⚠️ : Configuration {cfg_name} observes the same pointing {len(indices)} times: {p_str}")
 

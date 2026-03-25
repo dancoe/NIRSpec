@@ -27,6 +27,26 @@ This script generates the dither coordinates. It creates a base grid in the posi
     - **8x4 Mode**: Includes (0,0), four edge points (Left, Right, Top, Bottom at the opening boundaries), and a corner point.
     - **7x5 Mode**: Includes 3 extreme test points 80% under the bars: Top-Right, Left-Middle, and Bottom-Middle. (0,0) is handled by the main grid.
 
+### [data/9278/generate_zigzag.py](../data/9278/generate_zigzag.py)
+
+A specialized generation script for **JWST Program 9278** designed to sample near the MSA shutter edges (bars) with high density and strict geometric constraints.
+
+- **4x3 Integrated Grid**: A regular 12-point base grid (**4 rows x 3 columns**). **IDs 1–12** explicitly define this core grid, with the top row ($y=0.434$) and right column ($x=0.370$) aligned with the bar boundaries.
+- **Bar-Aligned Zigzags**: High-frequency sampling paths ($2$ zigs + $2$ zags per grid spacing). The **outer edges** of the zigzags are locked to the bar edges ($y=0.434$ and $x=0.370$).
+- **Equal-Distance Constraint (Arcsecs)**: Every segment in the zigzag path spans an **equal physical distance in both X and Y arcseconds**. Because the shutter pitch ($1.0$ unit) corresponds to $0.270"$ horizontally and $0.530"$ vertically, the vertical steps will naturally appear larger in shutter fraction units to maintain geometric symmetry on the sky.
+- **Mandatory 3x3 Corner Grid**: A dense 3x3 block in the extreme top-right corner. It uses a **"die face for 5"** quadrant distribution: 5 points in $Q1$ (corners/center, including **ID 21**) and 4 points in $Q3$.
+- **Double-Stepped Zigzag Alternation**: Points along the zigzag paths are grouped into **diagonal pairs** (one 'zig' and one 'zag' segment). Each pair occupies the same quadrant color before the next pair flips in a $Q1, Q1, Q3, Q3$ sequence.
+- **Extra "Behind Bar" points**: Includes 3 extreme test points **80% covered by the bars**: Top-Right corner (**ID 36**), Left-Middle edge (**ID 17**), and Bottom-Middle edge (**ID 29**).
+- **38 Points Hard Limit**: The total pattern is strictly capped at 38 unique offsets.
+
+### [plot_from_report.py](../plot_from_report.py)
+
+A utility to visualize dither offsets directly from a NIRSpec MOS review report (text file). It parses the `(Disp, Cross)` coordinates and calls `plot_dithers.py` with the appropriate flags.
+
+```bash
+python3 plot_from_report.py data/9278/JWST9278_dithers_zigzag.txt
+```
+
 ### [plot_dithers.py](../plot_dithers.py)
 
 A visualization utility that renders the shutter geometry and dither points.
