@@ -103,6 +103,10 @@ def load_catalogs(xml_path):
         'msa': "http://www.stsci.edu/JWST/APT/Template/NirspecMSA",
     }
     
+    # Extract Proposal ID
+    prop_id_node = root.find(".//{http://www.stsci.edu/JWST/APT}ProposalID")
+    proposal_id = prop_id_node.text if prop_id_node is not None else None
+    
     catalogs = {}
     for catalog_node in root.findall(".//{http://www.stsci.edu/JWST/APT}Catalog"):
         name_node = catalog_node.find("{http://www.stsci.edu/JWST/APT/Template/NirspecMSA}Name")
@@ -139,7 +143,7 @@ def load_catalogs(xml_path):
                     sources.append({'id': s_id, 'weight': w, 'is_ref': is_ref, 'ra': ra, 'dec': dec})
                 except: continue
             catalogs[name] = sources
-    return catalogs
+    return catalogs, proposal_id
 
 def main():
     if len(sys.argv) < 3:
@@ -161,7 +165,7 @@ def main():
     df_visits = df.drop_duplicates(subset=subset_cols).copy()
     print(f"Total entries: {len(df)}, Unique pointings: {len(df_visits)}")
     
-    catalogs = load_catalogs(xml_path)
+    catalogs, proposal_id = load_catalogs(xml_path)
     
     # Process visits to group by Obs
     obs_groups = {} # obs_id -> [rows]
@@ -198,31 +202,43 @@ def main():
         
         # Identify observed/used IDs for this observation
         obs_id_str = rows[0]['OBS_ID']
-        prop_id = Path(xml_path).stem.replace('JWST', '')
+        prop_id_stem = Path(xml_path).stem.replace('JWST', '')
+        
+        # Try finding MSA target files using both file stem and extracted proposal ID
         msa_dir = Path(xml_path).parent / 'msatargets'
         observed_ids = set()
         used_ref_ids = set()
+        
+        search_ids = [prop_id_stem]
+        if 'proposal_id' in locals() and proposal_id and proposal_id not in search_ids:
+            search_ids.append(proposal_id)
         
         # To store quads for dispersion arrow calculation
         obs_quads = {} # visit_id -> {quad_idx: poly}
 
         if msa_dir.exists():
-            # Science targets
-            for f in msa_dir.glob(f"{prop_id}-obs{obs_id_str}-exp*.csv"):
-                try:
-                    m_df = pd.read_csv(f)
-                    id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
-                    if id_col:
-                        observed_ids.update(m_df[id_col].astype(str).tolist())
-                except: pass
-            # Reference stars
-            for f in msa_dir.glob(f"{prop_id}-obs{obs_id_str}-*-TA.csv"):
-                try:
-                    m_df = pd.read_csv(f)
-                    id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
-                    if id_col:
-                        used_ref_ids.update(m_df[id_col].astype(str).tolist())
-                except: pass
+            for p_id in search_ids:
+                # Science targets
+                for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-exp*.csv"):
+                    try:
+                        m_df = pd.read_csv(f)
+                        id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                        if id_col:
+                            observed_ids.update(m_df[id_col].astype(str).tolist())
+                    except: pass
+                # Reference stars
+                for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv"):
+                    try:
+                        m_df = pd.read_csv(f)
+                        id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                        if id_col:
+                            used_ref_ids.update(m_df[id_col].astype(str).tolist())
+                    except: pass
+                
+                # If we found something, don't necessarily stop, but we have results
+                if observed_ids:
+                    print(f"  Found {len(observed_ids)} observed targets using prefix '{p_id}'")
+                    # We continue to next p_id just in case, but usually it's one or the other
 
         # 1. Flexible column mapping for visits CSV
         fnames = rows[0].index if hasattr(rows[0], 'index') else rows[0].keys()
@@ -634,7 +650,7 @@ def main():
 
     # 1. Create plots for each Observation
     xml_stem = Path(xml_path).stem
-    prog_num = re.search(r'\d+', xml_stem).group() if re.search(r'\d+', xml_stem) else xml_stem
+    prog_num = proposal_id if proposal_id else (re.search(r'\d+', xml_stem).group() if re.search(r'\d+', xml_stem) else xml_stem)
     
     for obs_id, rows in sorted(obs_groups.items()):
         visit_labels = sorted(list(set(r['V_LABEL'] for r in rows)))

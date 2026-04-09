@@ -4,8 +4,8 @@
 * APT warnings and errors
 * MSATA reference stars used and quads covered (reported and plotted)
 * Depth and wavelength coverage of high-priority targets
-* Exposure specifications (gratings, integration times, readout patterns, etc.)
-* Aperture PA planned vs. assigned
+*   Exposure specifications (calculated integration times, readout patterns, etc.)
+*   Aperture PA planned vs. assigned
 *   Total Charged Time vs. Allocated
 *   **Electrical Shorts (SHORTS)**: Flags targets in problematic MSA rows/columns
 *   **Automation**: Focused shorts-only report (`--shorts_only`) and multi-program consolidated reporting.
@@ -236,6 +236,15 @@ The report is organized into 18 sections that are printed in sequence:
 17. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
 18. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
 19. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
+
+---
+
+## 🛠️ Technical Note: Integration Times
+Since individual integration durations are not stored directly in the APT XML, the script calculates them derived from the raw readout parameters:
+*   **Standard Modes** (e.g. `NRSRAPID`): `(Groups + 1) × 10.73677 s`
+*   **IRS2 Modes** (e.g. `NRSIRS2RAPID`): `(5 × Groups + 1) × 14.58889 s`
+
+These formulas include the standard reset frame and the 5x frame-per-group factor for IRS2, matching APT's internal accounting.
 
 ---
 

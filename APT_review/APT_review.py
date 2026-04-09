@@ -1632,8 +1632,14 @@ class NIRSpecMOSReviewer:
                 groups = exp.findtext(f"{{{n_mos}}}Groups", namespaces=NS) or "0"
                 ints = exp.findtext(f"{{{n_mos}}}Integrations", namespaces=NS) or "0"
                 
-                frame_time = 14.58889 if "IRS2" in (readout or "") else 10.73677
-                dur_per_int = (int(groups) + 1) * frame_time
+                if "IRS2" in (readout or ""):
+                    frame_time = 14.58889
+                    # NRSIRS2 uses 5 frames per group plus 1 reset frame
+                    dur_per_int = (int(groups) * 5 + 1) * frame_time
+                else:
+                    frame_time = 10.73677
+                    # Standard modes use 1 frame per group plus 1 reset frame
+                    dur_per_int = (int(groups) + 1) * frame_time
                 spec_durations[spec_id] = dur_per_int
                 spec_ints[spec_id] = int(ints)
 
@@ -2012,43 +2018,69 @@ class NIRSpecMOSReviewer:
         for obs_num in sorted(self.analytics.keys(), key=int):
             if 'configs' in self.analytics[obs_num]:
                 write(f"\nObservation {obs_num}")
-                header = f"  # | {'Config':<12} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Dither'}"
+                header = f"  # | {'Config':<12} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Offset (shutters)'}"
                 write(header)
                 write("-" * len(header))
                 
-                pointing_counts = {} # (pointing_str, config_name) -> list of idx
-                config_gf_map = {} # (pointing_str, config_name) -> list of GFs
-                
+                # Track pointings and offsets to report duplicates/repeats
+                # (pointing_str, config_name) -> { (d_raw, c_raw) -> [indices] }
+                base_pointing_counts = {}
+                config_gf_map = {} # (pointing_str, config_name, d_raw, c_raw) -> list of GFs
+
                 for pt in self.analytics[obs_num]['configs']:
                     offset_str = "None"
                     d_raw, c_raw = pt.get('disp_offset') or "0", pt.get('cross_offset') or "0"
                     if pt.get('disp_offset') or pt.get('cross_offset'):
                         try:
                             dv, cv = float(d_raw), float(c_raw)
-                            # Using :>7.3f to align signs and decimals without excessive whitespace.
                             offset_str = f"({dv:>7.3f}, {cv:>7.3f})"
                         except:
                             offset_str = f"({d_raw:>7}, {c_raw:>7})"
-                
+
                     cfg_alias = pt['config']
                     cfg_alias = cfg_alias.replace("Field Point", "FP").replace("Long Slit", "LS").replace("FP ", "FP")
-                    
+
                     row = f" {pt['id']:>2} | {cfg_alias:<12} | {pt['gf']:<18} | {pt['nod']:<20} | {pt['total_ints']:<10} | {pt['total_time']:<10.3f} | {offset_str}"
                     write(row)
+
+                    p_str = pt['pointing']
+                    cfg_name = pt['config']
+                    base_key = (p_str, cfg_name)
+                    off_key = (d_raw, c_raw)
                     
-                    # Uniqueness key includes offsets to recognize them as different pointings/dithers
-                    key = (p_str, cfg_name, d_raw, c_raw) = (pt['pointing'], pt['config'], d_raw, c_raw)
-                    if key not in pointing_counts:
-                        pointing_counts[key], config_gf_map[key] = [], []
-                    pointing_counts[key].append(pt['id'])
-                    config_gf_map[key].append(pt['gf'])
-                
-                for (p_str, cfg_name, d_val, c_val), indices in pointing_counts.items():
-                    if len(indices) > 1:
-                        # Only warn if the gratings are the same
-                        gfs = config_gf_map[(p_str, cfg_name, d_val, c_val)]
-                        if len(set(gfs)) <= 1:
-                            write(f"  ⚠️ : Configuration {cfg_name} observes the same pointing {len(indices)} times: {p_str}")
+                    if base_key not in base_pointing_counts:
+                        base_pointing_counts[base_key] = {}
+                    if off_key not in base_pointing_counts[base_key]:
+                        base_pointing_counts[base_key][off_key] = []
+                    base_pointing_counts[base_key][off_key].append(pt['id'])
+                    
+                    full_key = (p_str, cfg_name, d_raw, c_raw)
+                    if full_key not in config_gf_map:
+                        config_gf_map[full_key] = []
+                    config_gf_map[full_key].append(pt['gf'])
+
+                for (p_str, cfg_name), offsets_dict in base_pointing_counts.items():
+                    total_count = sum(len(idxs) for idxs in offsets_dict.values())
+                    num_offs = len(offsets_dict)
+                    
+                    # Summary warning for multiple offsets
+                    if total_count > 1 and num_offs > 1:
+                        self.log("Configurations", f"Configuration {cfg_name} observes the same pointing {total_count} times (at {num_offs} offset positions)", "WARNING", obs_num)
+
+                    for (d_raw, c_raw), indices in offsets_dict.items():
+                        if len(indices) > 1:
+                            # Only warn if the gratings are the same
+                            gfs = config_gf_map[(p_str, cfg_name, d_raw, c_raw)]
+                            if len(set(gfs)) <= 1:
+                                off_suffix = ""
+                                if num_offs > 1:
+                                    try:
+                                        dv, cv = float(d_raw), float(c_raw)
+                                        off_suffix = f" Offset ({dv:4.1f}, {cv:4.1f})"
+                                    except:
+                                        off_suffix = f" Offset ({d_raw}, {c_raw})"
+                                
+                                write(f"  ⚠️ : Configuration {cfg_name} observes the same pointing {len(indices)} times: {p_str}{off_suffix}")
 
         # Add to global warnings if any found
         if duplicate_pointings_found:
@@ -2815,12 +2847,12 @@ class NIRSpecMOSReviewer:
                 time_ok = spec['dur'] <= 1500
                 
                 if irs2 and time_ok:
-                    write(f"✅ {spec['g']} groups {spec['rp']} = {spec['dur']:.0f} seconds integration")
+                    write(f"✅ {int(spec['g']):2d} groups {spec['rp']} = {spec['dur']:.0f} seconds integration")
                 else:
                     if not irs2:
                         write(f"{icons['WARNING']} NRS instead of NRSIRS2")
                     if not time_ok:
-                        write(f"{icons['WARNING']} {spec['dur']:.0f} s integrations (> 1500s): {spec['g']} groups {spec['rp']}")
+                        write(f"{icons['WARNING']} {spec['dur']:.0f} s integrations (> 1500s): {int(spec['g']):2d} groups {spec['rp']}")
 
         # 6. Dithers and Nods
         write("\nDITHERS AND NODS")
@@ -2885,18 +2917,35 @@ class NIRSpecMOSReviewer:
             write(f"{icons['WARNING']} {w}")
 
         write("\nMOS OBSERVATION/VISIT STRUCTURE")
-        pa_match = True
+        mismatched_obs = []
         for o in reviewed_obs:
             if o in self.analytics:
-                if abs((self.analytics[o].get('apa_planned_val') or 0.0) - (self.analytics[o].get('apa_assigned_val') or 0.0)) > 0.1:
-                    pa_match = False
-        if pa_match:
+                # Only report mismatches for observations actually being reviewed (skip Under Construction)
+                if self.obs_info.get(o, {}).get('sign') == "👷":
+                    continue
+                planned = self.analytics[o].get('apa_planned_val') or 0.0
+                assigned = self.analytics[o].get('apa_assigned_val') or 0.0
+                if abs(planned - assigned) > 0.1:
+                    mismatched_obs.append((o, planned, assigned))
+        
+        if not mismatched_obs:
             write("✅ MSA Planned Aperture PA matches Assigned APA")
         else:
-            write(f"{icons['WARNING']} MSA Planned Aperture PA DOES NOT match Assigned APA")
+            for o, p, a in mismatched_obs:
+                write(f"{icons['ERROR']} Obs {o}: Planned APA {p:.4f} does not match Assigned APA {a:.4f}")
 
         write("\nCHECK MSA CONFIGURATIONS")
         write("👁️ masks well designed and filled")
+        
+        # Configuration warnings (e.g. repeated pointings) 
+        config_msgs = []
+        for item in self.results:
+            if item['category'] == "Configurations":
+                m = re.match(r'Obs (\d+):', item['message'])
+                if m and m.group(1) in reviewed_obs:
+                    config_msgs.append(item['message'])
+        for msg in sorted(set(config_msgs)):
+            write(f"{icons['WARNING']} {msg}")
 
         write("\nCHECK MPT PLANS")
         write("👁️ Check (extraction not yet implemented)")

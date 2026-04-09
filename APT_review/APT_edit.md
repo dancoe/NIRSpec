@@ -56,3 +56,10 @@ By default, this will produce `data/9278/JWST9278_mod.aptx`. You can specify a d
 ```bash
 python3 APT_edit.py JWST9278.aptx --dithers dithers.txt --output custom_name.aptx
 ```
+
+### 🎯 Choosing the Observation
+If your proposal has multiple observations, use the `--obs` flag (default is `1`):
+
+```bash
+python3 APT_edit.py JWST9278.aptx --dithers dithers.txt --obs 61
+```

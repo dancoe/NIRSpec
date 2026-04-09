@@ -17,7 +17,7 @@ def extract_dithers_from_text(text_path):
                     offsets.append((match.group(1), match.group(2)))
     return offsets
 
-def modify_apt_regex(apt_file, dither_txt, output_file):
+def modify_apt_regex(apt_file, dither_txt, output_file, obs_num="1"):
     apt_path = Path(apt_file)
     dither_path = Path(dither_txt)
     
@@ -34,28 +34,37 @@ def modify_apt_regex(apt_file, dither_txt, output_file):
         # Save other files to memory
         other_files = {name: z.read(name) for name in namelist if name != xml_name}
 
-    # 3. Targeted modification on Observation 1
-    # We want to find the Observation with <Number>1</Number>
-    obs_pattern = re.compile(r'(<Observation[^>]*>.*?<Number>1</Number>.*?</Observation>)', re.DOTALL)
-    match = obs_pattern.search(xml_content)
-    if not match:
-        print("Error: Observation 1 not found via regex.")
+    # 3. Targeted modification on specified Observation
+    # 3a. Find all observation blocks
+    obs_matches = list(re.finditer(r'(<Observation[^>]*>.*?</Observation>)', xml_content, re.DOTALL))
+    
+    target_match = None
+    for m in obs_matches:
+        block = m.group(1)
+        # Check if this block contains <Number>obs_num</Number>
+        if re.search(rf'<Number>{obs_num}</Number>', block):
+            target_match = m
+            break
+            
+    if not target_match:
+        print(f"Error: Observation {obs_num} not found.")
         return
     
+    match = target_match
     obs_block = match.group(1)
     
-    # Within Observation 1, find all ConfigurationPointing blocks
-    # Looking for: <nsmos:ConfigurationPointing ...> ... </nsmos:ConfigurationPointing>
+    # Within that observation, find all ConfigurationPointing blocks
+    # We use a pattern that finds individual blocks
     pt_pattern = re.compile(r'(<nsmos:ConfigurationPointing.*?>.*?</nsmos:ConfigurationPointing>)', re.DOTALL)
     pts = list(pt_pattern.finditer(obs_block))
-    print(f"Found {len(pts)} pointings in Observation 1.")
+    print(f"Found {len(pts)} pointings in Observation {obs_num}.")
 
-    if len(pts) != len(new_offsets):
-        print(f"Warning: Count mismatch! XML has {len(pts)}, text has {len(new_offsets)}.")
-    
+    if len(pts) == 0:
+        print(f"Error: No pointings found in Observation {obs_num}.")
+        return
+
     # We will replace the points in order
     new_obs_block = obs_block
-    # We need to replace carefully from last to first to not mess up indices
     for i in reversed(range(min(len(pts), len(new_offsets)))):
         pt_match = pts[i]
         pt_content = pt_match.group(1)
@@ -77,9 +86,8 @@ def modify_apt_regex(apt_file, dither_txt, output_file):
     start, end = match.span()
     new_xml_content = xml_content[:start] + new_obs_block + xml_content[end:]
 
-    # 4. Save to new ZIP, preserving original file order
+    # 4. Save to new ZIP
     with zipfile.ZipFile(output_file, 'w', compression=zipfile.ZIP_DEFLATED) as z_out:
-        # APT usually likes 'manifest' first? Let's check original namelist
         for name in namelist:
             if name == xml_name:
                 z_out.writestr(name, new_xml_content.encode('utf-8'))
@@ -94,6 +102,7 @@ if __name__ == "__main__":
     parser.add_argument("apt_file", help="Path to the input .aptx file")
     parser.add_argument("--dithers", help="Path to the dither text file containing zigzag patterns")
     parser.add_argument("--output", help="Path to the output .aptx file (default: adds _mod to input filename)")
+    parser.add_argument("--obs", default="1", help="Observation number to modify (default: 1)")
 
     args = parser.parse_args()
     
@@ -106,4 +115,4 @@ if __name__ == "__main__":
     else:
         output_file = str(input_path.parent / f"{input_path.stem}_mod.aptx")
     
-    modify_apt_regex(args.apt_file, args.dithers, output_file)
+    modify_apt_regex(args.apt_file, args.dithers, output_file, obs_num=args.obs)

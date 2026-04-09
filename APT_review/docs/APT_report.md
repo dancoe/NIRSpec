@@ -87,9 +87,9 @@ Extracted from `<nsmos:Exposures>/<nsmos:Exposure>`:
 *   **Readout Pattern**: e.g. `NRSIRS2RAPID`. An INFO message is logged for non-IRS2 patterns.
 *   **Groups/Integrations**: `<nsmos:Groups>` and `<nsmos:Integrations>`.
 *   **ETC ID**: `<nsmos:EtcId>`.
-*   **Duration per Integration**: Calculated using frame times:
-    *   IRS2 patterns: `(Groups + 1) × 14.58889 s`
-    *   Standard patterns: `(Groups + 1) × 10.73677 s`
+*   **Duration per Integration**: Calculated using standard NIRSpec frame times and group factors, as these values are not stored directly in the XML:
+    *   IRS2 patterns: `(int(Groups) * 5 + 1) × 14.58889 s`
+    *   Standard patterns: `(int(Groups) + 1) × 10.73677 s`
     *   A WARNING is logged if duration exceeds 1500 s.
 
 ---
@@ -104,6 +104,8 @@ Extracted from `<nsmos:ConfigurationPointings>/<nsmos:ConfigurationPointing>`:
 *   **Pointing Coordinates**: `<nsmos:Pointing>` string.
 *   **Total Integrations**: `nod_multiplier × integrations_per_spec`.
 *   **Total Time**: `Total Integrations × duration_per_integration`.
+*   **Dither Offset**: `<nsmos:DispersionOffset>` and `<nsmos:CrossDispersionOffset>` — reported in the "Offset (shutters)" column.
+*   **Repeated Pointings**: Warnings are logged if a configuration observes the same pointing multiple times (either with the same offset or across multiple offset positions).
 
 ---
 
@@ -202,7 +204,7 @@ The `print_report()` method generates the following sections in order:
 | 5 | **Detailed Findings** | Warnings, Errors, Info messages consolidated by observation |
 | 6 | **Aperture PA Summary** | Planned (JSON) vs. Assigned (XML/Diagnostics) per observation |
 | 7 | **Exposure Specs** | Program-wide exposure configurations |
-| 8 | **Configs / Pointings** | Pointings, nods, and total integration times |
+| 8 | **Configs / Pointings** | Pointings, nods, total integration times, and dither offsets |
 | 9 | **Parallels & Dithers** | Coordinated activity and dither check |
 | 10 | **Special Requirements** | Orientation, background, and other constraints |
 | 11 | **MSA Configurations** | Slitlet/primary/filler counts, leakcal, confirmation image |
@@ -211,7 +213,7 @@ The `print_report()` method generates the following sections in order:
 | 14 | **High Priority Targets** | Coverage and wavelength analysis for top 20 sources |
 | 15 | **Catalog Check Details** | Warnings for specific catalogs (IDs, stellarity, etc.) |
 | 16 | **Final Summary** | Compliance sign-off, Strategy/Clustering flags |
-| 17 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
+| 17 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, repeated pointing warnings, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
 | 18 | **Files Used Log** | List of all file contributions and modification dates. |
 
 ### SPAR Review Logic

@@ -70,7 +70,7 @@ def plot_dither_pattern(x, y, ids, pid, obs_num, output_file, color_quadrants=Fa
         mirror_y = np.abs(y)
         # Use main_colors (original quadrant color) - no outlines for a cleaner look
         ax.scatter(mirror_x, mirror_y, c=main_colors, s=60, edgecolors='none', 
-                   alpha=0.5, zorder=6, marker='o', label='Folded Sampling')
+                   alpha=0.3, zorder=6, marker='o', label='Folded Sampling')
         
         # Draw grid lines between reflected points
         if show_grid_lines and nx_eff and ny_eff:
