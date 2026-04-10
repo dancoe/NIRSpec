@@ -250,7 +250,10 @@ if __name__ == "__main__":
     
     if target_info_list:
         if args.expand:
-            out_file = output_dir / f"{input_path.stem}_expanded.aptx"
+            if args.output:
+                out_file = args.output
+            else:
+                out_file = output_dir / f"{input_path.stem}_expanded.aptx"
             modify_apt(args.apt_file, out_file, dither_txt=args.dithers, obs_num=args.obs, expansion_list=target_info_list)
         else:
             for info in target_info_list:
