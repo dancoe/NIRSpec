@@ -72,8 +72,14 @@ You can update the Target Name (appears in 2 places in the XML), RA, and Dec usi
 python3 APT_edit.py <Program>.aptx "NewName" "12 00 00.0" "+10 00 00.0"
 ```
 
-**CSV Batch:**
+**CSV Batch (One file per target):**
 ```bash
 python3 APT_edit.py <Program>.aptx targets.csv
 ```
 The CSV should have three columns: `Name, RA, Dec`. For each row, the script will create a new `.aptx` file in a `modified/` subdirectory named `<OriginalName>_<NewName>.aptx`.
+
+**Expansion Mode (All targets in one file):**
+```bash
+python3 APT_edit.py <Program>.aptx targets.csv --expand
+```
+This mode takes all targets from the CSV and duplicates **all existing observations** for each target. The resulting file (`<OriginalName>_expanded.aptx`) will contain 1 set of observations per target, with target and observation numbers updated sequentially.

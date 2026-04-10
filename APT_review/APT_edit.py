@@ -102,7 +102,84 @@ def edit_xml_target(xml_content, name, ra, dec):
     
     return xml_content
 
-def modify_apt(apt_file, output_file, dither_txt=None, obs_num="1", target_info=None):
+def expand_xml_targets(xml_content, targets_info):
+    """
+    Duplicate existing observations for each target in targets_info.
+    Returns a single XML with N targets and N sets of observations.
+    """
+    # 1. Capture templates from the original XML
+    # Find the first Target block as a template
+    target_pattern = re.compile(r'(<Target\s+[^>]*>.*?</Target>)', re.DOTALL)
+    m_target = target_pattern.search(xml_content)
+    if not m_target: 
+        print("Error: No <Target> block found to use as template.")
+        return xml_content
+    template_target = m_target.group(1)
+    
+    # Find the first ObservationGroup block as a template
+    group_pattern = re.compile(r'(<ObservationGroup>.*?</ObservationGroup>)', re.DOTALL)
+    m_group = group_pattern.search(xml_content)
+    if not m_group:
+        print("Error: No <ObservationGroup> block found to use as template.")
+        return xml_content
+    template_group = m_group.group(1)
+    
+    new_targets_xml = ""
+    new_groups_xml = ""
+    
+    curr_target_num = 1
+    curr_obs_num = 1
+    
+    for name, ra, dec in targets_info:
+        # a. Create Target block
+        t_xml = template_target
+        t_xml = re.sub(r'(<Number>).*?(</Number>)', r'\g<1>' + str(curr_target_num) + r'\g<2>', t_xml)
+        t_xml = re.sub(r'(<TargetName>).*?(</TargetName>)', r'\g<1>' + name + r'\g<2>', t_xml)
+        t_xml = re.sub(r'(<TargetArchiveName>).*?(</TargetArchiveName>)', r'\g<1>' + name + r'\g<2>', t_xml)
+        t_xml = re.sub(r'(<TargetID>).*?(</TargetID>)', r'\g<1>' + name + r'\g<2>', t_xml)
+        new_coords = f"{ra} {dec}"
+        t_xml = re.sub(r'(<EquatorialCoordinates Value=")[^"]+(")', r'\g<1>' + new_coords + r'\g<2>', t_xml)
+        
+        new_targets_xml += "        " + t_xml.strip() + "\n"
+        
+        # b. Create ObservationGroup block
+        g_xml = template_group
+        # Update group label to include the target name
+        g_xml = re.sub(r'(<Label>).*?(</Label>)', r'\g<1>' + name + r'\g<2>', g_xml, count=1)
+        
+        # Find all observations in this group and update them
+        obs_pattern = re.compile(r'(<Observation[^>]*>.*?</Observation>)', re.DOTALL)
+        obs_list = obs_pattern.findall(g_xml)
+        
+        repl_obs_content = ""
+        for obs_txt in obs_list:
+            o_xml = obs_txt
+            o_xml = re.sub(r'(<Number>).*?(</Number>)', r'\g<1>' + str(curr_obs_num) + r'\g<2>', o_xml)
+            # Update TargetID link to point to the new target
+            o_xml = re.sub(r'(<TargetID>).*?(</TargetID>)', r'\g<1>' + f"{curr_target_num} {name}" + r'\g<2>', o_xml)
+            repl_obs_content += "            " + o_xml.strip() + "\n"
+            curr_obs_num += 1
+        
+        # Replace the observations sequence in the group template
+        # Find position of first <Observation and last </Observation>
+        start_obs = g_xml.find('<Observation')
+        end_obs = g_xml.rfind('</Observation>') + len('</Observation>')
+        if start_obs != -1 and end_obs != -1:
+            g_xml = g_xml[:start_obs] + repl_obs_content.strip() + "\n" + g_xml[end_obs:]
+        
+        new_groups_xml += "        " + g_xml.strip() + "\n"
+        curr_target_num += 1
+
+    # 3. Splice back into xml_content
+    # Replace the whole <Targets>...</Targets> block
+    xml_content = re.sub(r'(<Targets>).*?(</Targets>)', r'\g<1>\n' + new_targets_xml + r'    \g<2>', xml_content, flags=re.DOTALL)
+    
+    # Replace the whole sequence of ObservationGroups (we replace the first one with all new ones)
+    xml_content = re.sub(r'(<ObservationGroup>).*?(</ObservationGroup>)', new_groups_xml.strip(), xml_content, flags=re.DOTALL, count=1)
+    
+    return xml_content
+
+def modify_apt(apt_file, output_file, dither_txt=None, obs_num="1", target_info=None, expansion_list=None):
     """General function to modify APT and save to a new file."""
     apt_path = Path(apt_file)
     output_file = Path(output_file)
@@ -125,6 +202,9 @@ def modify_apt(apt_file, output_file, dither_txt=None, obs_num="1", target_info=
         name, ra, dec = target_info
         new_xml = edit_xml_target(new_xml, name, ra, dec)
 
+    if expansion_list:
+        new_xml = expand_xml_targets(new_xml, expansion_list)
+
     with zipfile.ZipFile(output_file, 'w', compression=zipfile.ZIP_DEFLATED) as z_out:
         for name_in_zip in namelist:
             if name_in_zip == xml_name:
@@ -141,6 +221,7 @@ if __name__ == "__main__":
     parser.add_argument("--dithers", help="Path to the dither text file containing zigzag patterns")
     parser.add_argument("--output", help="Path to the output .aptx file (default: adds _mod to input filename)")
     parser.add_argument("--obs", default="1", help="Observation number to modify (default: 1)")
+    parser.add_argument("--expand", action="store_true", help="Duplicate observations for all targets in CSV into one file")
 
     args = parser.parse_args()
     input_path = Path(args.apt_file)
@@ -168,12 +249,16 @@ if __name__ == "__main__":
     output_dir = input_path.parent / "modified"
     
     if target_info_list:
-        for info in target_info_list:
-            name = info[0]
-            # Create a safe filename
-            safe_name = "".join(x for x in name if x.isalnum() or x in "._- ")
-            out_file = output_dir / f"{input_path.stem}_{safe_name}.aptx"
-            modify_apt(args.apt_file, out_file, dither_txt=args.dithers, obs_num=args.obs, target_info=info)
+        if args.expand:
+            out_file = output_dir / f"{input_path.stem}_expanded.aptx"
+            modify_apt(args.apt_file, out_file, dither_txt=args.dithers, obs_num=args.obs, expansion_list=target_info_list)
+        else:
+            for info in target_info_list:
+                name = info[0]
+                # Create a safe filename
+                safe_name = "".join(x for x in name if x.isalnum() or x in "._- ")
+                out_file = output_dir / f"{input_path.stem}_{safe_name}.aptx"
+                modify_apt(args.apt_file, out_file, dither_txt=args.dithers, obs_num=args.obs, target_info=info)
     else:
         # Only dither modification
         if args.output:
