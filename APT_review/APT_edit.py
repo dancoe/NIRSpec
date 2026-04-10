@@ -73,14 +73,30 @@ def edit_xml_dithers(xml_content, new_offsets, obs_num="1"):
     return new_xml_content
 
 def edit_xml_target(xml_content, name, ra, dec):
-    """Update target name (in 2 places) and coordinates in the XML content."""
-    # 1. Replace <TargetName>...</TargetName>
+    """Update target name (in all places) and coordinates in the XML content."""
+    # 1. Detect the original target info from the first Target block to update links
+    # <TargetID> is used to link Observations to Targets.
+    target_text_match = re.search(r'<Target[^>]*>.*?<Number>(\d+)</Number>.*?<TargetID>(.*?)</TargetID>', xml_content, re.DOTALL)
+    
+    if target_text_match:
+        target_num = target_text_match.group(1)
+        old_id = target_text_match.group(2)
+        
+        # a. Update TargetID in the definition: <TargetID>old_id</TargetID>
+        xml_content = re.sub(rf'(<TargetID>){re.escape(old_id)}(</TargetID>)', 
+                             r'\g<1>' + name + r'\g<2>', xml_content)
+        
+        # b. Update TargetID in observations: <TargetID>num old_id</TargetID>
+        xml_content = re.sub(rf'(<TargetID>{target_num}\s+){re.escape(old_id)}(</TargetID>)', 
+                             r'\g<1>' + name + r'\g<2>', xml_content)
+    
+    # 2. Replace <TargetName>...</TargetName>
     xml_content = re.sub(r'(<TargetName>).*?(</TargetName>)', r'\g<1>' + name + r'\g<2>', xml_content)
     
-    # 2. Replace <TargetArchiveName>...</TargetArchiveName>
+    # 3. Replace <TargetArchiveName>...</TargetArchiveName>
     xml_content = re.sub(r'(<TargetArchiveName>).*?(</TargetArchiveName>)', r'\g<1>' + name + r'\g<2>', xml_content)
     
-    # 3. Replace RA and Dec in <EquatorialCoordinates Value="RA DEC">
+    # 4. Replace RA and Dec in <EquatorialCoordinates Value="RA DEC">
     new_coords = f"{ra} {dec}"
     xml_content = re.sub(r'(<EquatorialCoordinates Value=")[^"]+(")', r'\g<1>' + new_coords + r'\g<2>', xml_content)
     
