@@ -18,12 +18,16 @@ An `.aptx` file is actually a ZIP archive. It typically contains:
 ### 2. XML Parser Sensitivity
 Initial attempts used standard XML libraries like `xml.etree.ElementTree`. While these are excellent for most XML tasks, they were rejected by APT for several reasons:
 - **Namespace Handling**: Libraries like `ElementTree` often rename or consolidate namespaces (e.g., adding `ns0:` prefixes), which can break APT's rigid internal parser.
+- **Formatting**: Many parsers re-indent or change whitespace, making diffing against the original file nearly impossible.
+
+### 3. Regex Block Partitioning (Solved 2026-04-10)
+To avoid the baggage of full XML parsers, `APT_edit.py` uses string partitioning and regular expressions. A critical early bug involved non-greedy matching `.*?` incorrectly spanning across multiple objects (e.g., matching from the start of Target 1 to the end of Target 10). The current implementation robustly partitions the XML into discrete object blocks (targets, observations, etc.) before applying replacements, ensuring 100% data integrity even in large proposals.
 - **Header Formatting**: APT expects specific XML headers, including `standalone="yes"` and often includes critical diagnostic comments at the top. Most XML libraries strip these out or alter them.
 - **Sorting**: Standard parsers may alphabetically sort attributes or rearrange elements, which can cause validation failures in APT.
 
 **Solution**: Use **Targeted Regex Pattern Matching** for specific values (like dither offsets) instead of full XML deserialization. This preserves 100% of the original file's formatting, headers, and comments.
 
-### 3. ZIP Entry Order
+### 4. ZIP Entry Order
 The `manifest` file is usually the first entry in an original `.aptx` archive. Some Java-based ZIP implementations (like the one used in APT) benefit from this specific ordering to correctly identify the file type before reading the rest of the archive.
 
 ### 4. Backreference Ambiguity in Regex

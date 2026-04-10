@@ -1,5 +1,24 @@
 # Change Log
 
+## [Unreleased] - 2026-04-10
+
+### Fixed
+- **APT Edit Logic Enhancement**:
+    - Fixed a critical regex bug in `extract_target_info` and `extract_obs_blocks` that caused matching across multiple blocks, resulting in massive object duplication and collision in the APT XML.
+    - Upgraded `replace_xml_block` to use regex for tag detection, ensuring robust handling of XML namespaces and container attributes in `.aptx` files.
+    - Standardized `TargetID` formatting to ensure valid scientific links and numbering within the APT GUI.
+
+## [Unreleased] - 2026-04-09
+
+### Added
+- **Electrical Shorts Integration**:
+    - Integrated electrical shorts warnings into the final **SUMMARY** and **SPAR REVIEW** sections of the review report for better visibility.
+    - Added brief snippets of shorts-affected targets directly to the summary block.
+
+### Changed
+- **Documentation**:
+    - Updated `docs/APT_report.md` to include Electrical Shorts in the reporting contents table.
+
 ## [Unreleased] - 2026-03-24
 
 ### Added
