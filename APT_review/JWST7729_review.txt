@@ -197,6 +197,81 @@ Source ID    | Weight     | G395M/F290LP
 20          | 1000000    | 🌑  0/54 (  0%)
 
 Summary for Obs 1 (Primary): 0/20 high-priority targets observed in ALL exposures.
+================================================================================
+⚡️ SHORTS
+================================================================================
+The following targets are located in rows or columns known to have electrical shorts.
+These rows / columns should be avoided to prevent data contamination:
+
+Observation 1 (Catalog gdn-final-dr5-precise):
+  ⚠️ Config c2: Target 1074 (weight 200) in q4d337s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36
+    – 7729-obs1-exp17-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp18-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp19-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp20-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp21-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp22-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp23-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp24-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp25-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp26-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp27-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp28-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp29-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp30-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp31-c2e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp32-c2e2n1-G395M-F290LP.csv
+  ⚠️ Config c1: Target 11 (weight 50,000) in q3d353s130 shares Q3 Column 353 with known short
+    – 7729-obs1-exp1-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp10-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp11-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp12-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp13-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp14-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp15-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp16-c1e2n2-G395M-F290LP.csv
+    – 7729-obs1-exp2-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp3-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp4-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp5-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp6-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp7-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp8-c1e1n2-G395M-F290LP.csv
+    – 7729-obs1-exp9-c1e1n2-G395M-F290LP.csv
+  ⚠️ Config c1: Target 11 (weight 50,000) in q3d353s131 shares Q3 Column 353 with known short
+    – 7729-obs1-exp1-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp10-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp11-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp12-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp13-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp14-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp15-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp16-c1e2n1-G395M-F290LP.csv
+    – 7729-obs1-exp2-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp3-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp4-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp5-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp6-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp7-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp8-c1e1n1-G395M-F290LP.csv
+    – 7729-obs1-exp9-c1e1n1-G395M-F290LP.csv
+  ⚠️ Config c1: Target 11 (weight 50,000) in q3d353s132 shares Q3 Column 353 with known short
+    – 7729-obs1-exp1-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp10-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp11-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp12-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp13-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp14-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp15-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp16-c1e2n3-G395M-F290LP.csv
+    – 7729-obs1-exp2-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp3-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp4-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp5-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp6-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp7-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp8-c1e1n3-G395M-F290LP.csv
+    – 7729-obs1-exp9-c1e1n3-G395M-F290LP.csv
 
 ------------------------------
 CATALOGS
@@ -249,6 +324,8 @@ PI: Guido Roberts-Borsani
 ⚠️ IRS2 Readout NOT used in Obs 1
 ✅ Integration times all 429.5 s (< 1500 s)
 ✅ Nod Pattern: 3 Shutter Slitlet
+  ⚠️ Config c2: Target 1074 (weight 200) in q4d337s36 shares Q4 Row 36 with short "Wilhelm" in q4d16s36
+  ⚠️ Config c1: Target 11 (weight 50,000) in q3d353s131 shares Q3 Column 353 with known short
 
 👷 1 observation under construction: Obs 2
 

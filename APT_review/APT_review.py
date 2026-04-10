@@ -2762,6 +2762,15 @@ class NIRSpecMOSReviewer:
                 for msg in sorted(set(config_msgs)):
                     write(f"{icons['WARNING']} {msg}")
 
+            # Shorts warnings for reviewed observations
+            shorts_data = self.stats.get('shorts_flags', {})
+            if shorts_data:
+                for o in reviewed_full:
+                    if o in shorts_data:
+                        for entry in shorts_data[o]:
+                            icon = "🛟 " if entry.get('is_rescue') else icons['WARNING']
+                            write(f"{icon}{entry['label_prefix']}{entry['main_msg']}")
+
             write('')
 
         # 2. Under Construction section
@@ -2946,6 +2955,15 @@ class NIRSpecMOSReviewer:
                     config_msgs.append(item['message'])
         for msg in sorted(set(config_msgs)):
             write(f"{icons['WARNING']} {msg}")
+
+        # Shorts warnings 
+        shorts_data = self.stats.get('shorts_flags', {})
+        if shorts_data:
+            for o in reviewed_obs:
+                if o in shorts_data:
+                    for entry in shorts_data[o]:
+                        icon = "🛟 " if entry.get('is_rescue') else icons['WARNING']
+                        write(f"{icon}{entry['label_prefix']}{entry['main_msg']}")
 
         write("\nCHECK MPT PLANS")
         write("👁️ Check (extraction not yet implemented)")

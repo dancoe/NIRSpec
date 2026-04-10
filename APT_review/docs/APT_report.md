@@ -212,8 +212,8 @@ The `print_report()` method generates the following sections in order:
 | 13 | **Target Catalog Info** | Source counts, accuracy, and weight filters |
 | 14 | **High Priority Targets** | Coverage and wavelength analysis for top 20 sources |
 | 15 | **Catalog Check Details** | Warnings for specific catalogs (IDs, stellarity, etc.) |
-| 16 | **Final Summary** | Compliance sign-off, Strategy/Clustering flags |
-| 17 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, repeated pointing warnings, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
+| 16 | **Final Summary** | Compliance sign-off, Strategy/Clustering flags, Electrical Shorts warnings |
+| 17 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, repeated pointing warnings, Electrical Shorts, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
 | 18 | **Files Used Log** | List of all file contributions and modification dates. |
 
 ### SPAR Review Logic

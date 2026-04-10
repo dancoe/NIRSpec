@@ -3,7 +3,7 @@
 > ⚠️
 > Editing JWST APT (.aptx) files using external scripts is inherently risky. The APT file format is a complex ZIP archive containing structured XML and metadata that the Astronomer's Proposal Tool (APT) maintains with strict formatting requirements. 
 > 
-> `APT_edit.py` is **experimental** and untested. So far it only edits a dither table for NIRSpec MOS.
+> `APT_edit.py` allows programmatic modification of APT files. It can edit dither tables for NIRSpec MOS and update target names and coordinates.
 >
 > Always keep a backup of your original `.aptx` file before attempting any programmatic modifications.
 
@@ -63,3 +63,17 @@ If your proposal has multiple observations, use the `--obs` flag (default is `1`
 ```bash
 python3 APT_edit.py JWST9278.aptx --dithers dithers.txt --obs 61
 ```
+
+### 🎯 Changing Target Information
+You can update the Target Name (appears in 2 places in the XML), RA, and Dec using either a single command line input or a CSV file. This is useful for creating multiple versions of a program for different targets or updating coordinates in bulk.
+
+**Single Target:**
+```bash
+python3 APT_edit.py <Program>.aptx "NewName" "12 00 00.0" "+10 00 00.0"
+```
+
+**CSV Batch:**
+```bash
+python3 APT_edit.py <Program>.aptx targets.csv
+```
+The CSV should have three columns: `Name, RA, Dec`. For each row, the script will create a new `.aptx` file in a `modified/` subdirectory named `<OriginalName>_<NewName>.aptx`.
