@@ -85,7 +85,7 @@ def validate_apt_file(apt_file):
         except Exception as e:
             print(f"Could not run APT validation: {e}")
 
-def create_merged_apt(base_apt, temp_apt, csv_file, use_nickname, output_file, obs_start=101):
+def create_merged_apt(base_apt, temp_apt, csv_file, output_file, obs_start=101, use_nickname=False, merge_legacy=False):
     base_xml, base_namelist, others = get_xml_from_apt(base_apt)
     temp_xml, _, _ = get_xml_from_apt(temp_apt)
     base_xml = scrub_metadata(base_xml)
@@ -132,8 +132,9 @@ def create_merged_apt(base_apt, temp_apt, csv_file, use_nickname, output_file, o
         new_t_num = t_info["num"]
         old_t_num = t_info.get("old_num")
         
+        # 🏛 LEGACY OBSERVATIONS
         folder_obs = ""
-        if old_t_num:
+        if old_t_num and merge_legacy:
             for ox in extract_obs_blocks(base_xml, old_t_num):
                 # RETAIN ORIGINAL OBSERVATION NUMBER
                 ox = re.sub(r'<TargetID>.*?</TargetID>', f'<TargetID>{new_t_num} {name}</TargetID>', ox)
@@ -172,9 +173,14 @@ if __name__ == "__main__":
     parser.add_argument("apt_file")
     parser.add_argument("temp_apt")
     parser.add_argument("csv_file")
-    parser.add_argument("--nickname", action="store_true")
-    parser.add_argument("--output")
-    parser.add_argument("--obs_start", type=int, default=101)
+    parser.add_argument("--obs_start", type=int, default=101, help="Starting number for new observations")
+    parser.add_argument("--output", default="merged.aptx", help="Output filename")
+    parser.add_argument("--nickname", action="store_true", help="Prepend nicknames to labels")
+    parser.add_argument("--merge_legacy", action="store_true", help="Import legacy observations from the base proposal")
+    
     args = parser.parse_args()
-    out = args.output if args.output else "merged.aptx"
-    create_merged_apt(args.apt_file, args.temp_apt, args.csv_file, args.nickname, out, args.obs_start)
+    
+    create_merged_apt(args.apt_file, args.temp_apt, args.csv_file, args.output, 
+                      use_nickname=args.nickname,
+                      merge_legacy=args.merge_legacy,
+                      obs_start=args.obs_start)

@@ -7,6 +7,7 @@
     - Fixed a critical regex bug in `extract_target_info` and `extract_obs_blocks` that caused matching across multiple blocks, resulting in massive object duplication and collision in the APT XML.
     - Upgraded `replace_xml_block` to use regex for tag detection, ensuring robust handling of XML namespaces and container attributes in `.aptx` files.
     - Standardized `TargetID` formatting to ensure valid scientific links and numbering within the APT GUI.
+    - **Default Behavior Swap**: The script now defaults to coordinate expansion only. Legacy observation merging is now an opt-in feature via the new `--merge_legacy` flag.
 
 ## [Unreleased] - 2026-04-09
 
