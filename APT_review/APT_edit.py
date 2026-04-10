@@ -235,6 +235,8 @@ if __name__ == "__main__":
             reader = csv.reader(f)
             for row in reader:
                 if not row or len(row) < 3: continue
+                # Skip header row if present
+                if row[0].strip().lower() in ['name', 'target', 'targetname']: continue
                 target_info_list.append([s.strip() for s in row[:3]])
     elif len(args.extra_args) == 3:
         # Single Target Mode
