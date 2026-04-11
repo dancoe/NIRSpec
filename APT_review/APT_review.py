@@ -3366,11 +3366,21 @@ if __name__ == "__main__":
             args.apt_file = str(apt_files[0])
             print(f"No APT file specified. Found {args.apt_file}. Running on that...")
         elif len(apt_files) > 1:
-            print("Multiple .aptx files found in the current directory:")
-            for f in apt_files:
-                print(f"  {f.name}")
-            print("\nPlease specify which one to use.")
-            sys.exit(1)
+            # Sort by modification time, most recent first
+            apt_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            most_recent = apt_files[0]
+            print(f"Multiple .aptx files found. Most recent: {most_recent.name}")
+            
+            user_input = "y" if args.exports else input(f"Run on {most_recent.name}? [Y/n]: ").strip().lower()
+            if not user_input or user_input == 'y':
+                args.apt_file = str(most_recent)
+            else:
+                print("\nAvailable .aptx files:")
+                for f in apt_files:
+                    mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"  {f.name:30} ({mtime})")
+                print("\nPlease specify which one to use.")
+                sys.exit(1)
         else:
             print("No .aptx files found in the current directory.")
             print("Please specify an .aptx or .xml file.")
