@@ -3347,7 +3347,7 @@ class NIRSpecMOSReviewer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
-    parser.add_argument("apt_file", help="Path to .aptx or .xml file")
+    parser.add_argument("apt_file", nargs='?', help="Path to .aptx or .xml file. If omitted, searches current directory for a single .aptx file.")
     parser.add_argument("--output", "-o", help="Path to save the report. Defaults to <stem>_review.txt")
     parser.add_argument("--obs", help="Observations to review (e.g. '3' or '1,3-5,10'). Alias for --include.")
     parser.add_argument("--include", "-i", help="Observations to include (e.g. '1,3-5,10')")
@@ -3358,6 +3358,23 @@ if __name__ == "__main__":
     parser.add_argument("--exports", "-e", action="store_true", help="Automatically answer yes to all prompts.")
     parser.add_argument("--dithers", action="store_true", help="Only output dither tables and generate dither plots.")
     args = parser.parse_args()
+
+    # If no apt_file provided, look for one in the current directory
+    if not args.apt_file:
+        apt_files = list(Path('.').glob('*.aptx'))
+        if len(apt_files) == 1:
+            args.apt_file = str(apt_files[0])
+            print(f"No APT file specified. Found {args.apt_file}. Running on that...")
+        elif len(apt_files) > 1:
+            print("Multiple .aptx files found in the current directory:")
+            for f in apt_files:
+                print(f"  {f.name}")
+            print("\nPlease specify which one to use.")
+            sys.exit(1)
+        else:
+            print("No .aptx files found in the current directory.")
+            print("Please specify an .aptx or .xml file.")
+            sys.exit(1)
 
     # --obs is a friendly alias for --include
     include = args.obs or args.include
