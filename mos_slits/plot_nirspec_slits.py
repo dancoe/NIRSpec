@@ -130,7 +130,7 @@ def plot_combined_slits(mos_rows=5, mos_cols=2, style='mosaic'):
     flat_verts = [v for sub in all_verts for v in sub]
     flat_codes = [c for sub in all_codes for c in sub]
     path = Path(flat_verts, flat_codes)
-    mask = patches.PathPatch(path, facecolor='#444444', edgecolor='none', alpha=0.5, zorder=5)
+    mask = patches.PathPatch(path, facecolor='white', edgecolor='none', alpha=0.8, zorder=5)
     ax.add_patch(mask)
     
     # 5. Outlines and Labels (Tight labels)
@@ -139,6 +139,7 @@ def plot_combined_slits(mos_rows=5, mos_cols=2, style='mosaic'):
                                 facecolor='none', alpha=1, zorder=10)
         ax.add_patch(rect)
         
+        label_color = 'black'
         if name:
             label_y = hy + hh + 0.1 # Base Y for the closest label
             if name == "MSA":
@@ -147,16 +148,16 @@ def plot_combined_slits(mos_rows=5, mos_cols=2, style='mosaic'):
                 # Find the actual top of the MOS group
                 mos_top = mos_start_y + mos_group_h - mos_gap_y
                 ax.text(mos_center_x, mos_top + 0.45, 'MSA', 
-                        ha='center', va='bottom', fontweight='bold', fontsize=14, color='white', zorder=20)
+                        ha='center', va='bottom', fontweight='bold', fontsize=14, color=label_color, zorder=20)
                 ax.text(mos_center_x, mos_top + 0.25, f"{hw}\" x {hh}\"", 
-                        ha='center', va='bottom', fontsize=11, color='white', zorder=20)
+                        ha='center', va='bottom', fontsize=11, color=label_color, zorder=20)
                 ax.text(mos_center_x, mos_top + 0.05, f"0.07\" gaps", 
-                        ha='center', va='bottom', fontsize=11, color='white', zorder=20)
+                        ha='center', va='bottom', fontsize=11, color=label_color, zorder=20)
             elif "S" in name:
                 ax.text(hx + hw/2, label_y + 0.2, name, ha='center', va='bottom', 
-                        fontweight='bold', fontsize=12, color='white', zorder=20)
+                        fontweight='bold', fontsize=12, color=label_color, zorder=20)
                 ax.text(hx + hw/2, label_y, f"{hw}\" x {hh}\"", ha='center', va='bottom', 
-                        fontsize=11, color='white', zorder=20)
+                        fontsize=11, color=label_color, zorder=20)
 
     # Grid and styling
     ax.set_xticks(np.arange(0, nx_arc, 1.0))
