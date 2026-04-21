@@ -1,5 +1,12 @@
 # Change Log
 
+## [Unreleased] - 2026-04-21
+- **MSA Coverage Plot Legend**:
+    - Updated the legend to list "Catalog:" on its own line followed by each individual catalog name on new lines for better readability.
+    - Added truncation to individual catalog names to keep the legend compact.
+- **Documentation**:
+    - Updated `docs/Plots.md` to accurately reflect the current outline colors for observed targets (black) and reference stars (magenta).
+
 ## [Unreleased] - 2026-04-10
 
 ### Fixed

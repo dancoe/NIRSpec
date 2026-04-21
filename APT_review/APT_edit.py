@@ -180,7 +180,12 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    # Dynamic default for obs_start: 1 if expansion only, 101 if merging legacy
+    obs_start = args.obs_start
+    if obs_start == 101 and not args.merge_legacy:
+        obs_start = 1
+        
     create_merged_apt(args.apt_file, args.temp_apt, args.csv_file, args.output, 
                       use_nickname=args.nickname,
                       merge_legacy=args.merge_legacy,
-                      obs_start=args.obs_start)
+                      obs_start=obs_start)

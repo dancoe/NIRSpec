@@ -8,14 +8,14 @@ The MSA coverage plots provide a visual representation of how your proposed targ
 - **Science Targets**: Plotted as circles, colored by their logarithmic weight using a rainbow colormap (Higher weights = Redder/Larger, Lower weights = Bluer/Smaller).
 - **Reference Objects**: Plotted as gray stars (`*`).
 
-### 2. Observation Status (Green Outlines)
-- **Observed Targets**: Targets that were successfully assigned to a shutter in at least one exposure of the observation are highlighted with a **green outline** and are fully opaque.
-- **Used Reference Stars**: Reference stars actually selected for Target Acquisition (TA) are highlighted with a **green outline** and rendered at a larger size.
-- **Unassigned Objects**: Objects that fall within the field but were not assigned to a shutter or used for TA are rendered as semi-transparent (alpha = 0.3).
+### 2. Observation Status (Outlines)
+- **Observed Targets**: Targets that were successfully assigned to a shutter in at least one exposure of the observation are highlighted with a **black outline** and are fully opaque.
+- **Used Reference Stars**: Reference stars actually selected for Target Acquisition (TA) are highlighted with a **magenta outline** and rendered at a larger size.
+- **Unassigned Objects**: Objects that fall within the field but were not assigned to a shutter or used for TA are rendered as semi-transparent (alpha = 0.15).
 
 ### 3. Priority Highlighting
 - **Highest Priority**: Red circles with a **black outline** indicate the target(s) with the absolute highest weight in the catalog for that observation.
-- **Highest Priority + Observed**: Objects that are both the highest priority and successfully observed feature a **double outline** (black interior, green exterior).
+- **Highest Priority + Observed**: Objects that are both the highest priority and successfully observed feature a **bold black outer ring** (double outline).
 
 ### 4. MSA Quadrants
 - **Labels**: Each plotted quadrant is labeled with its ID (e.g., `Q1`, `Q2`, `Q3`, `Q4`) and the visit name (e.g., `1:1`).

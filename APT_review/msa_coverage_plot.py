@@ -681,9 +681,12 @@ def main():
         # 1. Catalog Name (Top)
         if group_cat_names:
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            cat_list = ", ".join(sorted(group_cat_names))
-            if len(cat_list) > 60: cat_list = cat_list[:57] + "..."
-            custom_labels.append(f'Catalog: {cat_list}')
+            custom_labels.append('Catalog:')
+            for cat_name in sorted(group_cat_names):
+                custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+                display_name = cat_name
+                if len(display_name) > 60: display_name = display_name[:57] + "..."
+                custom_labels.append(display_name)
 
         # 2. Highest Priority (Red symbol)
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 

@@ -8,3 +8,6 @@ data/STScI_exports.md
 __pycache__/
 *.aptx
 dither_plots/
+scratch/
+[0-9][0-9][0-9][0-9]/
+[0-9][0-9][0-9][0-9][0-9]/
