@@ -261,6 +261,19 @@ def main():
                 cat_sources = catalogs.get(tgt, [])
                 group_weights.extend([s['weight'] for s in cat_sources if s['weight'] > 0])
         
+        # Determine if we should treat reference stars as targets for plotting
+        # (e.g. if the catalog consists only of reference stars)
+        all_refs_mode = False
+        if group_cat_names:
+            all_ref_count = 0
+            all_sci_count = 0
+            for name in group_cat_names:
+                for src in catalogs[name]:
+                    if src['is_ref']: all_ref_count += 1
+                    else: all_sci_count += 1
+            if all_ref_count > 0 and all_sci_count == 0:
+                all_refs_mode = True
+        
         if not group_weights:
             min_wt, max_wt = 0.1, 0.1
             min_log_wt, log_range = -1, 1
@@ -275,6 +288,9 @@ def main():
         all_ras = []
         all_decs = []
         unique_catalogs = {} # cat_name -> row to use as reference
+        
+        # Track which visits we've labeled to avoid clutter
+        labeled_v_labels = set()
         
         for i, row in enumerate(rows):
             vid = row['Visit ID']
@@ -294,22 +310,28 @@ def main():
             all_ras.extend(poly[:, 0])
             all_decs.extend(poly[:, 1])
             
-            # Do not plot full MSA background
-            
             # Calculate PySIAF quadrants
             main_ap_name = row.get('Aperture', 'NRS_FULL_MSA')
             quads = get_siaf_quadrants(ra_ptr, dec_ptr, pa_ptr, main_ap_name)
             obs_quads[vid] = quads
             
             if not quads:
-                print(f"Warning: PySIAF calculation failed for {v_label}")
+                # Fallback: plot the full footprint from s_region if available
+                if poly is not None:
+                    plt.plot(np.append(poly[:, 0], poly[0,0]), np.append(poly[:,1], poly[0,1]), 
+                             color='blue', linewidth=0.6, alpha=0.8)
+                    
+                    # Label with visit ID at center
+                    pc_ra, pc_dec = np.mean(poly, axis=0)
+                    if v_label not in labeled_v_labels:
+                        plt.text(pc_ra, pc_dec, v_label, color='blue', alpha=0.8,
+                                 fontsize=8, ha='center', va='center', zorder=20)
+                labeled_v_labels.add(v_label)
                 continue
 
             # Draw quadrant boundaries
             v_label_str = v_label
             # Track which visits we've labeled to avoid clutter with overlapping dithers
-            if 'labeled_v_labels' not in locals():
-                labeled_v_labels = set()
 
             for q_idx, q_poly in quads.items():
                 plt.plot(np.append(q_poly[:, 0], q_poly[0,0]), np.append(q_poly[:,1], q_poly[0,1]), 
@@ -388,7 +410,8 @@ def main():
         }
 
         for src in all_sources:
-            if abs(src['ra'] - obs_c_ra) > 0.2 or abs(src['dec'] - obs_c_dec) > 0.2:
+            # Increased search radius to avoid truncating catalog context (0.75 deg ~ 45 arcmin)
+            if abs(src['ra'] - obs_c_ra) > 0.75 or abs(src['dec'] - obs_c_dec) > 0.75:
                 continue
             
             log_w = np.log10(max(1e-10, src['weight']))
@@ -398,7 +421,7 @@ def main():
             size = 20 + 45 * norm_wt if log_range > 0 else 30
             pt_color = plt.cm.rainbow(norm_wt)
 
-            if src['is_ref']:
+            if src['is_ref'] and not all_refs_mode:
                 is_used = src['id'] in used_ref_ids
                 c = cats['ref_used'] if is_used else cats['ref_unused']
                 c['ras'].append(src['ra'])
@@ -408,6 +431,19 @@ def main():
                 c['edgecolors'].append('magenta' if is_used else 'black')
                 c['lws'].append(0.5)
                 c['alphas'].append(1.0 if is_used else 0.35)
+            elif src['is_ref'] and all_refs_mode:
+                # Treat as a science target but use '*' marker
+                is_observed = src['id'] in used_ref_ids or src['id'] in observed_ids
+                c = cats['ref_used'] if is_observed else cats['ref_unused']
+                c['ras'].append(src['ra'])
+                c['decs'].append(src['dec'])
+                c['sizes'].append(size)
+                c['colors'].append(pt_color)
+                # For all-ref mode, magenta highlight for TA usage, otherwise black/gray
+                is_ta = src['id'] in used_ref_ids
+                c['edgecolors'].append('magenta' if is_ta else ('black' if is_observed else '0.50'))
+                c['lws'].append(1.0 if is_ta else 0.5)
+                c['alphas'].append(1.0 if is_observed else 0.15)
             else:
                 is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                 is_observed = src['id'] in observed_ids
@@ -421,7 +457,7 @@ def main():
                     # For unobserved highest, we'll plot the edge separately to keep alpha=1.0
                     c['edgecolors'].append('black' if is_observed else 'none')
                     c['lws'].append(1.0)
-                    c['alphas'].append(1.0 if is_observed else 0.07)
+                    c['alphas'].append(1.0 if is_observed else 0.15)
                     if is_observed:
                         # Extra ring for observed highest
                         c_ring = cats['sci_highest_obs']
@@ -442,7 +478,7 @@ def main():
                     c['colors'].append(pt_color)
                     c['edgecolors'].append('black' if is_observed else '0.50')
                     c['lws'].append(0.5)
-                    c['alphas'].append(1.0 if is_observed else 0.07)
+                    c['alphas'].append(1.0 if is_observed else 0.15)
 
         # Vectorized plotting of categories
         for name, data in cats.items():
@@ -484,9 +520,9 @@ def main():
         width_eff = (ra_max - ra_min) * cos_dec
         height = dec_max - dec_min
         
-        # Determine the larger dimension and add 15% margin to accommodate legend
+        # Determine the larger dimension and add 10% margin for a cleaner crop around MSA coverage
         max_dim = max(width_eff, height)
-        margin = 0.15 * max_dim
+        margin = 0.10 * max_dim
         L = max_dim + margin # Total sky size to cover
         
         # Set Dec limits (equal size L)
@@ -609,7 +645,7 @@ def main():
 
         # 4. Target (unobserved, gray and transparent as plotted)
         custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
-                                   markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.07, linestyle='None'))
+                                   markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.15, linestyle='None'))
         custom_labels.append('Target')
 
         # 5. Weight Samples (5 log-spaced samples)
@@ -652,10 +688,36 @@ def main():
     xml_stem = Path(xml_path).stem
     prog_num = proposal_id if proposal_id else (re.search(r'\d+', xml_stem).group() if re.search(r'\d+', xml_stem) else xml_stem)
     
+    def format_visit_labels(labels):
+        if not labels: return ""
+        def visit_sort_key(v):
+            m = re.match(r'(\d+):(\d+)', v)
+            if m: return (int(m.group(1)), int(m.group(2)))
+            try: return (int(v), 0)
+            except: return (0, 0)
+        
+        sorted_labels = sorted(list(set(labels)), key=visit_sort_key)
+        
+        if len(sorted_labels) > 7:
+            # Check for a contiguous numerical range within a single observation
+            parsed = []
+            for l in sorted_labels:
+                m = re.match(r'(\d+):(\d+)', l)
+                if m: parsed.append((int(m.group(1)), int(m.group(2))))
+            
+            if len(parsed) == len(sorted_labels):
+                obs_nums = set(p[0] for p in parsed)
+                if len(obs_nums) == 1:
+                    v_nums = [p[1] for p in parsed]
+                    if v_nums == list(range(min(v_nums), max(v_nums) + 1)):
+                        return f"{parsed[0][0]}:{v_nums[0]}–{v_nums[-1]}"
+        
+        return ", ".join(sorted_labels)
+
     for obs_id, rows in sorted(obs_groups.items()):
-        visit_labels = sorted(list(set(r['V_LABEL'] for r in rows)))
-        visit_str = ", ".join(visit_labels)
-        title = f"JWST {prog_num} Obs {obs_id} (Visit {visit_str})"
+        visit_str = format_visit_labels([r['V_LABEL'] for r in rows])
+        prefix = "Visits" if "–" in visit_str or "," in visit_str else "Visit"
+        title = f"JWST {prog_num} Obs {obs_id} ({prefix} {visit_str})"
         plot_group(rows, title, f"{xml_stem}_Obs{obs_id}")
     
     if 0:

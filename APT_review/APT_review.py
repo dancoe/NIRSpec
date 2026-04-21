@@ -125,6 +125,7 @@ class NIRSpecMOSReviewer:
     def _build_config_map(self):
         """Helper to map obs/exp index to Configuration name from XML early."""
         self.config_mapping = {} # (obs_num, exp_index) -> config_name
+        self.config_to_obs = {} # cfg_name -> set of obs_nums
         if self._root is None: return
         for obs in self._root.findall(".//Observation"):
             num = obs.findtext("ObservationNumber")
@@ -141,6 +142,9 @@ class NIRSpecMOSReviewer:
                                 cfg_name = cfg.get('Name')
                                 if cfg_name:
                                     self.config_mapping[(num, str(i+1))] = cfg_name
+                                    if cfg_name not in self.config_to_obs: 
+                                        self.config_to_obs[cfg_name] = set()
+                                    self.config_to_obs[cfg_name].add(num)
 
     def _load_exports(self, _is_retry=False):
         """Search for and parse exported files (diag, csv) to supplement XML data."""
@@ -956,11 +960,20 @@ class NIRSpecMOSReviewer:
                 try:
                     val = float(re.search(r'[\d\.]+', xml_pa).group())
                     err_text = self.stats['program_metadata'].get('error_text', "")
-                    if f"created with an Aperture PA of {val:.4f}" in err_text:
+                    pa_err_msg = f"created with an Aperture PA of {val:.4f}"
+                    if pa_err_msg in err_text:
                         is_unplanned = True
+                        if 'pa_errors' not in self.stats: self.stats['pa_errors'] = {}
+                        if obs_num not in self.stats['pa_errors']:
+                            # Find the full line
+                            for line in err_text.split('\n'):
+                                if pa_err_msg in line:
+                                    self.stats['pa_errors'][obs_num] = line.strip()
+                                    break
                 except: pass
             
             if is_unplanned:
+                if obs_num not in self.obs_info: self.obs_info[obs_num] = {} # Should already exist
                 self.obs_info[obs_num]['sign'] = "👷"
                 self.obs_info[obs_num]['unplanned'] = True
 
@@ -2376,22 +2389,69 @@ class NIRSpecMOSReviewer:
         write("\n" + "="*80)
         write("🚩 SUBMISSION ERRORS / WARNINGS")
         write("="*80)
-        # Deduplicate: count occurrences, print each unique line once with a count suffix
+
+        # Map each line to the observation numbers it belongs to
+        pa_errors_map = self.stats.get('pa_errors', {}) # obs_num -> full_line
+        error_to_obs = {} # line -> set of obs_nums
+
+        # Pre-process PA errors from our mapping
+        for o, l in pa_errors_map.items():
+            if l not in error_to_obs: error_to_obs[l] = set()
+            error_to_obs[l].add(o)
+
+        lines = [l.strip() for l in meta['error_text'].split('\n') if l.strip()]
+        
         counts = {}
-        order  = []
-        for line in meta['error_text'].split('\n'):
-            line = line.strip()
-            if not line:
-                continue
-            if line not in counts:
-                counts[line] = 0
-                order.append(line)
-            counts[line] += 1
-        n_total = len(self.analytics)
+        order = []
+        for line in lines:
+            # Determine observation number(s) for this line
+            obs_nums = error_to_obs.get(line, set()).copy()
+            
+            # 1. Config Name mapping
+            # Look for "Config X" in the line
+            cfg_match = re.search(r'Config\s+([^\s\(]+)', line)
+            if cfg_match:
+                cfg_name = cfg_match.group(1)
+                if cfg_name in self.config_to_obs:
+                    obs_nums.update(self.config_to_obs[cfg_name])
+            
+            # 2. Observation N (explicit)
+            m_obs = re.search(r'Observation (\d+)', line)
+            if m_obs: obs_nums.add(m_obs.group(1))
+
+            # Filter out if ALL associated observations are excluded from review (👷)
+            if obs_nums:
+                all_excluded = all(self.obs_info.get(o, {}).get('sign') == "👷" for o in obs_nums)
+                if all_excluded:
+                    continue
+                
+                # Filter out those individual observations that are excluded from the display list
+                visible_obs = sorted([o for o in obs_nums if self.obs_info.get(o, {}).get('sign') != "👷"], key=int)
+                if not visible_obs: continue
+                
+                obs_prefix = f"(Obs {', '.join(visible_obs)}) "
+                display_line = f"{obs_prefix}{line}"
+            else:
+                display_line = line
+
+            if display_line not in counts:
+                counts[display_line] = 0
+                order.append(display_line)
+            counts[display_line] += 1
+
+        n_reviewed = len([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') != "👷"])
+        
         for line in order:
-            is_error = 'error' in line.lower() or 'assigned an Aperture PA of' in line
-            icon  = icons['ERROR'] if is_error else icons['WARNING']
-            count = f" ({counts[line]}/{n_total})" if counts[line] > 1 else ""
+            # Check if original error line (without prefix) was an error or warning
+            orig_line = line
+            if line.startswith("(Obs "):
+                orig_line = line.split(") ", 1)[-1]
+                
+            is_error = 'error' in orig_line.lower() or 'assigned an Aperture PA of' in orig_line
+            icon = icons['ERROR'] if is_error else icons['WARNING']
+            
+            # Use n_reviewed for the count if it applies to multiple
+            count = f" ({counts[line]}/{n_reviewed})" if counts[line] > 1 else ""
             write(f"  {icon} {line}{count}")
 
     def _report_target_catalogs(self, write):
@@ -2799,7 +2859,8 @@ class NIRSpecMOSReviewer:
 
     def _report_spar_review(self, write, icons):
         """ Consolidation of review checks in a checklist format. """
-        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') in ["🔎", "👷", "☑️"]]
+        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') in ["🔎", "☑️"]]
+        active_catalogs = sorted({self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')})
         
         write("\n" + "="*80)
         write("✍️ SPAR REVIEW")
@@ -2901,14 +2962,15 @@ class NIRSpecMOSReviewer:
         # (Catalog section)
         write("\nCATALOG")
         cat_info = self.stats.get('catalog_info', {})
-        cat_warns = []
-        reviewed_catalogs = {self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')}
         
-        for cat, info in cat_info.items():
-            if cat not in reviewed_catalogs: continue
+        for cat in active_catalogs:
+            if cat not in cat_info: continue
+            info = cat_info[cat]
+            write(f"[{cat}]")
             
             w_max = info.get('weight_range', (0,0))[1]
             s_range = info.get('stellarity_range', (0,0))
+            
             write(f"✅ weight max {w_max:,.0f}")
             if s_range[0] == s_range[1]:
                 val = s_range[0]
@@ -2917,13 +2979,14 @@ class NIRSpecMOSReviewer:
             else:
                 write(f"✅ stellarity {s_range[0]:.2g} – {s_range[1]:.2g}")
 
+            # Also report any high-level warnings for this catalog here
             if info.get('accuracy', 0) > 15:
-                cat_warns.append(f"Catalog '{cat}' accuracy {info['accuracy']} mas (> 15 mas)")
+                write(f"{icons['WARNING']}  Catalog accuracy {info['accuracy']} mas (> 15 mas)")
             if w_max >= 1e9:
-                cat_warns.append(f"Catalog '{cat}' weight max >= 1e9")
-                
-        for w in cat_warns:
-            write(f"{icons['WARNING']} {w}")
+                write(f"{icons['WARNING']}  Catalog weight max >= 1e9")
+            max_id = info.get('max_id', 0)
+            if max_id >= 1000000:
+                write(f"{icons['WARNING']}  Catalog max ID {max_id:,} > max recommended 1,000,000")
 
         write("\nMOS OBSERVATION/VISIT STRUCTURE")
         mismatched_obs = []
@@ -2973,7 +3036,7 @@ class NIRSpecMOSReviewer:
         if analysis:
             # Try to get the weights for the label, only for catalogs in reviewed observations
             weights = []
-            for cat in reviewed_catalogs:
+            for cat in active_catalogs:
                 if cat in analysis:
                     top_20 = analysis[cat].get('top_20', [])
                     if top_20:
@@ -3153,6 +3216,27 @@ class NIRSpecMOSReviewer:
         #     for d in abs_dirs:
         #         write(f"     - {d}")
         
+        # 3. Existing Plots
+        plot_files = sorted(list(self.input_path.parent.rglob(f"{self.input_path.stem}*.png")))
+        if plot_files:
+            write(f"\n🖼️  Existing Plots ({len(plot_files)} files)")
+            mtimes = [f.stat().st_mtime for f in plot_files]
+            min_mt = min(mtimes)
+            max_mt = max(mtimes)
+            min_date = datetime.fromtimestamp(min_mt).strftime('%Y-%m-%d %H:%M:%S')
+            max_date = datetime.fromtimestamp(max_mt).strftime('%Y-%m-%d %H:%M:%S')
+            if min_mt == max_mt:
+                write(f"   Modified: {min_date}")
+            else:
+                write(f"   Modified: {min_date} – {max_date}")
+            
+            # Decision preview
+            last_change = max(self.files_used.values()) if self.files_used else 0
+            if min_mt > last_change:
+                write(f"   (Up to date; regeneration will be skipped by default)")
+            else:
+                write(f"   (Old plots detected; will regenerate unless skipped)")
+
         # 2. Categorize other files
         other_files = [p for p in self.files_used.keys() if p != apt_path_abs]
         if not other_files: return
@@ -3285,18 +3369,40 @@ class NIRSpecMOSReviewer:
         if not self.visits_csv_path: return
         script_dir = Path(__file__).parent
         plot_script = script_dir / "msa_coverage_plot.py"
-        if plot_script.exists():
-            try:
-                valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
-                if not valid_obs: return
-                valid_obs_str = ",".join(valid_obs)
-                print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
-                subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), valid_obs_str], 
-                               check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Warning: MSA coverage plot generation failed.")
-            except Exception as e:
-                print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
+        if not plot_script.exists(): return
+        
+        try:
+            valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
+            if not valid_obs: return
+            
+            # Check if plots exist and are up to date
+            existing_plots = []
+            plot_dir = self.input_path.parent
+            for obs_id in valid_obs:
+                p_base = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
+                p_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_id}.png"
+                if p_base.exists(): existing_plots.append(p_base)
+                elif p_visits.exists(): existing_plots.append(p_visits)
+            
+            if existing_plots:
+                # Compare timestamps
+                last_change = max(self.files_used.values()) if self.files_used else 0
+                plot_mtime = min(p.stat().st_mtime for p in existing_plots)
+                
+                if plot_mtime > last_change:
+                    print(f"\n🖼️  {len(existing_plots)} MSA coverage plots exist and are up to date.")
+                    user_input = "n" if self.auto_yes else input("Regenerate plots? [y/N]: ").strip().lower()
+                    if not user_input or user_input == 'n':
+                        return
+
+            valid_obs_str = ",".join(valid_obs)
+            print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
+            subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), valid_obs_str], 
+                           check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Warning: MSA coverage plot generation failed.")
+        except Exception as e:
+            print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
                 
     def generate_dithers_plot(self):
         """
@@ -3305,6 +3411,26 @@ class NIRSpecMOSReviewer:
         import subprocess
         plot_script = Path(__file__).parent / "plot_dithers.py"
         
+        # Collect all dither plot files to check for staleness
+        plot_files = []
+        plot_dir = self.input_path.parent
+        for obs_num in sorted(self.analytics.keys(), key=int):
+            if str(obs_num) not in [str(o) for o in self.reviewed_obs_nums]: continue
+            p_base = plot_dir / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
+            p_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
+            if p_base.exists(): plot_files.append(p_base)
+            elif p_visits.exists(): plot_files.append(p_visits)
+
+        if plot_files:
+            last_change = max(self.files_used.values()) if self.files_used else 0
+            plot_mtime = min(p.stat().st_mtime for p in plot_files)
+            
+            if plot_mtime > last_change:
+                print(f"\n🖼️  Dither plots exist and are up to date.")
+                user_input = "n" if self.auto_yes else input("Regenerate dither plots? [y/N]: ").strip().lower()
+                if not user_input or user_input == 'n':
+                    return
+
         for obs_num in sorted(self.analytics.keys(), key=int):
             if str(obs_num) not in [str(o) for o in self.reviewed_obs_nums]: continue
             
