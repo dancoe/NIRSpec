@@ -91,8 +91,8 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 ## Files and Dependencies
 
 ### Core Files
-*   **`APT_review.py`**: The primary script. It handles XML parsing, catalog checks, and report generation using only the **Python Standard Library**.
-*   **`APT_download.py`**: Utility to download `.aptx` files from STScI links.
+*   **`APT_review.py`**: The primary script. It handles PID downloading, XML parsing, catalog checks, and report generation using only the **Python Standard Library**.
+*   **`APT_download.py`**: Batch utility to download multiple `.aptx` files from STScI links. (Note: `APT_review.py` now handles individual PID downloads natively).
 *   **`export_all.py`**: Automates the export of `msatargets` for multiple programs.
 *   **`consolidated_shorts_report.py`**: Compiles a single report of shorts and review status across multiple programs.
 *   **`plot_dithers.py`**: Generates high-fidelity geometric dither pattern plots. Supports quadrant coloring (`--quadrants`) and reflected dither visualization (`--reflected`).
@@ -121,12 +121,21 @@ pip install numpy matplotlib pandas pysiaf
 ### 1. Run the review script
 
 ```bash
-python APT_review.py /path/to/program.aptx
-```
-
 The report is output to the Terminal and saved to `<filename>_review.txt` in the same directory (e.g., `program_review.txt`).
 
-### 2. Supplement with CSV exports
+### 2. Run with a Program ID
+You can also run the script directly with a 4 or 5 digit Program ID. It will automatically create a subdirectory, download the `.aptx` file (handling duplicates if necessary), and run the review:
+
+```bash
+python APT_review.py 7201
+```
+
+If the program file already exists, it will prompt you to:
+* **[U]se** the existing file (most recent)
+* **[D]ownload** a newest version (appends a date timestamp like `_0421.aptx`)
+* **[O]verwrite** the current file
+
+### 3. Supplement with CSV exports
 
 The script automatically finds relevant CSV files (MSATA Target Info, Wavelength Coverage) if they are in a subfolder next to the APT file or in your current directory. You can also specify a directory explicitly:
 

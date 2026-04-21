@@ -9,10 +9,9 @@ import os
 import shutil
 import csv
 import io
-from datetime import datetime
-import subprocess
-import sys
 import shlex
+import urllib.request
+from datetime import datetime
 
 # Namespaces
 NS = {
@@ -3471,32 +3470,77 @@ class NIRSpecMOSReviewer:
             except FileNotFoundError:
                 print(f"Warning: plot_dithers.py script not found at {plot_script}. Dither plots skipped.")
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="APT Review for NIRSpec MOS programs.")
-    parser.add_argument("apt_file", nargs='?', help="Path to .aptx or .xml file. If omitted, searches current directory for a single .aptx file.")
-    parser.add_argument("--output", "-o", help="Path to save the report. Defaults to <stem>_review.txt")
-    parser.add_argument("--obs", help="Observations to review (e.g. '3' or '1,3-5,10'). Alias for --include.")
-    parser.add_argument("--include", "-i", help="Observations to include (e.g. '1,3-5,10')")
-    parser.add_argument("--exclude", "-x", help="Observations to exclude (e.g. '2,6-8')")
-    parser.add_argument("--exports_dir", help="Directory containing exported files (*-TA.csv, science observation CSVs)")
-    parser.add_argument("--noplots", action="store_true", help="Do not generate MSA coverage plots")
-    parser.add_argument("--shorts_only", action="store_true", help="Only perform electrical shorts check")
-    parser.add_argument("--exports", "-e", action="store_true", help="Automatically answer yes to all prompts.")
-    parser.add_argument("--dithers", action="store_true", help="Only output dither tables and generate dither plots.")
+
+
+def download_aptx(pid, dest_dir):
+    """Download JWST APTX file from STScI. Handle existing files."""
+    base_url = "https://www.stsci.edu/jwst/phase2-public/"
+    url = f"{base_url}{pid}.aptx"
+    
+    # Check what already exists in dest_dir
+    existing = list(Path(dest_dir).glob(f"JWST{pid}*.aptx"))
+    
+    if existing:
+        # Prompt user if interactive, otherwise default to using existing
+        # But for now, let's follow the user's suggestion of handling duplicates
+        print(f"\n📁 Program {pid} APTX file(s) already exist in {dest_dir}:")
+        for f in sorted(existing, key=lambda x: x.stat().st_mtime):
+            print(f"  - {f.name}")
+        
+        choice = input("\nAction: [U]se existing (most recent), [D]ownload newest, [O]verwrite? [U/d/o]: ").strip().lower()
+        
+        if not choice or choice == 'u':
+            return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
+        elif choice == 'o':
+            dest_file = Path(dest_dir) / f"JWST{pid}.aptx"
+        else: # Download newest with timestamp
+            now = datetime.now().strftime("%m%d") # e.g. 421 for April 21
+            dest_file = Path(dest_dir) / f"JWST{pid}_{now}.aptx"
+    else:
+        dest_file = Path(dest_dir) / f"JWST{pid}.aptx"
+
+    print(f"📥 Downloading {url} to {dest_file}...")
+    try:
+        urllib.request.urlretrieve(url, dest_file)
+        print(f"✅ Successfully downloaded {pid}")
+        return dest_file
+    except Exception as e:
+        print(f"❌ Error downloading {pid}: {e}")
+        if existing:
+            print("Using existing file as fallback.")
+            return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="Review JWST NIRSpec MOS Programs")
+    parser.add_argument("apt_file", nargs="?", help="Path to .aptx file or Program ID (e.g. 10264)")
+    parser.add_argument("-o", "--output", help="Output report file")
+    parser.add_argument("-e", "--exports", action="store_true", help="Attempt to invoke APT to export missing CSVs")
+    parser.add_argument("-d", "--dithers", action="store_true", help="Generate dither plot")
+    parser.add_argument("-s", "--shorts-only", action="store_true", help="Only report electrically shorted shutters")
+    parser.add_argument("-i", "--include", help="Only process these observations (e.g. 1:1,2,7-10)")
+    parser.add_argument("-x", "--exclude", help="Exclude these observations")
+    parser.add_argument("--obs", help="Alias for --include")
+    parser.add_argument("--exports-dir", help="Explicit directory for CSV exports")
+    parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
+    
     args = parser.parse_args()
 
-    # If no apt_file provided, look for one in the current directory
+    # Handle PID input
+    if args.apt_file and args.apt_file.isdigit() and 4 <= len(args.apt_file) <= 5:
+        pid = args.apt_file
+        print(f"🚀 Handling Program ID: {pid}")
+        dest_dir = Path.cwd() / pid
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        # Change CWD to the PID directory so outputs go there
+        os.chdir(dest_dir)
+        args.apt_file = str(download_aptx(pid, "."))
+        print(f"📍 Working in directory: {dest_dir}")
+
     if not args.apt_file:
-        apt_files = list(Path('.').glob('*.aptx'))
-        if len(apt_files) == 1:
-            args.apt_file = str(apt_files[0])
-            print(f"No APT file specified. Found {args.apt_file}. Running on that...")
-        elif len(apt_files) > 1:
-            # Sort by modification time, most recent first
-            apt_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        apt_files = sorted(list(Path('.').glob('*.aptx')), key=lambda x: x.stat().st_mtime, reverse=True)
+        if apt_files:
             most_recent = apt_files[0]
-            print(f"Multiple .aptx files found. Most recent: {most_recent.name}")
-            
             user_input = "y" if args.exports else input(f"Run on {most_recent.name}? [Y/n]: ").strip().lower()
             if not user_input or user_input == 'y':
                 args.apt_file = str(most_recent)
@@ -3509,7 +3553,7 @@ if __name__ == "__main__":
                 sys.exit(1)
         else:
             print("No .aptx files found in the current directory.")
-            print("Please specify an .aptx or .xml file.")
+            print("Please specify an .aptx or .xml file or a Program ID.")
             sys.exit(1)
 
     # --obs is a friendly alias for --include
@@ -3537,3 +3581,6 @@ if __name__ == "__main__":
         reviewer.generate_dithers_plot()
     elif not args.noplots:
         reviewer.generate_plots()
+
+if __name__ == "__main__":
+    main()
