@@ -12,7 +12,7 @@
 *   and more...
 
 `msa_coverage_plot.py` optionally generates plots of the MSA coverage on the sky, including:
-* catalog color-coded by weight
+* catalog color-coded and sorted by weight (higher weight on top)
 * reference stars used for MSATA
 * MSA quadrants
 

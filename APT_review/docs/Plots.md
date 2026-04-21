@@ -5,7 +5,7 @@ The MSA coverage plots provide a visual representation of how your proposed targ
 ## Plot Features
 
 ### 1. Target Visualization
-- **Science Targets**: Plotted as circles, colored by their logarithmic weight using a rainbow colormap (Higher weights = Redder/Larger, Lower weights = Bluer/Smaller).
+- **Science Targets**: Plotted as circles, colored by their logarithmic weight using a rainbow colormap (Higher weights = Redder/Larger, Lower weights = Bluer/Smaller). Higher weight targets are plotted on top of lower weight targets within each category.
 - **Reference Objects**: Plotted as gray stars (`*`).
 
 ### 2. Observation Status (Outlines)

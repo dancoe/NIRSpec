@@ -429,7 +429,8 @@ def main():
                 if key not in combined_sources or src['weight'] > combined_sources[key]['weight']:
                     combined_sources[key] = src
         
-        all_sources = list(combined_sources.values())
+        # Sort by weight ascending so higher weights are plotted last (on top) within categories
+        all_sources = sorted(combined_sources.values(), key=lambda x: x['weight'])
         weights = [s['weight'] for s in all_sources if s['weight'] > 0]
         
         if not weights:
