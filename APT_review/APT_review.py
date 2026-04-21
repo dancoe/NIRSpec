@@ -11,6 +11,8 @@ import csv
 import io
 import shlex
 import urllib.request
+import subprocess
+import sys
 from datetime import datetime
 
 # Namespaces
@@ -3396,7 +3398,8 @@ class NIRSpecMOSReviewer:
 
             valid_obs_str = ",".join(valid_obs)
             print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
-            subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), valid_obs_str], 
+            subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), 
+                            str(self.pid), valid_obs_str], 
                            check=True)
         except subprocess.CalledProcessError as e:
             print(f"Warning: MSA coverage plot generation failed.")
