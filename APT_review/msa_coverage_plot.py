@@ -710,15 +710,30 @@ def main():
                                    markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.15, linestyle='None'))
         custom_labels.append('Target')
 
-        # 5. Weight Samples (5 log-spaced samples)
-        for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
-            log_w = min_log_wt + frac * log_range
-            w = 10**log_w
+        # 5. Weight Samples (up to 5 actual weights from the catalog)
+        unique_weights = sorted(list(set(weights)), reverse=True)
+        if len(unique_weights) <= 5:
+            legend_weights = unique_weights
+        else:
+            # Pick 5 closest to the log-spaced targets (1.0, 0.75, 0.5, 0.25, 0.0)
+            legend_weights = []
+            for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
+                target_log_w = min_log_wt + frac * log_range
+                closest_w = min(unique_weights, key=lambda w: abs(np.log10(w) - target_log_w))
+                if closest_w not in legend_weights:
+                    legend_weights.append(closest_w)
+            legend_weights.sort(reverse=True)
+
+        for w in legend_weights:
+            frac = (np.log10(w) - min_log_wt) / log_range if log_range > 0 else 0.5
             sz = 20 + 45 * frac # Matching the 20 to 65 scaling
             pt_color = plt.cm.rainbow(frac)
             custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
                                        alpha=1.0, markersize=np.sqrt(sz), linestyle='None'))
-            custom_labels.append(f'Weight: {w:,.0f}')
+            
+            # Format weight nicely: integer if possible, else 1 decimal
+            w_str = f"{w:,.0f}" if w == int(w) else f"{w:,.1f}"
+            custom_labels.append(f'Weight: {w_str}')
 
         # 6. Observed Reference Object
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
