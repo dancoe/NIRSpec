@@ -9,6 +9,7 @@ import csv
 import sys
 from pathlib import Path
 import numpy as np
+import argparse
 try:
     import pysiaf
     from pysiaf.utils import rotations
@@ -190,14 +191,19 @@ def load_catalogs(xml_path):
     return catalogs, proposal_id
 
 def main():
-    if len(sys.argv) < 3:
-        print("Usage: python msa_coverage_plot.py <aptx_file> <visits_csv> [comma_separated_valid_obs]")
-        return
-
-    xml_path = sys.argv[1]
-    visits_csv = sys.argv[2]
-    proposal_id_arg = sys.argv[3] if len(sys.argv) > 3 else None
-    valid_obs_arg = sys.argv[4] if len(sys.argv) > 4 else None
+    parser = argparse.ArgumentParser(description="Generate NIRSpec MSA coverage plots")
+    parser.add_argument("xml_path", help="Path to XML or APTX file")
+    parser.add_argument("visits_csv", help="Path to visits CSV file")
+    parser.add_argument("proposal_id", nargs="?", default=None, help="Proposal ID")
+    parser.add_argument("valid_obs", nargs="?", default=None, help="Comma-separated valid observation numbers")
+    parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', 
+                        help="Combined plot strategy (default: auto, plot if separation < 30')")
+    
+    args = parser.parse_args()
+    xml_path = args.xml_path
+    visits_csv = args.visits_csv
+    proposal_id_arg = args.proposal_id
+    valid_obs_arg = args.valid_obs
     
     valid_obs = valid_obs_arg.split(',') if valid_obs_arg else None
     
@@ -786,8 +792,34 @@ def main():
                 all_ctrs_ra.append(ra)
                 all_ctrs_dec.append(dec)
 
+    # Determine if we should generate a combined plot and use common limits
+    do_combined = False
+    if len(obs_groups) > 1:
+        if args.combined == 'always':
+            do_combined = True
+        elif args.combined == 'never':
+            do_combined = False
+        else: # auto
+            if not all_ctrs_ra:
+                do_combined = True # Fallback if no pointings found
+            else:
+                avg_dec = sum(all_ctrs_dec) / len(all_ctrs_dec)
+                cos_dec = np.cos(np.deg2rad(avg_dec))
+                # Calculate max separation among all pointings
+                ra_min, ra_max = min(all_ctrs_ra), max(all_ctrs_ra)
+                dec_min, dec_max = min(all_ctrs_dec), max(all_ctrs_dec)
+                dra = (ra_max - ra_min) * cos_dec
+                ddec = dec_max - dec_min
+                max_sep_deg = (dra**2 + ddec**2)**0.5
+                
+                if max_sep_deg <= 0.5: # 30 arcminutes
+                    do_combined = True
+                else:
+                    print(f"Skipping combined plot: max separation {max_sep_deg*60:.1f}' > 30'")
+
     common_limits = None
-    if all_ctrs_ra:
+    # Only use common limits if we are in combined mode (close enough or forced)
+    if do_combined and all_ctrs_ra:
         g_c_ra = sum(all_ctrs_ra)/len(all_ctrs_ra)
         g_c_dec = sum(all_ctrs_dec)/len(all_ctrs_dec)
         cos_dec = np.cos(np.deg2rad(g_c_dec))
@@ -806,7 +838,7 @@ def main():
         title = f"JWST {prog_num} Obs {obs_id} ({prefix} {visit_str})"
         plot_group(rows, title, f"{xml_stem}_Obs{obs_id}", common_limits=common_limits)
     
-    if len(obs_groups) > 1:
+    if do_combined:
         all_rows = [r for rows in obs_groups.values() for r in rows]
         plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}", common_limits=common_limits)
     

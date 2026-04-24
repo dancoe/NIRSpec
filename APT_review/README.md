@@ -85,6 +85,7 @@ EXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES
 | `docs/ReviewChecklist.md` | Human-facing review checklist used alongside the automated report. |
 | `docs/ChangeLog.md` | Historical log of updates and new features added to the tool. |
 | `docs/MSA.md` | **New:** Detailed reference for NIRSpec MSA layout, numbering, and global coordinates. |
+| `docs/IntegrationTimes.md` | **New:** Detailed reference for NIRSpec integration and exposure time calculations. |
 
 ---
 

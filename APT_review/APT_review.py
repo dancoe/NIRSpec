@@ -35,7 +35,7 @@ TA_MAG_LIMITS = {
 }
 
 class NIRSpecMOSReviewer:
-    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, **kwargs):
+    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, combined='auto', **kwargs):
         self.input_path = Path(input_file).absolute()
         self.exports_path = Path(exports_dir) if exports_dir else None
         self.output_path = Path(output_file) if output_file else None
@@ -106,6 +106,7 @@ class NIRSpecMOSReviewer:
         self.shorts_only = shorts_only
         self.dithers_only = dithers_only
         self.auto_yes = auto_yes
+        self.combined = combined
         
         try:
             self._load_xml()
@@ -128,24 +129,32 @@ class NIRSpecMOSReviewer:
         self.config_mapping = {} # (obs_num, exp_index) -> config_name
         self.config_to_obs = {} # cfg_name -> set of obs_nums
         if self._root is None: return
-        for obs in self._root.findall(".//Observation"):
-            num = obs.findtext("ObservationNumber")
+        
+        # Use self.findall to handle namespaces correctly
+        for obs in self.findall(self._root, "Observation"):
+            num = obs.findtext(f"{{{NS['apt']}}}Number")
             if not num: continue
-            for n_mos_uri in [NS.get('nsmos'), 'http://www.stsci.edu/JWST/APT/Template/NirspecMOS']:
-                if not n_mos_uri: continue
-                mos = obs.find(f".//{{{n_mos_uri}}}NirspecMOS")
-                if mos is not None:
-                    pointings = mos.find(f"{{{n_mos_uri}}}Pointings")
-                    if pointings is not None:
-                        for i, pt in enumerate(pointings.findall(f"{{{n_mos_uri}}}Pointing")):
-                            cfg = pt.find(f"{{{n_mos_uri}}}Configuration")
-                            if cfg is not None:
-                                cfg_name = cfg.get('Name')
-                                if cfg_name:
-                                    self.config_mapping[(num, str(i+1))] = cfg_name
-                                    if cfg_name not in self.config_to_obs: 
-                                        self.config_to_obs[cfg_name] = set()
-                                    self.config_to_obs[cfg_name].add(num)
+            
+            # Find NirspecMOS template
+            mos = self.find(obs, "nsmos:NirspecMOS")
+            if mos is not None:
+                # Try both new (ConfigurationPointings) and old (Pointings) structures
+                pts_node = mos.find(f"{{{NS['nsmos']}}}ConfigurationPointings", NS)
+                pt_tag = f"{{{NS['nsmos']}}}ConfigurationPointing"
+                if pts_node is None:
+                    pts_node = mos.find(f"{{{NS['nsmos']}}}Pointings", NS)
+                    pt_tag = f"{{{NS['nsmos']}}}Pointing"
+                
+                if pts_node is not None:
+                    for i, pt in enumerate(pts_node.findall(pt_tag, NS)):
+                        cfg = pt.find(f"{{{NS['nsmos']}}}Configuration", NS)
+                        if cfg is not None:
+                            cfg_name = (cfg.text or "").strip() or cfg.get('Name')
+                            if cfg_name:
+                                self.config_mapping[(num, str(i+1))] = cfg_name
+                                if cfg_name not in self.config_to_obs: 
+                                    self.config_to_obs[cfg_name] = set()
+                                self.config_to_obs[cfg_name].add(num)
 
     def _load_exports(self, _is_retry=False):
         """Search for and parse exported files (diag, csv) to supplement XML data."""
@@ -906,16 +915,23 @@ class NIRSpecMOSReviewer:
                     prime_template = children[0].tag.split('}')[-1]
 
             # Parallel
-            parallel_node = obs.find(f"{{{NS['apt']}}}CoordinatedParallelSet/{{{NS['apt']}}}CoordinatedParallel")
+            is_parallel = obs.findtext(f"{{{NS['apt']}}}CoordinatedParallel") == "true"
             parallel_str = "None"
-            if parallel_node is not None:
-                p_temp_node = parallel_node.find(f"{{{NS['apt']}}}Template")
+            if is_parallel:
+                p_node = obs.find(f"{{{NS['apt']}}}FirstCoordinatedTemplate")
                 p_mode = ""
-                if p_temp_node is not None:
-                    p_children = list(p_temp_node)
+                if p_node is not None:
+                    p_children = list(p_node)
                     if p_children:
                         p_mode = p_children[0].tag.split('}')[-1]
-                parallel_str = self.abbreviate_mode(p_mode)
+                
+                if p_mode:
+                    parallel_str = self.abbreviate_mode(p_mode)
+                else:
+                    # Fallback to Parallel Set name
+                    parallel_str = obs.findtext(f"{{{NS['apt']}}}CoordinatedParallelSet") or "None"
+                    if "-" in parallel_str:
+                        parallel_str = parallel_str.split("-")[-1].strip()
 
             is_mos = (prime_template in ["NirspecMOS", "NirspecMultiObjectSpectroscopy"])
             is_completed = (status == "COMPLETED")
@@ -1648,12 +1664,14 @@ class NIRSpecMOSReviewer:
                 
                 if "IRS2" in (readout or ""):
                     frame_time = 14.58889
-                    # NRSIRS2 uses 5 frames per group plus 1 reset frame
-                    dur_per_int = (int(groups) * 5 + 1) * frame_time
+                    # NRSIRS2RAPID uses 1 frame per group; NRSIRS2 uses 5
+                    fpg = 1 if "RAPID" in (readout or "") else 5
+                    dur_per_int = (int(groups) * fpg + 1) * frame_time
                 else:
                     frame_time = 10.73677
-                    # Standard modes use 1 frame per group plus 1 reset frame
-                    dur_per_int = (int(groups) + 1) * frame_time
+                    # NRSRAPID uses 1 frame per group; NRS uses 4
+                    fpg = 1 if "RAPID" in (readout or "") else 4
+                    dur_per_int = (int(groups) * fpg + 1) * frame_time
                 spec_durations[spec_id] = dur_per_int
                 spec_ints[spec_id] = int(ints)
 
@@ -1681,7 +1699,7 @@ class NIRSpecMOSReviewer:
             self.analytics[num]['exposures'] = exp_spec_list
             
             pts_data = []
-            nod_map = {"3 Shutter Slitlet": 3, "2 Shutter Slitlet": 2}
+            nod_map = {"5 Shutter Slitlet": 5, "3 Shutter Slitlet": 3, "2 Shutter Slitlet": 2}
             has_leakcal = False
             
             for i, pt in enumerate(cfg_pts):
@@ -2788,12 +2806,12 @@ class NIRSpecMOSReviewer:
                     if o in self.analytics:
                         nod = self.analytics[o].get('nod_pattern', 'NONE')
                         nod_counts[nod] = nod_counts.get(nod, 0) + 1
-                standard = "3 Shutter Slitlet"
+                standards = ["2 Shutter Slitlet", "3 Shutter Slitlet", "5 Shutter Slitlet"]
                 if nod_counts:
-                    if set(nod_counts) == {standard}:
-                        write(f"{icons['SUCCESS']} Nod Pattern: {standard}")
+                    if all(n in standards for n in nod_counts):
+                        write(f"{icons['SUCCESS']} Nod Pattern: " + ", ".join(sorted(set(nod_counts))))
                     else:
-                        others = ", ".join(f"{n}" for n in nod_counts if n != standard)
+                        others = ", ".join(f"{n}" for n in nod_counts if n not in standards)
                         write(f"{icons['WARNING']} Nod Pattern: non-standard detected ({others})")
             
             # Extra Data Excess warnings (if any)
@@ -3398,9 +3416,11 @@ class NIRSpecMOSReviewer:
 
             valid_obs_str = ",".join(valid_obs)
             print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
-            subprocess.run([sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), 
-                            str(self.pid), valid_obs_str], 
-                           check=True)
+            cmd = [sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), 
+                            str(self.pid), valid_obs_str]
+            if self.combined != 'auto':
+                cmd.extend(['--combined', self.combined])
+            subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Warning: MSA coverage plot generation failed.")
         except Exception as e:
@@ -3526,6 +3546,7 @@ def main():
     parser.add_argument("--obs", help="Alias for --include")
     parser.add_argument("--exports-dir", help="Explicit directory for CSV exports")
     parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
+    parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', help="Combined plot strategy")
     
     args = parser.parse_args()
 
@@ -3577,7 +3598,8 @@ def main():
         exports_dir=args.exports_dir,
         shorts_only=args.shorts_only,
         dithers_only=args.dithers,
-        auto_yes=args.exports
+        auto_yes=args.exports,
+        combined=args.combined
     )
     reviewer.print_report()
     if args.dithers:
