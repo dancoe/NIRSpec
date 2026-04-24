@@ -2521,12 +2521,37 @@ class NIRSpecMOSReviewer:
             # Cross-visit summary for high-priority targets
             if len(v_keys) > 1:
                 write(f"\n[Catalog {cat_name}: Summary of Top 20 Targets Across Visits]")
+                
+                # Logic to extend the summary list if top targets are not observed
+                top_20_ids = [str(s['id']) for s in analysis[cat_name]['top_20']]
+                observed_in_any = set()
+                for v_k in v_keys:
+                    observed_in_any.update(analysis[cat_name]['observed_in_visit'].get((obs_num, v_k), set()))
+                
+                observed_in_top_20 = [sid for sid in top_20_ids if sid in observed_in_any]
+                
+                num_to_add = 10 - len(observed_in_top_20)
+                other_observed = []
+                if num_to_add > 0:
+                    all_sorted = [str(sid) for sid in analysis[cat_name]['all_sorted_ids']]
+                    top_20_set = set(top_20_ids)
+                    for sid in all_sorted:
+                        if sid in observed_in_any and sid not in top_20_set:
+                            other_observed.append(sid)
+                            if len(other_observed) >= max(num_to_add, 15):
+                                break
+                
+                combined_list = top_20_ids + (["..."] if other_observed else []) + other_observed
+
                 summary_header = f"{'ID':>6} | {'Weight':>10} | {'Rank':>4} | Visits"
                 write(summary_header)
                 write("-" * 45)
                 
-                for s in analysis[cat_name]['top_20']:
-                    sid_str = str(s['id'])
+                for sid_str in combined_list:
+                    if sid_str == "...":
+                        write("...")
+                        continue
+                        
                     weight = self.catalogs[cat_name]['sources'][sid_str]['weight']
                     rank = analysis[cat_name]['ranks'].get(sid_str, 0)
                     
