@@ -13,6 +13,16 @@ import shlex
 import urllib.request
 import subprocess
 import sys
+import warnings
+import logging
+import contextlib
+
+# Suppress binary incompatibility warnings from scipy/numpy
+warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*MessageStream size changed.*")
+
+# Silence pysiaf during import and usage
+logging.getLogger('pysiaf').setLevel(logging.ERROR)
+
 from datetime import datetime
 
 # Namespaces
@@ -411,8 +421,10 @@ class NIRSpecMOSReviewer:
             print(f"📡 Loading PySIAF for quadrant analysis using Visits file {file_path.name}...")
             
         try:
-            import pysiaf
-            from pysiaf.utils import rotations
+            # Silence pysiaf update/PRD warnings during import
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                import pysiaf
+                from pysiaf.utils import rotations
             self.has_pysiaf = True
         except ImportError:
             self.has_pysiaf = False
@@ -476,6 +488,9 @@ class NIRSpecMOSReviewer:
                         pa_ptr = float(pa_str) if pa_str else 0.0
                         
                         if self.has_pysiaf:
+                            if ap_name not in siaf.apertures:
+                                # Silently skip non-NIRSpec visits (e.g. NIRCam parallels)
+                                continue
                             main_ap = siaf[ap_name]
                             attitude = rotations.attitude(main_ap.V2Ref, main_ap.V3Ref, ra_ptr, dec_ptr, pa_ptr)
                             
@@ -2674,9 +2689,39 @@ class NIRSpecMOSReviewer:
                                 if n1_min == -1 and n1_max == -2 and n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL"
                                 elif n1_min == -1 and n1_max == -2: s = f"{icons['FULL']} FULL (NRS1)"
                                 elif n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL (NRS2)"
-                                elif n1_max > 0 and n2_min > 0: s = f"{icons['MOSTLY']} GAP: {n1_max:.2f} – {n2_min:.2f} µm"
-                                elif (n1_min == n1_max or n1_min == 0) and n2_min > 0: s = f"🌓 CUTOFF: {n2_min:.2f} µm – (NRS1)"
-                                elif (n2_min == n2_max or n2_min == 0) and n1_max > 0: s = f"🌗 CUTOFF: (NRS2) – {n1_max:.2f} µm"
+                                else:
+                                    s_parts = []
+                                    def safe_flt(v):
+                                        if v == "Gap" or v is None: return 0.0
+                                        try: return float(v)
+                                        except: return 0.0
+                                    
+                                    f1_min, f1_max = safe_flt(w.get('n1_min')), safe_flt(w.get('n1_max'))
+                                    f2_min, f2_max = safe_flt(w.get('n2_min')), safe_flt(w.get('n2_max'))
+                                    
+                                    icon = ""
+                                    if f1_max > 0 and f2_min > 0:
+                                        s_parts.append(f"GAP: {f1_max:.2f} – {f2_min:.2f} µm")
+                                        icon = icons.get('MOSTLY', '🌔')
+                                    
+                                    if f1_min > 0:
+                                        s_parts.append(f"BLUE CUTOFF: < {f1_min:.2f} µm")
+                                    elif (f1_min == f1_max or (f1_min <= 0 and f1_max <= 0)) and f2_min > 0:
+                                        s_parts.append(f"CUTOFF: (NRS1) – {f2_min:.2f} µm")
+
+                                    if f2_max > 0:
+                                        s_parts.append(f"RED CUTOFF: > {f2_max:.2f} µm")
+                                    elif (f2_min == f2_max or (f2_min <= 0 and f2_max <= 0)) and f1_max > 0:
+                                        s_parts.append(f"CUTOFF: {f1_max:.2f} µm – (NRS2)")
+                                    
+                                    if s_parts:
+                                        if not icon:
+                                            has_blue = any("BLUE" in p or "(NRS1)" in p for p in s_parts)
+                                            has_red = any("RED" in p or "(NRS2)" in p for p in s_parts)
+                                            if has_blue and has_red: icon = icons.get('PARTIAL', '🌓')
+                                            elif has_blue: icon = "🌓"
+                                            else: icon = "🌗"
+                                        s = f"{icon} " + "; ".join(s_parts)
                             except: pass
                         
                         if i == 0:
@@ -3216,7 +3261,7 @@ class NIRSpecMOSReviewer:
                 obs_waves = self.exports_data['wavelengths'][obs_num]
                 found_any = False
                 for row in reader:
-                    sid = row.get(id_col)
+                    sid = str(row.get(id_col) or "").strip()
                     if sid in top_targets:
                         if sid not in obs_waves: obs_waves[sid] = {}
                         waves = {}
@@ -3383,11 +3428,7 @@ class NIRSpecMOSReviewer:
 
     def _report_msa_plots_note(self, write):
         """Final note on generated MSA coverage plots."""
-        plot_dir = None
-        for p in self.files_used.keys():
-            if "_visits.csv" in p:
-                plot_dir = Path(p).parent
-                break
+        plot_dir = Path(self.visits_csv_path).parent if self.visits_csv_path else None
         
         if plot_dir:
             write(f"\nℹ️  MSA Coverage Plots generated in: {plot_dir}")
@@ -3407,7 +3448,10 @@ class NIRSpecMOSReviewer:
                 if self.obs_info.get(obs_id, {}).get('sign') == "👷":
                     continue
                 plot_file = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
+                ref_plot_file = plot_dir / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
                 write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
+                if ref_plot_file.exists() or (plot_dir / "visits" / ref_plot_file.name).exists():
+                    write(f"   🖼️ Obs {obs_id} Ref Stars: {ref_plot_file.name}")
 
     def generate_plots(self):
         if not self.visits_csv_path: return
@@ -3425,8 +3469,12 @@ class NIRSpecMOSReviewer:
             for obs_id in valid_obs:
                 p_base = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
                 p_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_id}.png"
+                p_ref = plot_dir / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
+                p_ref_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
                 if p_base.exists(): existing_plots.append(p_base)
                 elif p_visits.exists(): existing_plots.append(p_visits)
+                if p_ref.exists(): existing_plots.append(p_ref)
+                elif p_ref_visits.exists(): existing_plots.append(p_ref_visits)
             
             if existing_plots:
                 # Compare timestamps

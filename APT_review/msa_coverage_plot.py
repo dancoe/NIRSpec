@@ -262,7 +262,12 @@ def main():
     output_dir = Path(visits_csv).parent
     availability_report = []
 
-    def plot_group(rows, title, filename_prefix, common_limits=None):
+    def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False):
+        if refstars_only:
+            if "Obs" in title:
+                title = title.replace("Obs", "Obs (Ref Stars)")
+            else:
+                title += " (Ref Stars)"
         plt.figure(figsize=(9, 6))
         
         # Identify observed/used IDs for this observation
@@ -465,6 +470,8 @@ def main():
         }
 
         for src in all_sources:
+            if refstars_only and not src['is_ref']:
+                continue
             # Increased search radius to avoid truncating catalog context (0.75 deg ~ 45 arcmin)
             if abs(src['ra'] - obs_c_ra) > 0.75 or abs(src['dec'] - obs_c_dec) > 0.75:
                 continue
@@ -695,45 +702,46 @@ def main():
                 if len(display_name) > 60: display_name = display_name[:57] + "..."
                 custom_labels.append(display_name)
 
-        # 2. Highest Priority (Red symbol)
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
-                                   markeredgecolor='black', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
-        custom_labels.append('Highest Priority')
+        if not refstars_only:
+            # 2. Highest Priority (Red symbol)
+            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='red', 
+                                       markeredgecolor='black', markeredgewidth=1.0, markersize=8, alpha=1.0, linestyle='None'))
+            custom_labels.append('Highest Priority')
 
-        # 3. Observed Target (thin black outline)
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
-                                   markeredgecolor='black', markeredgewidth=0.5, markersize=7, alpha=1.0, linestyle='None'))
-        custom_labels.append('Observed Target')
+            # 3. Observed Target (thin black outline)
+            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=7, alpha=1.0, linestyle='None'))
+            custom_labels.append('Observed Target')
 
-        # 4. Target (unobserved, gray and transparent as plotted)
-        custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
-                                   markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.15, linestyle='None'))
-        custom_labels.append('Target')
+            # 4. Target (unobserved, gray and transparent as plotted)
+            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='0.7', 
+                                       markeredgecolor='0.50', markeredgewidth=0.5, markersize=7, alpha=0.15, linestyle='None'))
+            custom_labels.append('Target')
 
-        # 5. Weight Samples (up to 5 actual weights from the catalog)
-        unique_weights = sorted(list(set(weights)), reverse=True)
-        if len(unique_weights) <= 5:
-            legend_weights = unique_weights
-        else:
-            # Pick 5 closest to the log-spaced targets (1.0, 0.75, 0.5, 0.25, 0.0)
-            legend_weights = []
-            for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
-                target_log_w = min_log_wt + frac * log_range
-                closest_w = min(unique_weights, key=lambda w: abs(np.log10(w) - target_log_w))
-                if closest_w not in legend_weights:
-                    legend_weights.append(closest_w)
-            legend_weights.sort(reverse=True)
+            # 5. Weight Samples (up to 5 actual weights from the catalog)
+            unique_weights = sorted(list(set(weights)), reverse=True)
+            if len(unique_weights) <= 5:
+                legend_weights = unique_weights
+            else:
+                # Pick 5 closest to the log-spaced targets (1.0, 0.75, 0.5, 0.25, 0.0)
+                legend_weights = []
+                for frac in [1.0, 0.75, 0.5, 0.25, 0.0]:
+                    target_log_w = min_log_wt + frac * log_range
+                    closest_w = min(unique_weights, key=lambda w: abs(np.log10(w) - target_log_w))
+                    if closest_w not in legend_weights:
+                        legend_weights.append(closest_w)
+                legend_weights.sort(reverse=True)
 
-        for w in legend_weights:
-            frac = (np.log10(w) - min_log_wt) / log_range if log_range > 0 else 0.5
-            sz = 20 + 45 * frac # Matching the 20 to 65 scaling
-            pt_color = plt.cm.rainbow(frac)
-            custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
-                                       alpha=1.0, markersize=np.sqrt(sz), linestyle='None'))
-            
-            # Format weight nicely: integer if possible, else 1 decimal
-            w_str = f"{w:,.0f}" if w == int(w) else f"{w:,.1f}"
-            custom_labels.append(f'Weight: {w_str}')
+            for w in legend_weights:
+                frac = (np.log10(w) - min_log_wt) / log_range if log_range > 0 else 0.5
+                sz = 20 + 45 * frac # Matching the 20 to 65 scaling
+                pt_color = plt.cm.rainbow(frac)
+                custom_lines.append(Line2D([0], [0], marker='o', color='w', markerfacecolor=pt_color, 
+                                           alpha=1.0, markersize=np.sqrt(sz), linestyle='None'))
+                
+                # Format weight nicely: integer if possible, else 1 decimal
+                w_str = f"{w:,.0f}" if w == int(w) else f"{w:,.1f}"
+                custom_labels.append(f'Weight: {w_str}')
 
         # 6. Observed Reference Object
         custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
@@ -852,10 +860,12 @@ def main():
         prefix = "Visits" if "–" in visit_str or "," in visit_str else "Visit"
         title = f"JWST {prog_num} Obs {obs_id} ({prefix} {visit_str})"
         plot_group(rows, title, f"{xml_stem}_Obs{obs_id}", common_limits=common_limits)
+        plot_group(rows, title, f"{xml_stem}_Obs{obs_id}_refstars", common_limits=common_limits, refstars_only=True)
     
     if do_combined:
         all_rows = [r for rows in obs_groups.values() for r in rows]
         plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}", common_limits=common_limits)
+        plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}_refstars", common_limits=common_limits, refstars_only=True)
     
     if 0:
         # Print availability summary

@@ -1,5 +1,12 @@
 # Change Log
 
+## [Unreleased] - 2026-05-19
+- **Reference Star Only Plots**:
+    - Added generation of reference star only coverage plots (e.g., `_refstars.png`) for both individual observations and combined views.
+    - Implemented science-target filtering and legend simplification (hiding science-target related legends) specifically for `_refstars` plots.
+    - Updated `APT_review.py`'s report-generation and staleness-checking logic to support and link the new `_refstars` plots.
+    - Documented reference star plots in `docs/Plots.md`.
+
 ## [Unreleased] - 2026-04-21
 - **MSA Coverage Plot Legend**:
     - Updated the legend to list "Catalog:" on its own line followed by each individual catalog name on new lines for better readability.
