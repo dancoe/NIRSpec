@@ -818,13 +818,17 @@ class NIRSpecMOSReviewer:
                 # Get pointing name and grating/filter from filename
                 pointing_name = ""
                 grating_filter = ""
-                cfg_match = re.search(r'-([a-zA-Z0-9]+)n\d+-', file_path.name.lower())
+                cfg_match = re.search(r'-([a-zA-Z0-9]+)-(?:g\d+|nrs)', file_path.name.lower())
                 if cfg_match:
                     pointing_name = cfg_match.group(1)
+                else:
+                    cfg_match2 = re.search(r'-([a-zA-Z0-9]+)-', file_path.name.lower())
+                    if cfg_match2:
+                        pointing_name = cfg_match2.group(1)
                 
-                gf_match = re.search(r'-n\d+-([^-]+-[^-]+)\.csv$', file_path.name.lower())
+                gf_match = re.search(r'-([gG]\d+[mM]|[fF]\d+[wW]|[cC][lL][eE][aA][rR])[-/]([fF]\d+[lL][pP]|[fF]\d+[wW]|[pP][aA][tT][hH])', file_path.name)
                 if gf_match:
-                    grating_filter = gf_match.group(1).upper().replace('-', '/')
+                    grating_filter = f"{gf_match.group(1).upper()}/{gf_match.group(2).upper()}"
                 else:
                     gf_match2 = re.search(r'-([^-]+-[^-]+)\.csv$', file_path.name.lower())
                     if gf_match2:
