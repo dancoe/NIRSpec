@@ -1555,6 +1555,24 @@ class NIRSpecMOSReviewer:
             catalog_name = catalog_raw.split('(')[0].strip() if catalog_raw else None
             self.analytics[num]['catalog_name'] = catalog_name
             
+            # Parse MPT plans for this observation
+            xml_plans_text = mos_template.findtext(f"{{{NS['nsmos']}}}Plans", namespaces=NS)
+            xml_plan_text = mos_template.findtext(f"{{{NS['nsmos']}}}Plan", namespaces=NS)
+            obs_plans = []
+            if xml_plans_text:
+                try:
+                    import json
+                    parsed_plans = json.loads(xml_plans_text)
+                    if isinstance(parsed_plans, list):
+                        obs_plans = [p.strip() for p in parsed_plans if p.strip()]
+                    else:
+                        obs_plans = [xml_plans_text.strip()]
+                except:
+                    obs_plans = [p.strip() for p in xml_plans_text.replace('[','').replace(']','').replace('"','').replace("'",'').split(',') if p.strip()]
+            elif xml_plan_text:
+                obs_plans = [xml_plan_text.strip()]
+            self.analytics[num]['plans'] = obs_plans
+            
             if is_full_review and ta_method == "WATA":
                 # Check if target is MOS Catalog
                 target_info = self.stats['catalog_info'].get(target_name, {})
@@ -2409,6 +2427,8 @@ class NIRSpecMOSReviewer:
         write("="*80)
         write(f"APT Version: {meta['apt_version']}")
         write(f"Has Errors:  {meta['has_errors']}")
+        if meta.get('plans'):
+            write(f"MPT Plans:   {', '.join(meta['plans'])}")
         if meta['email'] != "None":
             write(f"Email:       {meta['email']}")
         if meta['submission_comments'] != "None":
@@ -3176,7 +3196,32 @@ class NIRSpecMOSReviewer:
                         write(f"{icon}{entry['label_prefix']}{entry['main_msg']}")
 
         write("\nCHECK MPT PLANS")
-        write("👁️ Check (extraction not yet implemented)")
+        plans = self.stats['program_metadata'].get('plans', [])
+        if plans:
+            write(f"✅ Plans: {', '.join(plans)}")
+        else:
+            write("👁️ Check (no plans found in ToolData)")
+            
+        has_obs_plans = False
+        for o in reviewed_obs:
+            if o in self.analytics:
+                if self.obs_info.get(o, {}).get('sign') == "👷":
+                    continue
+                obs_plans = self.analytics[o].get('plans', [])
+                json_plan = self.analytics[o].get('json_plan')
+                
+                plan_list = []
+                if obs_plans:
+                    plan_list.extend(obs_plans)
+                if json_plan:
+                    plan_list.append(f"JSON: {json_plan}")
+                    
+                if plan_list:
+                    write(f"  Obs {o}: {', '.join(plan_list)}")
+                    has_obs_plans = True
+                else:
+                    write(f"  Obs {o}: 👁️ No plan specified")
+                    has_obs_plans = True
 
         write("\nEXPOSURE DEPTH ON HIGH-WEIGHTED SOURCES")
         analysis = self.stats.get('high_priority_analysis', {})
