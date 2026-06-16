@@ -1662,9 +1662,9 @@ class NIRSpecMOSReviewer:
                         self.stats['ref_stars'].append(v_star_count)
                         v_status = "SUCCESS" if v_star_count >= 8 else "WARNING"
                         if v_star_count < 5: v_status = "ERROR"
-                        self.log("Reference Stars", f"{v_label}Stars: {v_star_count} ({v_source})", v_status, num)
-                        
                         vq_count = len(v_quads)
+                        self.log("Reference Stars", f"{v_label}Stars: {v_star_count} in {vq_count} quads ({v_source})", v_status, num)
+                        
                         vq_status = "SUCCESS" if vq_count >= 3 else "WARNING"
                         self.log("Reference Stars", f"{v_label}Quadrants: {vq_count}", vq_status, num)
                     elif ta_method == "MSATA":
@@ -2840,17 +2840,25 @@ class NIRSpecMOSReviewer:
             # MSATA Summary
             star_counts = []
             quad_counts = []
+            no_ref_obs = []
             for obs_num in reviewed_full:
-                pat = re.compile(rf'Obs {int(obs_num)}: ')
-                ref_logs = [item for item in self.results
-                            if item['category'] == "Reference Stars" and pat.match(item['message'])]
-                for log in ref_logs:
-                    if "Stars:" in log['message']:
-                        m = re.search(r'Stars: (\d+)', log['message'])
-                        if m: star_counts.append(int(m.group(1)))
-                    if "Quadrants:" in log['message']:
-                        m = re.search(r'Quadrants: (\d+)', log['message'])
-                        if m: quad_counts.append(int(m.group(1)))
+                ta_method = self.analytics.get(str(obs_num), {}).get('ta_method', '')
+                if ta_method == "MSATA":
+                    pat = re.compile(rf'Obs {int(obs_num)}: ')
+                    ref_logs = [item for item in self.results
+                                if item['category'] == "Reference Stars" and pat.match(item['message'])]
+                    has_stars_found = False
+                    for log in ref_logs:
+                        if "Stars:" in log['message']:
+                            m = re.search(r'Stars: (\d+)', log['message'])
+                            if m:
+                                star_counts.append(int(m.group(1)))
+                                has_stars_found = True
+                        if "Quadrants:" in log['message']:
+                            m = re.search(r'Quadrants: (\d+)', log['message'])
+                            if m: quad_counts.append(int(m.group(1)))
+                    if not has_stars_found or any("No reference stars found" in log['message'] for log in ref_logs):
+                        no_ref_obs.append(obs_num)
             
             if star_counts and quad_counts:
                 min_s, max_s = min(star_counts), max(star_counts)
@@ -2859,6 +2867,9 @@ class NIRSpecMOSReviewer:
                 q_range = f"{min_q}-{max_q}" if min_q != max_q else f"{min_q}"
                 msata_icon = icons['SUCCESS'] if (min_s >= 8 and min_q >= 3) else icons['MOSTLY']
                 write(f"{msata_icon} MSATA: {s_range} stars in {q_range} quads")
+            
+            for obs_num in sorted(no_ref_obs, key=int):
+                write(f"❌ Obs {obs_num} has no reference stars!")
 
             # Catalogs
             active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
@@ -3198,23 +3209,34 @@ class NIRSpecMOSReviewer:
         # 9. Reference Stars
         write("\nREFERENCE STARS")
         ta_stars = self.exports_data.get('ta_stars', {})
-        starred_visits = []
-        for obs_num, visits in ta_stars.items():
-            if str(obs_num) in reviewed_obs:
-                for v_key, info in visits.items():
-                    starred_visits.append((obs_num, v_key, info))
+        items_to_print = []
+        for obs_num in reviewed_obs:
+            ta_method = self.analytics.get(str(obs_num), {}).get('ta_method', '')
+            if ta_method == "MSATA":
+                has_stars = False
+                if str(obs_num) in ta_stars:
+                    for v_key in sorted(ta_stars[str(obs_num)].keys(), key=int):
+                        info = ta_stars[str(obs_num)][v_key]
+                        if info.get('count', 0) > 0:
+                            has_stars = True
+                            items_to_print.append((obs_num, v_key, info))
+                if not has_stars:
+                    items_to_print.append((obs_num, None, None))
         
-        # Sort by obs_num (int) then v_key (int)
-        starred_visits.sort(key=lambda x: (int(x[0]), int(x[1])))
+        # Sort items_to_print by obs_num (int) then v_key (int, or 0 if None)
+        items_to_print.sort(key=lambda x: (int(x[0]), int(x[1]) if x[1] is not None else 0))
         
-        if not starred_visits:
+        if not items_to_print:
             write(f"{icons['WARNING']} No reference stars found in exports")
         else:
-            for obs_num, v_key, info in starred_visits:
-                count = info['count']
-                quads = len(info['quads'])
-                icon = "✅" if count >= 8 and quads >= 3 else icons['WARNING']
-                write(f"{icon} Visit {obs_num}:{v_key} – {count} stars in {quads} quads")
+            for obs_num, v_key, info in items_to_print:
+                if info is None:
+                    write(f"❌ Obs {obs_num} has no reference stars!")
+                else:
+                    count = info['count']
+                    quads = len(info['quads'])
+                    icon = "✅" if count >= 8 and quads >= 3 else icons['WARNING']
+                    write(f"{icon} Visit {obs_num}:{v_key} – {count} stars in {quads} quads")
 
 
     def _report_catalogs(self, write, icons):

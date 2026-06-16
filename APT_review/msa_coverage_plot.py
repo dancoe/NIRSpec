@@ -85,6 +85,42 @@ def get_siaf_quadrants(ra, dec, pa, main_ap_name='NRS_FULL_MSA'):
         print(f"Warning: PySIAF calculation failed: {e}")
         return {}
 
+def load_ta_params(xml_path):
+    """Load MSATA (Filter/Readout) parameters from the XML/APTX file."""
+    import zipfile
+    xml_content = None
+    if zipfile.is_zipfile(xml_path):
+        with zipfile.ZipFile(xml_path, 'r') as z:
+            xml_name = next((f for f in z.namelist() if f.endswith('.xml')), None)
+            if xml_name:
+                xml_content = z.read(xml_name)
+    
+    if xml_content:
+        root = ET.fromstring(xml_content)
+    else:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        
+    ta_params = {}
+    for elem in root.iter():
+        tag_local = elem.tag.split('}')[-1]
+        if tag_local == 'Observation':
+            obs_num = elem.get('Number')
+            if not obs_num:
+                continue
+            obs_num_norm = str(int(obs_num))
+            for child in elem.iter():
+                child_local = child.tag.split('}')[-1]
+                if child_local == 'Visit':
+                    v_num = child.get('Number')
+                    rs_bin = child.get('ReferenceStarBin')
+                    if rs_bin and v_num:
+                        v_num_norm = str(int(v_num))
+                        if obs_num_norm not in ta_params:
+                            ta_params[obs_num_norm] = {}
+                        ta_params[obs_num_norm][v_num_norm] = rs_bin
+    return ta_params
+
 def load_catalogs(xml_path):
     """Extract all sources from all catalogs from XML or APTX."""
     import zipfile
@@ -136,15 +172,30 @@ def load_catalogs(xml_path):
             ra_col = next((f for f in reader.fieldnames if f.upper() == 'RA'), None)
             dec_col = next((f for f in reader.fieldnames if f.upper() == 'DEC'), None)
             
+            ta_cols = {
+                'NRS_F110W': next((f for f in reader.fieldnames if 'NRS_F110W' in f.upper()), None),
+                'NRS_F140W': next((f for f in reader.fieldnames if any(x in f.upper() for x in ['NRS_F140W', 'NRS_F140X', 'NRS_F140'])), None),
+                'NRS_CLEAR': next((f for f in reader.fieldnames if 'NRS_CLEAR' in f.upper()), None),
+            }
+            
             sources = []
             for row in reader:
                 try:
+                    mags = {}
+                    for col_label, col_name in ta_cols.items():
+                        if col_name:
+                            raw = row.get(col_name, '').strip()
+                            try:
+                                mags[col_label] = float(raw)
+                            except:
+                                mags[col_label] = None
                     sources.append({
                         'id': row.get(id_col, ''),
                         'weight': float(row.get(weight_col, 0)),
                         'is_ref': str(row.get(ref_col, '')).lower() == 'true',
                         'ra': float(row.get(ra_col, 0)),
-                        'dec': float(row.get(dec_col, 0))
+                        'dec': float(row.get(dec_col, 0)),
+                        'mags': mags
                     })
                 except: continue
             catalogs[name] = sources
@@ -176,15 +227,30 @@ def load_catalogs(xml_path):
                     ra_col = next((f for f in reader.fieldnames if f.upper() == 'RA'), None)
                     dec_col = next((f for f in reader.fieldnames if f.upper() == 'DEC'), None)
                     
+                    ta_cols = {
+                        'NRS_F110W': next((f for f in reader.fieldnames if 'NRS_F110W' in f.upper()), None),
+                        'NRS_F140W': next((f for f in reader.fieldnames if any(x in f.upper() for x in ['NRS_F140W', 'NRS_F140X', 'NRS_F140'])), None),
+                        'NRS_CLEAR': next((f for f in reader.fieldnames if 'NRS_CLEAR' in f.upper()), None),
+                    }
+                    
                     sources = []
                     for row in reader:
                         try:
+                            mags = {}
+                            for col_label, col_name in ta_cols.items():
+                                if col_name:
+                                    raw = row.get(col_name, '').strip()
+                                    try:
+                                        mags[col_label] = float(raw)
+                                    except:
+                                        mags[col_label] = None
                             sources.append({
                                 'id': row.get(id_col, ''),
                                 'weight': float(row.get(weight_col, 0)),
                                 'is_ref': str(row.get(ref_col, '')).lower() == 'true',
                                 'ra': float(row.get(ra_col, 0)),
-                                'dec': float(row.get(dec_col, 0))
+                                'dec': float(row.get(dec_col, 0)),
+                                'mags': mags
                             })
                         except: continue
                     catalogs[cat_name] = sources
@@ -220,6 +286,7 @@ def main():
     
     catalogs, xml_prop_id = load_catalogs(xml_path)
     proposal_id = proposal_id_arg if proposal_id_arg else xml_prop_id
+    ta_params = load_ta_params(xml_path)
     
     # 1. Flexible column mapping for visits CSV
     fnames = df_visits.columns
@@ -248,6 +315,7 @@ def main():
             v_label = f"{obs_num}:{v_num}"
         else:
             obs_id = vid_str
+            v_num = 1
             v_label = vid_str
 
         if valid_obs is not None and obs_id not in valid_obs:
@@ -257,6 +325,7 @@ def main():
         row_copy = row.copy()
         row_copy['V_LABEL'] = v_label
         row_copy['OBS_ID'] = obs_id
+        row_copy['V_NUM'] = str(v_num)
         obs_groups[obs_id].append(row_copy)
 
     output_dir = Path(visits_csv).parent
@@ -270,9 +339,110 @@ def main():
                 title += " (Ref Stars)"
         plt.figure(figsize=(9, 6))
         
+        # Cluster the rows into configurations based on coordinates (RA Center Rot, Dec Center Rot)
+        visit_to_configs = {}
+        for row in rows:
+            vid = row['Visit ID']
+            if vid not in visit_to_configs:
+                visit_to_configs[vid] = []
+            
+            ra = get_v_val(row, 'RA Center Rot', 'RA')
+            dec = get_v_val(row, 'Dec Center Rot', 'Dec')
+            if ra is None or dec is None: continue
+            
+            # Find if this row fits in an existing configuration group for this visit
+            found_group = False
+            for group in visit_to_configs[vid]:
+                ref_row = group[0]
+                ref_ra = get_v_val(ref_row, 'RA Center Rot', 'RA')
+                ref_dec = get_v_val(ref_row, 'Dec Center Rot', 'Dec')
+                dist = np.sqrt((ra - ref_ra)**2 + (dec - ref_dec)**2)
+                if dist < 0.002: # ~7 arcseconds threshold
+                    group.append(row)
+                    found_group = True
+                    break
+            
+            if not found_group:
+                visit_to_configs[vid].append([row])
+        
+        # Map each row to a configuration label
+        row_to_config = {}
+        visit_has_multiple_configs = {}
+        for vid, groups in visit_to_configs.items():
+            visit_has_multiple_configs[vid] = (len(groups) > 1)
+            for g_idx, group in enumerate(groups, start=1):
+                config_label = f"c{g_idx}"
+                for r in group:
+                    row_to_config[id(r)] = config_label
+        
+        labeled_configs = set()
+
         # Identify observed/used IDs for this observation
         obs_id_str = rows[0]['OBS_ID']
         prop_id_stem = Path(xml_path).stem.replace('JWST', '')
+        
+        # Determine active TA parameters for this observation
+        active_filter = None
+        active_readout = None
+        obs_id_normalized = str(int(obs_id_str)) if obs_id_str.isdigit() else obs_id_str
+        
+        obs_ta = ta_params.get(obs_id_normalized, {})
+        ref_star_bin = None
+        for r in rows:
+            v_num_normalized = str(int(r.get('V_NUM', 1))) if str(r.get('V_NUM', '')).isdigit() else str(r.get('V_NUM', ''))
+            if v_num_normalized in obs_ta:
+                ref_star_bin = obs_ta[v_num_normalized]
+                break
+        if not ref_star_bin and obs_ta:
+            first_v = sorted(obs_ta.keys())[0]
+            ref_star_bin = obs_ta[first_v]
+            
+        if ref_star_bin:
+            parts = ref_star_bin.split('_', 1)
+            if len(parts) >= 2:
+                active_filter = parts[0]
+                active_readout = parts[1]
+                
+        # Default fallback
+        if not active_filter:
+            active_filter = "CLEAR"
+        if not active_readout:
+            active_readout = "NRSRAPIDD6"
+            
+        # Map active filter to catalog column
+        active_mag_col = None
+        if "CLEAR" in active_filter.upper():
+            active_mag_col = "NRS_CLEAR"
+        elif "F110W" in active_filter.upper():
+            active_mag_col = "NRS_F110W"
+        elif "F140W" in active_filter.upper() or "F140X" in active_filter.upper():
+            active_mag_col = "NRS_F140W"
+            
+        lookup_filter = "F140X" if active_filter == "F140W" else active_filter
+        
+        MSATA_RANGES = {
+            'F110W': {
+                'NRSRAPID': (19.5, 22.0),
+                'NRSRAPIDD6': (21.3, 24.0),
+            },
+            'F140X': {
+                'NRSRAPID': (20.6, 23.0),
+                'NRSRAPIDD6': (22.3, 25.0),
+            },
+            'CLEAR': {
+                'NRSRAPID': (21.3, 23.8),
+                'NRSRAPIDD1': (21.9, 24.5),
+                'NRSRAPIDD2': (22.2, 24.9),
+                'NRSRAPIDD6': (23.1, 25.7),
+            }
+        }
+        
+        active_range = MSATA_RANGES.get(lookup_filter, {}).get(active_readout)
+        
+        other_ranges = []
+        for r_mode, r_range in MSATA_RANGES.get(lookup_filter, {}).items():
+            if r_mode != active_readout:
+                other_ranges.append(r_range)
         
         # Try finding MSA target files using both file stem and extracted proposal ID
         msa_dir = Path(xml_path).parent / 'msatargets'
@@ -304,6 +474,12 @@ def main():
                         if id_col:
                             used_ref_ids.update(m_df[id_col].astype(str).tolist())
                     except: pass
+                
+                if refstars_only:
+                    ta_files = [f.name for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv")]
+                    ta_files_str = ", ".join(ta_files) if ta_files else "no TA file"
+                    range_str = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
+                    print(f"Obs {obs_id_str} [Filter: {active_filter}, Readout: {active_readout}] (Range: {range_str})  ({len(used_ref_ids)} stars, {ta_files_str})")
                 
                 # If we found something, don't necessarily stop, but we have results
                 if observed_ids:
@@ -354,6 +530,8 @@ def main():
         for i, row in enumerate(rows):
             vid = row['Visit ID']
             v_label = row.get('V_LABEL', str(vid))
+            config_label = row_to_config.get(id(row), "")
+            label_key = (v_label, config_label) if config_label else v_label
             cat_name = get_v_val(row, 'Target', 'TargetName')
             if cat_name and cat_name not in unique_catalogs:
                 unique_catalogs[cat_name] = row
@@ -374,6 +552,18 @@ def main():
             quads = get_siaf_quadrants(ra_ptr, dec_ptr, pa_ptr, main_ap_name)
             obs_quads[vid] = quads
             
+            # If visit has multiple configurations, add a little config label (c1, c2, etc.) at the top vertex of the full footprint
+            if visit_has_multiple_configs.get(vid) and config_label:
+                config_key = (vid, config_label)
+                if config_key not in labeled_configs:
+                    top_vertex_idx = np.argmax(poly[:, 1])
+                    top_vertex = poly[top_vertex_idx]
+                    
+                    plt.text(top_vertex[0], top_vertex[1], config_label, color='blue',
+                             fontsize=8, fontweight='bold', ha='center', va='bottom', zorder=25,
+                             bbox=dict(boxstyle='round,pad=0.15', facecolor='white', edgecolor='blue', alpha=0.8, lw=0.6))
+                    labeled_configs.add(config_key)
+            
             if not quads:
                 # Fallback: plot the full footprint from s_region if available
                 if poly is not None:
@@ -382,10 +572,10 @@ def main():
                     
                     # Label with visit ID at center
                     pc_ra, pc_dec = np.mean(poly, axis=0)
-                    if v_label not in labeled_v_labels:
+                    if label_key not in labeled_v_labels:
                         plt.text(pc_ra, pc_dec, v_label, color='blue', alpha=0.8,
                                  fontsize=8, ha='center', va='center', zorder=20)
-                labeled_v_labels.add(v_label)
+                labeled_v_labels.add(label_key)
                 continue
 
             # Draw quadrant boundaries
@@ -396,8 +586,8 @@ def main():
                 plt.plot(np.append(q_poly[:, 0], q_poly[0,0]), np.append(q_poly[:,1], q_poly[0,1]), 
                          color='blue', linewidth=0.6, alpha=0.8)
                 
-                # Label quads - only for the first dither of each visit
-                if v_label not in labeled_v_labels:
+                # Label quads - only for the first dither of each visit/config
+                if label_key not in labeled_v_labels:
                     # Label quads - use bounding box center for robust centering
                     q_ra_min, q_dec_min = np.min(q_poly, axis=0)
                     q_ra_max, q_dec_max = np.max(q_poly, axis=0)
@@ -405,7 +595,7 @@ def main():
                     plt.text(qc_ra, qc_dec, f"{v_label_str}\nQ{q_idx}", color='blue', alpha=0.8,
                              fontsize=8, ha='center', va='center', zorder=20)
             
-            labeled_v_labels.add(v_label)
+            labeled_v_labels.add(label_key)
 
             # Calculate availability counts (internal data)
             quad_counts = {1: {'ref': 0, 'sci': 0}, 2: {'ref': 0, 'sci': 0}, 3: {'ref': 0, 'sci': 0}, 4: {'ref': 0, 'sci': 0}}
@@ -469,6 +659,22 @@ def main():
             'sci_highest_obs': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 7, 'marker': 'o'},
         }
 
+        # Collect reference star magnitudes for scaling if in refstars_only mode
+        mag_min, mag_max = 19.0, 26.0
+        if refstars_only:
+            all_ref_mags = []
+            for src in all_sources:
+                if src['is_ref'] and src.get('mags'):
+                    val_mag = src['mags'].get(active_mag_col)
+                    if val_mag is not None:
+                        all_ref_mags.append(val_mag)
+            if all_ref_mags:
+                mag_min = min(all_ref_mags)
+                mag_max = max(all_ref_mags)
+                if mag_max - mag_min < 1.0:
+                    mag_min = 19.0
+                    mag_max = 26.0
+
         for src in all_sources:
             if refstars_only and not src['is_ref']:
                 continue
@@ -483,29 +689,67 @@ def main():
             size = 20 + 45 * norm_wt if log_range > 0 else 30
             pt_color = plt.cm.rainbow(norm_wt)
 
-            if src['is_ref'] and not all_refs_mode:
-                is_used = src['id'] in used_ref_ids
-                c = cats['ref_used'] if is_used else cats['ref_unused']
-                c['ras'].append(src['ra'])
-                c['decs'].append(src['dec'])
-                c['sizes'].append(50 if is_used else 30)
-                c['colors'].append('0.50')
-                c['edgecolors'].append('magenta' if is_used else 'black')
-                c['lws'].append(0.5)
-                c['alphas'].append(1.0 if is_used else 0.35)
-            elif src['is_ref'] and all_refs_mode:
-                # Treat as a science target but use '*' marker
-                is_observed = src['id'] in used_ref_ids or src['id'] in observed_ids
-                c = cats['ref_used'] if is_observed else cats['ref_unused']
-                c['ras'].append(src['ra'])
-                c['decs'].append(src['dec'])
-                c['sizes'].append(size)
-                c['colors'].append(pt_color)
-                # For all-ref mode, magenta highlight for TA usage, otherwise black/gray
-                is_ta = src['id'] in used_ref_ids
-                c['edgecolors'].append('magenta' if is_ta else ('black' if is_observed else '0.50'))
-                c['lws'].append(1.0 if is_ta else 0.5)
-                c['alphas'].append(1.0 if is_observed else 0.15)
+            if src['is_ref']:
+                if refstars_only:
+                    is_used = src['id'] in used_ref_ids
+                    c = cats['ref_used'] if is_used else cats['ref_unused']
+                    c['ras'].append(src['ra'])
+                    c['decs'].append(src['dec'])
+                    
+                    # Magnitude-based sizing
+                    m = None
+                    if active_mag_col and src.get('mags'):
+                        m = src['mags'].get(active_mag_col)
+                    
+                    if m is not None:
+                        norm = (mag_max - m) / (mag_max - mag_min) if mag_max > mag_min else 0.5
+                        norm = max(0.0, min(1.0, norm))
+                        size = 10 + 170 * norm
+                    else:
+                        size = 20
+                        
+                    # Color based on ranges
+                    pt_color = '#bdc3c7' # Default out of range (silver/gray)
+                    if m is not None:
+                        if active_range and active_range[0] <= m <= active_range[1]:
+                            pt_color = '#2ecc71' # Green (emerald)
+                        else:
+                            # Check other ranges
+                            in_other = False
+                            for r_range in other_ranges:
+                                if r_range and r_range[0] <= m <= r_range[1]:
+                                    in_other = True
+                                    break
+                            if in_other:
+                                pt_color = '#f1c40f' # Yellow (gold)
+                                
+                    c['sizes'].append(size)
+                    c['colors'].append(pt_color)
+                    c['edgecolors'].append('magenta' if is_used else 'black')
+                    c['lws'].append(0.5)
+                    c['alphas'].append(1.0 if is_used else 0.70)
+                else:
+                    if not all_refs_mode:
+                        is_used = src['id'] in used_ref_ids
+                        c = cats['ref_used'] if is_used else cats['ref_unused']
+                        c['ras'].append(src['ra'])
+                        c['decs'].append(src['dec'])
+                        c['sizes'].append(50 if is_used else 30)
+                        c['colors'].append('0.50')
+                        c['edgecolors'].append('magenta' if is_used else 'black')
+                        c['lws'].append(0.5)
+                        c['alphas'].append(1.0 if is_used else 0.35)
+                    else:
+                        is_observed = src['id'] in used_ref_ids or src['id'] in observed_ids
+                        c = cats['ref_used'] if is_observed else cats['ref_unused']
+                        c['ras'].append(src['ra'])
+                        c['decs'].append(src['dec'])
+                        c['sizes'].append(size)
+                        c['colors'].append(pt_color)
+                        is_ta = src['id'] in used_ref_ids
+                        c['edgecolors'].append('magenta' if is_ta else ('black' if is_observed else '0.50'))
+                        c['lws'].append(1.0 if is_ta else 0.5)
+                        c['alphas'].append(1.0 if is_observed else 0.15)
             else:
                 is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                 is_observed = src['id'] in observed_ids
@@ -559,6 +803,70 @@ def main():
                 plt.scatter(data['ras'], data['decs'], marker='o', 
                             s=[s+15 for s in data['sizes']], color='none', 
                             edgecolors='black', linewidths=1.2, alpha=1.0, zorder=data['zorder']+0.5)
+
+        # Annotate reference star magnitudes above-right of each star if refstars_only is True
+        if refstars_only:
+            for src in all_sources:
+                if src['is_ref']:
+                    if abs(src['ra'] - obs_c_ra) > 0.75 or abs(src['dec'] - obs_c_dec) > 0.75:
+                        continue
+                    
+                    f110 = src['mags'].get('NRS_F110W')
+                    f140 = src['mags'].get('NRS_F140W')
+                    clr = src['mags'].get('NRS_CLEAR')
+                    
+                    f110_str = f"{f110:.1f}" if f110 is not None else "—"
+                    f140_str = f"{f140:.1f}" if f140 is not None else "—"
+                    clr_str = f"{clr:.1f}" if clr is not None else "—"
+                    
+                    # Calculate dynamic offset based on mag size to avoid overlapping the marker
+                    size = 20
+                    if active_mag_col and src.get('mags'):
+                        m = src['mags'].get(active_mag_col)
+                        if m is not None:
+                            norm = (mag_max - m) / (mag_max - mag_min) if mag_max > mag_min else 0.5
+                            norm = max(0.0, min(1.0, norm))
+                            size = 10 + 170 * norm
+                    
+                    offset = max(1.0, int(np.sqrt(size) / 4.0))
+                    
+                    # Colors: F110W (orange), F140X (red), CLEAR (black)
+                    # Top line (F110W, orange)
+                    plt.annotate(
+                        f110_str,
+                        xy=(src['ra'], src['dec']),
+                        xytext=(offset, offset + 8.4),
+                        textcoords='offset points',
+                        fontsize=4.5,
+                        color='#e67e22', # Orange
+                        ha='left',
+                        va='bottom',
+                        zorder=10
+                    )
+                    # Middle line (F140X/W, red)
+                    plt.annotate(
+                        f140_str,
+                        xy=(src['ra'], src['dec']),
+                        xytext=(offset, offset + 4.2),
+                        textcoords='offset points',
+                        fontsize=4.5,
+                        color='#e74c3c', # Red
+                        ha='left',
+                        va='bottom',
+                        zorder=10
+                    )
+                    # Bottom line (CLEAR, black)
+                    plt.annotate(
+                        clr_str,
+                        xy=(src['ra'], src['dec']),
+                        xytext=(offset, offset),
+                        textcoords='offset points',
+                        fontsize=4.5,
+                        color='#1a252f', # Black/Slate
+                        ha='left',
+                        va='bottom',
+                        zorder=10
+                    )
 
         if not all_ras: 
             plt.close()
@@ -743,15 +1051,63 @@ def main():
                 w_str = f"{w:,.0f}" if w == int(w) else f"{w:,.1f}"
                 custom_labels.append(f'Weight: {w_str}')
 
-        # 6. Observed Reference Object
-        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='magenta', markeredgewidth=1.0, markersize=10, alpha=1.0, linestyle='None'))
-        custom_labels.append('Observed Reference Object')
+        if refstars_only:
+            # Info header line
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append(f"MSATA Config:")
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append(f"  Filter: {active_filter}")
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append(f"  Readout: {active_readout}")
+            
+            range_str = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append(f"  Range: {range_str}")
+            
+            # Color key
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_labels.append(f"In range ({range_str})")
+            
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_labels.append("In other ranges")
+            
+            # Full allowed range for each filter
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append("  F110W: 19.5 – 24.0")
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append("  F140X: 20.6 – 25.0")
+            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+            custom_labels.append("  CLEAR: 21.3 – 25.7")
+            
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#bdc3c7',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_labels.append("Out of range")
+            
+            # Usage key
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
+                                       markeredgecolor='magenta', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_labels.append("Observed Ref Star")
+            
+            # Size key
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=12, linestyle='None'))
+            custom_labels.append("Brighter Star")
+            
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=3.5, linestyle='None'))
+            custom_labels.append("Fainter Star")
+        else:
+            # 6. Observed Reference Object
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                       markeredgecolor='magenta', markeredgewidth=1.0, markersize=10, alpha=1.0, linestyle='None'))
+            custom_labels.append('Observed Reference Object')
 
-        # 7. Reference Object (unobserved, show semi-transparent as plotted)
-        custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
-                                   markeredgecolor='black', markeredgewidth=0.5, markersize=8, alpha=0.35, linestyle='None'))
-        custom_labels.append('Reference Object')
+            # 7. Reference Object (unobserved, show semi-transparent as plotted)
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50', 
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=8, alpha=0.35, linestyle='None'))
+            custom_labels.append('Reference Object')
 
         # 8. MSA Quadrants and Info
         if HAS_PYSIAF:
@@ -759,7 +1115,92 @@ def main():
             custom_labels.append('MSA Quadrants / Pointings')
 
             
-        plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left', prop={'size': 7})
+        leg = plt.legend(custom_lines, custom_labels, bbox_to_anchor=(1.05, 1), loc='upper left', prop={'size': 7})
+        
+        # Color specific filter range lines in the legend
+        if refstars_only:
+            # Determine color for the three filters in the legend based on active_filter
+            # Standard colors: Orange (#e67e22), Red (#e74c3c)
+            # Filter selected is always black (#1a252f)
+            c_f110 = '#e67e22' # Orange
+            c_f140 = '#e74c3c' # Red
+            c_clear = '#1a252f' # Black
+            
+            active_upper = str(active_filter).upper() if active_filter else ""
+            if 'F110W' in active_upper:
+                c_f110 = '#1a252f'
+                c_f140 = '#e74c3c'
+                c_clear = '#e67e22'
+            elif 'F140X' in active_upper or 'F140W' in active_upper:
+                c_f110 = '#e67e22'
+                c_f140 = '#1a252f'
+                c_clear = '#e74c3c'
+            else: # CLEAR or others
+                c_f110 = '#e67e22'
+                c_f140 = '#e74c3c'
+                c_clear = '#1a252f'
+                
+            label_colors = {
+                "F110W: 19.5 – 24.0": c_f110,
+                "F140X: 20.6 – 25.0": c_f140,
+                "CLEAR: 21.3 – 25.7": c_clear
+            }
+            
+            for text_obj in leg.get_texts():
+                lbl = text_obj.get_text()
+                for key, color in label_colors.items():
+                    if key in lbl:
+                        text_obj.set_color(color)
+                        # Bold the active/selected filter range label
+                        if color == '#1a252f':
+                            text_obj.set_weight('bold')
+                        break
+            
+            # Extract and display the reference stars table below the legend
+            plotted_refs = []
+            for src in all_sources:
+                if src['is_ref'] and src['id'] in used_ref_ids:
+                    quad_found = None
+                    for row in rows:
+                        vid = row['Visit ID']
+                        if vid in obs_quads:
+                            for q_idx, q_poly in obs_quads[vid].items():
+                                if is_inside((src['ra'], src['dec']), q_poly):
+                                    quad_found = f"Q{q_idx}"
+                                    break
+                        if quad_found:
+                            break
+                    
+                    mag_val = src['mags'].get(active_mag_col) if (active_mag_col and src.get('mags')) else None
+                    plotted_refs.append({
+                        'id': src['id'],
+                        'mag': mag_val,
+                        'quad': quad_found or 'N/A'
+                    })
+            
+            used_quads = {r['quad'] for r in plotted_refs if r['quad'] != 'N/A'}
+            n_quads = len(used_quads)
+            n_stars = len(plotted_refs)
+            
+            table_lines = []
+            table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
+            table_lines.append("")
+            table_lines.append(f"{'ID':<8} | {'mag':<5} | {'Quad':<4}")
+            table_lines.append("-" * 23)
+            
+            def ref_id_key(r):
+                try: return int(r['id'])
+                except: return r['id']
+                
+            for r in sorted(plotted_refs, key=ref_id_key):
+                mag_str = f"{r['mag']:.2f}" if r['mag'] is not None else "N/A"
+                table_lines.append(f"{str(r['id']):<8} | {mag_str:<5} | {r['quad']:<4}")
+                
+            table_text = "\n".join(table_lines)
+            
+            plt.text(1.05, 0.0, table_text, transform=plt.gca().transAxes, fontsize=6.5,
+                     family='monospace', va='bottom', ha='left',
+                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.7', alpha=0.9))
         
         plt.grid(False)
         plt.tight_layout()
