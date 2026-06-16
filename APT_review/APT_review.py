@@ -2250,7 +2250,62 @@ class NIRSpecMOSReviewer:
             write(f"{o:<5} | {plan_num:<6} | {clean_plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
 
     def _report_pointings(self, write):
-        # We want to read pointing tables from the plan JSONs inside the .aptx zip for each plan used in the active observations
+        # 1. Previous POINTINGS tables (from CSV exports, 9 rows per obs)
+        pointings = self.exports_data.get('pointings_data', {})
+        if pointings:
+            write("\n" + "="*145)
+            write("POINTINGS")
+            write("="*145)
+            
+            plans = self.stats['program_metadata'].get('plans', [])
+            sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
+            
+            # Group pointings by Observation number
+            grouped_pointings = {}
+            for key in sorted_keys:
+                p = pointings[key]
+                obs_num = p['obs']
+                
+                plan_num = "-"
+                plan_name = "None specified"
+                obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
+                if obs_plans:
+                    plan_name = obs_plans[0].replace('„', ',')
+                    if plans:
+                        try:
+                            norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
+                            norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
+                            plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                        except ValueError:
+                            pass
+                
+                group_key = (obs_num, plan_num, plan_name)
+                if group_key not in grouped_pointings:
+                    grouped_pointings[group_key] = []
+                grouped_pointings[group_key].append(p)
+            
+            # Output separate tables sorted by Observation number
+            def sort_group_key(gk):
+                obs_num_str = gk[0]
+                try:
+                    return (int(obs_num_str), gk[1])
+                except ValueError:
+                    return (999, gk[1])
+
+            for g_key in sorted(grouped_pointings.keys(), key=sort_group_key):
+                obs_num, plan_num, plan_name = g_key
+                write(f"\nObs #{obs_num}, Plan #{plan_num}: {plan_name}")
+                
+                header = f"{'#':>3} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                write(header)
+                write("-" * len(header))
+                
+                for idx, p in enumerate(grouped_pointings[g_key], 1):
+                    ra_hms = deg_to_hms(p['ra'])
+                    dec_dms = deg_to_dms(p['dec'])
+                    write(f"{idx:>3} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
+
+        # 2. INDIVIDUAL PLANS tables (from JSON inside .aptx, 3 rows per plan)
         plans = self.stats['program_metadata'].get('plans', [])
         
         # Determine which plans are used in the active observations
@@ -2275,7 +2330,7 @@ class NIRSpecMOSReviewer:
             return
             
         write("\n" + "="*145)
-        write("POINTINGS")
+        write("INDIVIDUAL PLANS")
         write("="*145)
         
         # Load all JSON plans from the zip if it exists
@@ -2302,7 +2357,7 @@ class NIRSpecMOSReviewer:
             
             write(f"\nObs #{o}, Plan #{plan_num}: {clean_plan_name}")
             
-            header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | {'Total weight':<12} | {'Show':<8} | {'Send to Aladin':<14} | Export Config"
+            header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
             write(header)
             write("-" * len(header))
             
@@ -2337,7 +2392,7 @@ class NIRSpecMOSReviewer:
                         ra_hms = deg_to_hms(ra_val)
                         dec_dms = deg_to_dms(dec_val)
                         
-                        write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight):<12} | {'Show':<8} | {'Send':<14} | Export")
+                        write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
                         idx += 1
             else:
                 write("  (No plan configuration details found in .aptx archive)")
