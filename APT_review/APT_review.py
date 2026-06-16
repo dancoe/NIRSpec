@@ -25,6 +25,10 @@ logging.getLogger('pysiaf').setLevel(logging.ERROR)
 
 from datetime import datetime
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 # Namespaces
 NS = {
     'apt': "http://www.stsci.edu/JWST/APT",
@@ -316,18 +320,14 @@ class NIRSpecMOSReviewer:
             print("\n📝 msatargets not found. We can get APT to export them:")
             print(f"   {shlex.join(cmd)}")
             
-            user_input = "y" if self.auto_yes else input("\nProceed with automatic export of msatargets? [Y/n]: ").strip().lower()
-            if not user_input or user_input == 'y':
-                output_dir = self.input_path.parent / "msatargets"
-                output_dir.mkdir(parents=True, exist_ok=True)
-                print(f"📡 Exporting msatargets using APT...")
-                try:
-                    subprocess.run(cmd, cwd=str(self.input_path.parent))
-                    any_success = True
-                except Exception as e:
-                    print(f"❌ Error during msatargets export: {e}")
-            else:
-                print("🛑 msatargets export cancelled by user.")
+            output_dir = self.input_path.parent / "msatargets"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"📡 Exporting msatargets using APT...")
+            try:
+                subprocess.run(cmd, cwd=str(self.input_path.parent))
+                any_success = True
+            except Exception as e:
+                print(f"❌ Error during msatargets export: {e}")
 
         # 2. Visits Coverage (CSV)
         if is_missing_visits:
@@ -335,20 +335,16 @@ class NIRSpecMOSReviewer:
             print("\n📝 visits not found. We can get APT to export them:")
             print(f"   {shlex.join(cmd)}")
             
-            user_input = "y" if self.auto_yes else input("\nProceed with automatic export of visit coverage? [Y/n]: ").strip().lower()
-            if not user_input or user_input == 'y':
-                # Create the subdirectory to help APT along and avoid [SEVERE] errors
-                output_dir = self.input_path.parent / "visits"
-                output_dir.mkdir(parents=True, exist_ok=True)
-                
-                print(f"📡 Exporting visit coverage using APT...")
-                try:
-                    subprocess.run(cmd, cwd=str(self.input_path.parent))
-                    any_success = True
-                except Exception as e:
-                    print(f"❌ Error during visits export: {e}")
-            else:
-                print("🛑 visits export cancelled by user.")
+            # Create the subdirectory to help APT along and avoid [SEVERE] errors
+            output_dir = self.input_path.parent / "visits"
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            print(f"📡 Exporting visit coverage using APT...")
+            try:
+                subprocess.run(cmd, cwd=str(self.input_path.parent))
+                any_success = True
+            except Exception as e:
+                print(f"❌ Error during visits export: {e}")
 
         return any_success
 
@@ -1312,14 +1308,24 @@ class NIRSpecMOSReviewer:
                         if pt['config'] == 'ALLCLOSED': continue
                         gf = pt.get('gf', 'Unknown')
                         if gf not in v_res:
-                            v_res[gf] = {'n_obs': 0, 'n_total': 0}
+                            v_res[gf] = {'n_obs': 0, 'n_total': 0, 'by_config': {}}
+                        if 'by_config' not in v_res[gf]:
+                            v_res[gf]['by_config'] = {}
                         
                         cnt = pt.get('total_ints', 1)
                         v_res[gf]['n_total'] += cnt
+                        
+                        cfg_lbl = pt['config']
+                        short_cfg = cfg_lbl.replace("Config ", "").strip()
+                        if short_cfg not in v_res[gf]['by_config']:
+                            v_res[gf]['by_config'][short_cfg] = {'n_obs': 0, 'n_total': 0}
+                        v_res[gf]['by_config'][short_cfg]['n_total'] += cnt
+                        
                         if 'configs' not in v_res: v_res['configs'] = set()
                         if sid in cfg_id_map.get(pt['config'], set()):
                             v_res[gf]['n_obs'] += cnt
                             v_res['configs'].add(pt['config'])
+                            v_res[gf]['by_config'][short_cfg]['n_obs'] += cnt
         
         self.stats['high_priority_analysis'] = analysis
 
@@ -1890,7 +1896,7 @@ class NIRSpecMOSReviewer:
             self._report_final_summary(write, icons)                      # Gold summary: data excess, time budget, MSATA/integration/IRS2 bullets
             self._report_spar_review(write, icons)                       # New SPAR Review summary
             self._report_files_used(write, icons)                         # Files used and modification dates
-            self._report_msa_plots_note(write)                            # Final note on plots
+            pass                                                           # Plots generated after report
         # ────────────────────────────────────────────────────────────────
 
         # Save to file if requested
@@ -2636,8 +2642,7 @@ class NIRSpecMOSReviewer:
                     max_id_w = max(max_id_w, len(str(sid)))
                     max_weight_w = max(max_weight_w, len(f"{weight:.0f}"))
                     max_cfg_w = max(max_cfg_w, len(cfgs))
-
-                # Summary counts
+            # Summary counts
                 any_obs_count = len([sid for sid in top_20_ids if sid in observed_in_visit])
                 
                 write(f"\nVisit {obs_num}:{v_key}")
@@ -2666,73 +2671,100 @@ class NIRSpecMOSReviewer:
                     if not target_gfs: 
                         target_gfs = sorted(gfs)
                     
-                    for i, gf in enumerate(target_gfs):
-                        res = v_res.get(gf, {'n_obs': 0, 'n_total': 0})
-                        n_obs, n_total = res['n_obs'], res['n_total']
-                        pct = (n_obs / n_total * 100) if n_total > 0 else 0
+                    first_row_for_target = True
+                    
+                    for gf in target_gfs:
+                        res_gf = v_res.get(gf, {'n_obs': 0, 'n_total': 0})
                         
-                        if pct >= 100: icon = icons['FULL']
-                        elif pct >= 70: icon = icons['MOSTLY']
-                        elif pct > 33.4: icon = icons['PARTIAL']
-                        elif pct > 0: icon = icons['FEW']
-                        else: icon = icons['EMPTY']
-                        
-                        cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:.0f}%)"
-                        
-                        s = ""
-                        w = None
-                        if n_obs > 0:
-                            w = target_waves.get(gf)
-                        if w:
-                            try:
-                                n1_min, n1_max, n2_min, n2_max = float(w.get('n1_min', 0)), float(w.get('n1_max', 0)), float(w.get('n2_min', 0)), float(w.get('n2_max', 0))
-                                if n1_min == -1 and n1_max == -2 and n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL"
-                                elif n1_min == -1 and n1_max == -2: s = f"{icons['FULL']} FULL (NRS1)"
-                                elif n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL (NRS2)"
-                                else:
-                                    s_parts = []
-                                    def safe_flt(v):
-                                        if v == "Gap" or v is None: return 0.0
-                                        try: return float(v)
-                                        except: return 0.0
-                                    
-                                    f1_min, f1_max = safe_flt(w.get('n1_min')), safe_flt(w.get('n1_max'))
-                                    f2_min, f2_max = safe_flt(w.get('n2_min')), safe_flt(w.get('n2_max'))
-                                    
-                                    icon = ""
-                                    if f1_max > 0 and f2_min > 0:
-                                        s_parts.append(f"GAP: {f1_max:.2f} – {f2_min:.2f} µm")
-                                        icon = icons.get('MOSTLY', '🌔')
-                                    
-                                    if f1_min > 0:
-                                        s_parts.append(f"BLUE CUTOFF: < {f1_min:.2f} µm")
-                                    elif (f1_min == f1_max or (f1_min <= 0 and f1_max <= 0)) and f2_min > 0:
-                                        s_parts.append(f"CUTOFF: (NRS1) – {f2_min:.2f} µm")
-
-                                    if f2_max > 0:
-                                        s_parts.append(f"RED CUTOFF: > {f2_max:.2f} µm")
-                                    elif (f2_min == f2_max or (f2_min <= 0 and f2_max <= 0)) and f1_max > 0:
-                                        s_parts.append(f"CUTOFF: {f1_max:.2f} µm – (NRS2)")
-                                    
-                                    if s_parts:
-                                        if not icon:
-                                            has_blue = any("BLUE" in p or "(NRS1)" in p for p in s_parts)
-                                            has_red = any("RED" in p or "(NRS2)" in p for p in s_parts)
-                                            if has_blue and has_red: icon = icons.get('PARTIAL', '🌓')
-                                            elif has_blue: icon = "🌓"
-                                            else: icon = "🌗"
-                                        s = f"{icon} " + "; ".join(s_parts)
-                            except: pass
-                        
-                        if i == 0:
+                        by_config = res_gf.get('by_config', {}) if isinstance(res_gf, dict) else {}
+                        configs_to_report = sorted(list(by_config.keys()))
+                        if not configs_to_report:
                             cfg_set = v_res.get('configs', set())
-                            cfg_str = ", ".join(sorted(cfg_set)) if cfg_set else ""
-                            row = f"{sid_str:>{max_id_w}} | {weight:>{max_weight_w}.0f} | {str(rank):>{max_rank_w}} | {cfg_str:<{max_cfg_w}}"
-                        else:
-                            row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {' ' * max_cfg_w}"
+                            if cfg_set:
+                                configs_to_report = sorted(list(cfg_set))
+                            else:
+                                configs_to_report = [None]
                         
-                        row += f" | {gf:<18} | {cell:<15} | {s}"
-                        write(row)
+                        for cfg in configs_to_report:
+                            if cfg is not None and by_config and cfg in by_config:
+                                res = by_config[cfg]
+                            else:
+                                res = res_gf
+                            
+                            n_obs, n_total = res.get('n_obs', 0), res.get('n_total', 0)
+                            pct = (n_obs / n_total * 100) if n_total > 0 else 0
+                            
+                            if pct >= 100: icon = icons['FULL']
+                            elif pct >= 70: icon = icons['MOSTLY']
+                            elif pct > 33.4: icon = icons['PARTIAL']
+                            elif pct > 0: icon = icons['FEW']
+                            else: icon = icons['EMPTY']
+                            
+                            cell = f"{icon} {n_obs:>2}/{n_total:<2} ({pct:.0f}%)"
+                            
+                            s = ""
+                            w = None
+                            if n_obs > 0 and target_waves:
+                                w_gf = target_waves.get(gf)
+                                if isinstance(w_gf, dict):
+                                    if cfg and cfg in w_gf:
+                                        w = w_gf[cfg]
+                                    elif 'n1_min' in w_gf:
+                                        w = w_gf
+                            
+                            if w:
+                                try:
+                                    n1_min, n1_max, n2_min, n2_max = float(w.get('n1_min', 0)), float(w.get('n1_max', 0)), float(w.get('n2_min', 0)), float(w.get('n2_max', 0))
+                                    if n1_min == -1 and n1_max == -2 and n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL"
+                                    elif n1_min == -1 and n1_max == -2: s = f"{icons['FULL']} FULL (NRS1)"
+                                    elif n2_min == -1 and n2_max == -2: s = f"{icons['FULL']} FULL (NRS2)"
+                                    else:
+                                        s_parts = []
+                                        def safe_flt(v):
+                                            if v == "Gap" or v is None: return 0.0
+                                            try: return float(v)
+                                            except: return 0.0
+                                        
+                                        f1_min, f1_max = safe_flt(w.get('n1_min')), safe_flt(w.get('n1_max'))
+                                        f2_min, f2_max = safe_flt(w.get('n2_min')), safe_flt(w.get('n2_max'))
+                                        
+                                        icon_w = ""
+                                        if f1_max > 0 and f2_min > 0:
+                                            s_parts.append(f"GAP: {f1_max:.2f} – {f2_min:.2f} µm")
+                                            icon_w = icons.get('MOSTLY', '🌔')
+                                        
+                                        if f1_min > 0:
+                                            s_parts.append(f"MISSING BLUE END: < {f1_min:.2f} µm")
+                                        elif (f1_min == f1_max or (f1_min <= 0 and f1_max <= 0)) and f2_min > 0:
+                                            s_parts.append(f"CUTOFF: (NRS1) – {f2_min:.2f} µm")
+                                        
+                                        if f2_max > 0:
+                                            s_parts.append(f"MISSING RED END: > {f2_max:.2f} µm")
+                                        elif (f2_min == f2_max or (f2_min <= 0 and f2_max <= 0)) and f1_max > 0:
+                                            s_parts.append(f"CUTOFF: {f1_max:.2f} µm – (NRS2)")
+                                        
+                                        if s_parts:
+                                            if not icon_w:
+                                                has_blue = any("BLUE" in p or "(NRS1)" in p for p in s_parts)
+                                                has_red = any("RED" in p or "(NRS2)" in p for p in s_parts)
+                                                if has_blue and has_red: icon_w = icons.get('PARTIAL', '🌓')
+                                                elif has_blue: icon_w = "🌓"
+                                                else: icon_w = "🌗"
+                                            s = f"{icon_w} " + "; ".join(s_parts)
+                                except: pass
+                            
+                            cfg_col_str = cfg if cfg is not None else ""
+                            if cfg_col_str.startswith("Config "):
+                                cfg_col_str = cfg_col_str[len("Config "):].strip()
+                            
+                            if first_row_for_target:
+                                row = f"{sid_str:>{max_id_w}} | {weight:>{max_weight_w}.0f} | {str(rank):>{max_rank_w}} | {cfg_col_str:<{max_cfg_w}}"
+                                first_row_for_target = False
+                            else:
+                                row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {cfg_col_str:<{max_cfg_w}}"
+                            
+                            row += f" | {gf:<18} | {cell:<15} | {s}"
+                            write(row)
                 write("-" * len(header))                
 
     def _report_observing_description(self, write):
@@ -2868,6 +2900,16 @@ class NIRSpecMOSReviewer:
                     write(f"{time_icon} Integration times all {all_min:.1f} s (< 1500 s)")
                 else:
                     write(f"{time_icon} Integration times ranged from {all_min:.1f} s - {all_max:.1f} s")
+                
+                # Integrations per Exposure
+                all_ints = [int(s['i']) for s in reviewed_specs]
+                ints_min = min(all_ints)
+                ints_max = max(all_ints)
+                ints_icon = icons['SUCCESS']
+                if ints_min == ints_max:
+                    write(f"{ints_icon} {ints_min} Integrations per Exposure")
+                else:
+                    write(f"{ints_icon} Integrations per Exposure: {ints_min} - {ints_max}")
 
             # Nod pattern
             if self.analytics:
@@ -3005,8 +3047,13 @@ class NIRSpecMOSReviewer:
                 irs2 = "IRS2" in (spec['rp'] or "")
                 time_ok = spec['dur'] <= 1500
                 
+                nod_pattern = self.analytics.get(str(spec['obs']), {}).get('nod_pattern', 'NONE')
+                nod_match = re.search(r'(\d+)\s+Shutter', nod_pattern, re.IGNORECASE)
+                nods_count = int(nod_match.group(1)) if nod_match else 1
+                total_dur = spec['dur'] * int(spec['i']) * nods_count
+                
                 if irs2 and time_ok:
-                    write(f"✅ {int(spec['g']):2d} groups {spec['rp']} = {spec['dur']:.0f} seconds integration")
+                    write(f"✅ {int(spec['g']):2d} groups {spec['rp']} = {spec['dur']:.0f} seconds integration x {spec['i']} ints x {nods_count} nods = {total_dur:.1f} sec {spec['gf']}")
                 else:
                     if not irs2:
                         write(f"{icons['WARNING']} NRS instead of NRSIRS2")
@@ -3245,6 +3292,21 @@ class NIRSpecMOSReviewer:
 
     def _parse_wavelength_csv(self, file_path, obs_num, gf, top_targets):
         try:
+            name_lower = file_path.name.lower()
+            m_exp = re.search(r'exp(\d+)', name_lower)
+            exp_idx = m_exp.group(1) if m_exp else None
+            cfg_match = re.search(r'-c(\d+)e(\d+)n(\d+)-', name_lower)
+            
+            cfg_name = None
+            if cfg_match:
+                cfg_name = f"c{int(cfg_match.group(1))}"
+            else:
+                cfg_label = self.config_mapping.get((obs_num, exp_idx)) if exp_idx else None
+                if cfg_label:
+                    cfg_name = cfg_label.replace("Config ", "").strip()
+                elif exp_idx:
+                    cfg_name = f"c{int(exp_idx)}"
+
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 if not reader.fieldnames: return False
@@ -3264,6 +3326,8 @@ class NIRSpecMOSReviewer:
                     sid = str(row.get(id_col) or "").strip()
                     if sid in top_targets:
                         if sid not in obs_waves: obs_waves[sid] = {}
+                        if gf not in obs_waves[sid]: obs_waves[sid][gf] = {}
+                        
                         waves = {}
                         def raw_val(v):
                             if not v: return "Gap"
@@ -3274,7 +3338,14 @@ class NIRSpecMOSReviewer:
                         waves['n1_max'] = raw_val(row.get(nw1_max))
                         waves['n2_min'] = raw_val(row.get(nw2_min))
                         waves['n2_max'] = raw_val(row.get(nw2_max))
-                        obs_waves[sid][gf] = waves
+                        
+                        if cfg_name:
+                            if not isinstance(obs_waves[sid][gf], dict) or 'n1_min' in obs_waves[sid][gf]:
+                                obs_waves[sid][gf] = {}
+                            obs_waves[sid][gf][cfg_name] = waves
+                        else:
+                            obs_waves[sid][gf] = waves
+                            
                         found_any = True
                 return found_any
         except: pass
@@ -3449,55 +3520,63 @@ class NIRSpecMOSReviewer:
                     continue
                 plot_file = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
                 ref_plot_file = plot_dir / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
-                write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
+                if plot_file.exists():
+                    write(f"   🖼️ Obs {obs_id}: {plot_file.name}")
+                elif (plot_dir / "visits" / plot_file.name).exists():
+                    write(f"   🖼️ Obs {obs_id}: visits/{plot_file.name}")
+                else:
+                    write(f"   🖼️ Obs {obs_id}: {plot_file.name} (not found)")
                 if ref_plot_file.exists() or (plot_dir / "visits" / ref_plot_file.name).exists():
                     write(f"   🖼️ Obs {obs_id} Ref Stars: {ref_plot_file.name}")
 
-    def generate_plots(self):
-        if not self.visits_csv_path: return
-        script_dir = Path(__file__).parent
-        plot_script = script_dir / "msa_coverage_plot.py"
-        if not plot_script.exists(): return
-        
+    def generate_plots(self, force=False):
+        if not self.visits_csv_path:
+            return
+        plot_script = SCRIPT_DIR / "msa_coverage_plot.py"
+        if not plot_script.exists():
+            print(f"⚠️  MSA coverage plot script not found at {plot_script}")
+            return
+
         try:
             valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
-            if not valid_obs: return
-            
-            # Check if plots exist and are up to date
-            existing_plots = []
-            plot_dir = self.input_path.parent
-            for obs_id in valid_obs:
-                p_base = plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png"
-                p_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_id}.png"
-                p_ref = plot_dir / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
-                p_ref_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_id}_refstars.png"
-                if p_base.exists(): existing_plots.append(p_base)
-                elif p_visits.exists(): existing_plots.append(p_visits)
-                if p_ref.exists(): existing_plots.append(p_ref)
-                elif p_ref_visits.exists(): existing_plots.append(p_ref_visits)
-            
-            if existing_plots:
-                # Compare timestamps
+            if not valid_obs:
+                return
+
+            plot_dir = self.visits_csv_path.parent
+            existing_plots = [plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png" for obs_id in valid_obs
+                              if (plot_dir / f"{self.input_path.stem}_Obs{obs_id}.png").exists()]
+
+            if existing_plots and not force:
                 last_change = max(self.files_used.values()) if self.files_used else 0
                 plot_mtime = min(p.stat().st_mtime for p in existing_plots)
-                
                 if plot_mtime > last_change:
-                    print(f"\n🖼️  {len(existing_plots)} MSA coverage plots exist and are up to date.")
-                    user_input = "n" if self.auto_yes else input("Regenerate plots? [y/N]: ").strip().lower()
-                    if not user_input or user_input == 'n':
-                        return
+                    print(f"🖼️  MSA coverage plots are up to date in: {plot_dir}")
+                    return
 
-            valid_obs_str = ",".join(valid_obs)
-            print(f"Generating MSA coverage plots for {self.visits_csv_path.name}...")
-            cmd = [sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path), 
-                            str(self.pid), valid_obs_str]
+            print(f"🖼️  Generating MSA coverage plots...")
+            cmd = [sys.executable, str(plot_script), str(self.input_path), str(self.visits_csv_path),
+                   str(self.pid), ",".join(valid_obs)]
             if self.combined != 'auto':
                 cmd.extend(['--combined', self.combined])
-            subprocess.run(cmd, check=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            plot_dir = self.visits_csv_path.parent
+            saved = [l.split("Plot saved to: ", 1)[1].strip() for l in result.stdout.splitlines() if l.startswith("Plot saved to: ")]
+            for path_str in saved:
+                print(f"   🖼️ {Path(path_str).name}")
+            if saved:
+                print(f"✅ {len(saved)} MSA coverage plots saved to: {plot_dir}")
+            else:
+                print(f"✅ MSA coverage plots generated in: {plot_dir}")
+            if result.stderr:
+                filtered = [l for l in result.stderr.splitlines() if "WARNING" not in l and "pysiaf" not in l.lower()]
+                if filtered:
+                    print("\n".join(filtered), file=sys.stderr)
         except subprocess.CalledProcessError as e:
-            print(f"Warning: MSA coverage plot generation failed.")
+            print(f"⚠️  MSA coverage plot generation failed (exit {e.returncode}).")
+            if e.stdout: print(e.stdout, end="")
+            if e.stderr: print(e.stderr, end="", file=sys.stderr)
         except Exception as e:
-            print(f"Warning: Could not trigger MSA coverage plot generation: {e}")
+            print(f"⚠️  Could not generate MSA coverage plots: {e}")
                 
     def generate_dithers_plot(self):
         """
@@ -3508,13 +3587,11 @@ class NIRSpecMOSReviewer:
         
         # Collect all dither plot files to check for staleness
         plot_files = []
-        plot_dir = self.input_path.parent
+        plot_dir = self.visits_csv_path.parent if self.visits_csv_path else self.input_path.parent
         for obs_num in sorted(self.analytics.keys(), key=int):
             if str(obs_num) not in [str(o) for o in self.reviewed_obs_nums]: continue
             p_base = plot_dir / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
-            p_visits = plot_dir / "visits" / f"{self.input_path.stem}_Obs{obs_num}_dithers.png"
             if p_base.exists(): plot_files.append(p_base)
-            elif p_visits.exists(): plot_files.append(p_visits)
 
         if plot_files:
             last_change = max(self.files_used.values()) if self.files_used else 0
@@ -3522,7 +3599,9 @@ class NIRSpecMOSReviewer:
             
             if plot_mtime > last_change:
                 print(f"\n🖼️  Dither plots exist and are up to date.")
-                user_input = "n" if self.auto_yes else input("Regenerate dither plots? [y/N]: ").strip().lower()
+                if self.auto_yes:
+                    return
+                user_input = input("Regenerate dither plots? [y/N]: ").strip().lower()
                 if not user_input or user_input == 'n':
                     return
 
@@ -3583,8 +3662,8 @@ def download_aptx(pid, dest_dir):
         for f in sorted(existing, key=lambda x: x.stat().st_mtime):
             print(f"  - {f.name}")
         
-        choice = input("\nAction: [U]se existing (most recent), [D]ownload newest, [O]verwrite? [U/d/o]: ").strip().lower()
-        
+        choice = 'u'
+
         if not choice or choice == 'u':
             return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
         elif choice == 'o':
@@ -3618,6 +3697,7 @@ def main():
     parser.add_argument("-x", "--exclude", help="Exclude these observations")
     parser.add_argument("--obs", help="Alias for --include")
     parser.add_argument("--exports-dir", help="Explicit directory for CSV exports")
+    parser.add_argument("--plots", action="store_true", help="Generate MSA coverage plots only")
     parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
     parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', help="Combined plot strategy")
     
@@ -3638,16 +3718,7 @@ def main():
         apt_files = sorted(list(Path('.').glob('*.aptx')), key=lambda x: x.stat().st_mtime, reverse=True)
         if apt_files:
             most_recent = apt_files[0]
-            user_input = "y" if args.exports else input(f"Run on {most_recent.name}? [Y/n]: ").strip().lower()
-            if not user_input or user_input == 'y':
-                args.apt_file = str(most_recent)
-            else:
-                print("\nAvailable .aptx files:")
-                for f in apt_files:
-                    mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    print(f"  {f.name:30} ({mtime})")
-                print("\nPlease specify which one to use.")
-                sys.exit(1)
+            args.apt_file = str(most_recent)
         else:
             print("No .aptx files found in the current directory.")
             print("Please specify an .aptx or .xml file or a Program ID.")
@@ -3674,11 +3745,14 @@ def main():
         auto_yes=args.exports,
         combined=args.combined
     )
-    reviewer.print_report()
-    if args.dithers:
-        reviewer.generate_dithers_plot()
-    elif not args.noplots:
-        reviewer.generate_plots()
+    if args.plots:
+        reviewer.generate_plots(force=True)
+    else:
+        reviewer.print_report()
+        if args.dithers:
+            reviewer.generate_dithers_plot()
+        elif not args.noplots:
+            reviewer.generate_plots()
 
 if __name__ == "__main__":
     main()
