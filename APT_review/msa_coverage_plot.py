@@ -1190,9 +1190,13 @@ def main():
             table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
             table_lines.append("")
             
-            f110_hdr = '*F110W*' if active_mag_col == 'NRS_F110W' else ' F110W '
-            f140_hdr = '*F140X*' if active_mag_col == 'NRS_F140W' else ' F140X '
-            clear_hdr = '*CLEAR*' if active_mag_col == 'NRS_CLEAR' else ' CLEAR '
+            is_chosen_f110 = (active_mag_col == 'NRS_F110W' and n_stars > 0)
+            is_chosen_f140 = (active_mag_col == 'NRS_F140W' and n_stars > 0)
+            is_chosen_clear = (active_mag_col == 'NRS_CLEAR' and n_stars > 0)
+            
+            f110_hdr = '*F110W*' if is_chosen_f110 else ' F110W '
+            f140_hdr = '*F140X*' if is_chosen_f140 else ' F140X '
+            clear_hdr = '*CLEAR*' if is_chosen_clear else ' CLEAR '
             
             table_lines.append(f"{'quad':^4}|{'ID':^8}|{f110_hdr}|{f140_hdr}|{clear_hdr}")
             table_lines.append("-" * 37)
