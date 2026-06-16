@@ -48,6 +48,35 @@ TA_MAG_LIMITS = {
     ('CLEAR', 'NRSRAPIDD6'): (23.1, 25.7),
 }
 
+def deg_to_hms(ra):
+    hours = ra / 15.0
+    h = int(hours)
+    m = int((hours - h) * 60.0)
+    s = (hours - h * 1.0 - m / 60.0) * 3600.0
+    if s < 0: s = 0.0
+    if s >= 60.0:
+        s = 0.0
+        m += 1
+    if m >= 60:
+        m = 0
+        h += 1
+    return f"{h:02d} {m:02d} {s:08.5f}"
+
+def deg_to_dms(dec):
+    sign = "+" if dec >= 0 else "-"
+    dec = abs(dec)
+    d = int(dec)
+    m = int((dec - d) * 60.0)
+    s = (dec - d * 1.0 - m / 60.0) * 3600.0
+    if s < 0: s = 0.0
+    if s >= 60.0:
+        s = 0.0
+        m += 1
+    if m >= 60:
+        m = 0
+        d += 1
+    return f"{sign}{d:02d} {m:02d} {s:07.3f}"
+
 class NIRSpecMOSReviewer:
     def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, combined='auto', **kwargs):
         self.input_path = Path(input_file).absolute()
@@ -108,7 +137,8 @@ class NIRSpecMOSReviewer:
             'wavelengths': {}, # obs_num -> {sid -> {gf -> {'n1_min': val, ...}}}
             'availability': {}, # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
             'catalogs': [],
-            'shutter_coords': {} # obs_num -> {id -> set((q, d, s))}
+            'shutter_coords': {}, # obs_num -> {id -> set((q, d, s))}
+            'pointings_data': {}, # (obs_num, pointing_name, grating_filter) -> dict
         }
         self.visits_csv_path = None
         self.searched_dirs = []
@@ -715,6 +745,8 @@ class NIRSpecMOSReviewer:
         # Fallback: CamelCase to space
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', tag_name)
 
+
+
     def _parse_msa_exp_csv(self, file_path, obs_num, exp_idx=None, label=""):
         """Parse MSA configuration CSV to extract target IDs and shutter coordinates."""
         try:
@@ -732,10 +764,41 @@ class NIRSpecMOSReviewer:
                     self.exports_data['shutter_coords'][obs_num] = {}
                 coords = self.exports_data['shutter_coords'][obs_num]
                 
+                # Read the first row to get pointing parameters
+                first_row = None
+                try:
+                    first_row = next(reader)
+                except StopIteration:
+                    return False
+                
+                # Extract values from first row
+                ra_col = col_map.get('FIDUCIAL RA (DEGREES)')
+                dec_col = col_map.get('FIDUCIAL DEC (DEGREES)')
+                pa_col = col_map.get('APERTURE PA (DEGREES)')
+                type_col = col_map.get('SOURCE TYPE')
+                
+                fid_ra = float(first_row.get(ra_col)) if ra_col and first_row.get(ra_col) else None
+                fid_dec = float(first_row.get(dec_col)) if dec_col and first_row.get(dec_col) else None
+                fid_pa = float(first_row.get(pa_col)) if pa_col and first_row.get(pa_col) else None
+                
+                # Check for catalog weights
+                cat_name = self.analytics.get(obs_num, {}).get('target_name')
+                cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+                
+                target_set_size = 0
+                total_weight = 0.0
+                
                 count = 0
-                for row in reader:
+                def process_row(row):
+                    nonlocal target_set_size, total_weight, count
                     sid = str(row.get(id_col, '')).strip() if id_col else ''
-                    if not sid: continue
+                    if not sid: return
+                    
+                    stype = str(row.get(type_col, '')).strip() if type_col else ''
+                    if stype.lower() in ['primary', 'filler']:
+                        target_set_size += 1
+                        weight = float(cat_sources.get(sid, {}).get('weight', 0.0))
+                        total_weight += weight
                     
                     try:
                         q_idx = int(float(str(row.get(q_col, '')).strip()))
@@ -747,6 +810,39 @@ class NIRSpecMOSReviewer:
                         coords[sid].add((q_idx, d_idx, s_idx, w_val, label, file_path.name))
                         count += 1
                     except: pass
+                
+                process_row(first_row)
+                for row in reader:
+                    process_row(row)
+                
+                # Get pointing name and grating/filter from filename
+                pointing_name = ""
+                grating_filter = ""
+                cfg_match = re.search(r'-([a-zA-Z0-9]+)n\d+-', file_path.name.lower())
+                if cfg_match:
+                    pointing_name = cfg_match.group(1)
+                
+                gf_match = re.search(r'-n\d+-([^-]+-[^-]+)\.csv$', file_path.name.lower())
+                if gf_match:
+                    grating_filter = gf_match.group(1).upper().replace('-', '/')
+                else:
+                    gf_match2 = re.search(r'-([^-]+-[^-]+)\.csv$', file_path.name.lower())
+                    if gf_match2:
+                        grating_filter = gf_match2.group(1).upper().replace('-', '/')
+                
+                if pointing_name and fid_ra is not None and fid_dec is not None:
+                    pointing_key = (obs_num, pointing_name, grating_filter)
+                    self.exports_data['pointings_data'][pointing_key] = {
+                        'name': pointing_name,
+                        'obs': obs_num,
+                        'ra': fid_ra,
+                        'dec': fid_dec,
+                        'pa': fid_pa,
+                        'gf': grating_filter,
+                        'size': target_set_size,
+                        'weight': total_weight,
+                        'file': file_path.name
+                    }
                 
                 return count > 0
         except: pass
@@ -1573,6 +1669,29 @@ class NIRSpecMOSReviewer:
                 obs_plans = [xml_plan_text.strip()]
             self.analytics[num]['plans'] = obs_plans
             
+            # Parse actual MSA configurations from the XML template
+            msa_configs = []
+            for cfg in self.findall(mos_template, 'nsmos:Configuration'):
+                cfg_name = cfg.get('Name') or ""
+                slitlets_text = cfg.findtext(f"{{{NS['ns']}}}slitlets", namespaces=NS) or ""
+                primaries_text = cfg.findtext(f"{{{NS['ns']}}}primaries", namespaces=NS) or ""
+                fillers_text = cfg.findtext(f"{{{NS['ns']}}}fillers", namespaces=NS) or ""
+                secondaries_text = cfg.findtext(f"{{{NS['ns']}}}secondaries", namespaces=NS) or ""
+                
+                n_slitlets = len([s for s in slitlets_text.split('|') if s.strip()]) if slitlets_text else 0
+                n_primaries = len([p for p in primaries_text.split() if p.strip()]) if primaries_text else 0
+                n_fillers = len([f for f in fillers_text.split() if f.strip()]) if fillers_text else 0
+                n_secondaries = len([sec for sec in secondaries_text.split() if sec.strip()]) if secondaries_text else 0
+                
+                msa_configs.append({
+                    'name': cfg_name,
+                    'n_slitlets': n_slitlets,
+                    'n_primaries': n_primaries,
+                    'n_fillers': n_fillers,
+                    'n_secondaries': n_secondaries
+                })
+            self.analytics[num]['msa_configs'] = msa_configs
+            
             if is_full_review and ta_method == "WATA":
                 # Check if target is MOS Catalog
                 target_info = self.stats['catalog_info'].get(target_name, {})
@@ -1897,6 +2016,7 @@ class NIRSpecMOSReviewer:
             self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
             self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
             self._report_plans(write)                                     # MPT Plans section
+            self._report_pointings(write)                                 # POINTINGS section
             self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
             self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
             self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
@@ -2011,28 +2131,72 @@ class NIRSpecMOSReviewer:
         plans = self.stats['program_metadata'].get('plans', [])
         if not plans and not any(self.analytics.get(o, {}).get('plans') or self.analytics.get(o, {}).get('json_plan') for o in self.analytics):
             return
-        write("\n" + "="*80)
+        write("\n" + "="*145)
         write("🗺️ MPT PLANS")
-        write("="*80)
-        if plans:
-            write(f"Program Plans (ToolData): {', '.join(plans)}")
-            
+        write("="*145)
+        
+        header = f"Obs   | {'Plan #':<6} | {'Plan name':<50} | {'Configs':<7} | {'Exposures':<9} | {'Primary':<7} | {'Secondary':<9} | {'Plan APA':<15} | Catalog"
+        write(header)
+        write("-" * len(header))
+        
         for o in sorted(self.analytics.keys(), key=int):
             if self.obs_info.get(o, {}).get('sign') == "👷":
                 continue
-            obs_plans = self.analytics[o].get('plans', [])
-            json_plan = self.analytics[o].get('json_plan')
             
-            plan_list = []
-            if obs_plans:
-                plan_list.extend(obs_plans)
-            if json_plan:
-                plan_list.append(f"JSON: {json_plan}")
-                
-            if plan_list:
-                write(f"Obs {o}: {', '.join(plan_list)}")
-            else:
-                write(f"Obs {o}: None specified")
+            obs_plans = self.analytics[o].get('plans', [])
+            plan_name = obs_plans[0] if obs_plans else "None specified"
+            
+            plan_num = "-"
+            if obs_plans and plans:
+                try:
+                    plan_num = str(plans.index(plan_name) + 1)
+                except ValueError:
+                    pass
+            
+            msa_configs = self.analytics[o].get('msa_configs', [])
+            n_configs = len(msa_configs)
+            n_exposures = len(self.analytics[o].get('configs', []))
+            
+            primary_cnt = msa_configs[0]['n_primaries'] if msa_configs else 0
+            secondary_cnt = msa_configs[0]['n_secondaries'] if msa_configs else 0
+            
+            plan_apa = self.analytics[o].get('apa_planned', "N/A")
+            catalog = self.analytics[o].get('catalog_name', "N/A")
+            
+            write(f"{o:<5} | {plan_num:<6} | {plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
+
+    def _report_pointings(self, write):
+        pointings = self.exports_data.get('pointings_data', {})
+        if not pointings:
+            return
+        
+        write("\n" + "="*145)
+        write("POINTINGS")
+        write("="*145)
+        
+        header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+        write(header)
+        write("-" * len(header))
+        
+        plans = self.stats['program_metadata'].get('plans', [])
+        sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
+        
+        for idx, key in enumerate(sorted_keys, 1):
+            p = pointings[key]
+            obs_num = p['obs']
+            
+            plan_num = "-"
+            obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
+            if obs_plans and plans:
+                try:
+                    plan_num = str(plans.index(obs_plans[0]) + 1)
+                except ValueError:
+                    pass
+            
+            ra_hms = deg_to_hms(p['ra'])
+            dec_dms = deg_to_dms(p['dec'])
+            
+            write(f"{idx:>3} | {plan_num:<11} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
 
     def _report_aperture_pa(self, write, icons):
         if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]

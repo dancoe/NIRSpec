@@ -99,10 +99,19 @@ def calculate_nirspec_mos_trace(
     input_model.meta.instrument.filter = filt
     input_model.meta.instrument.grating = grating
     input_model.meta.instrument.gwa_tilt = 37.0610  # Grating wheel assembly tilt temperature (required for WCS)
-    input_model.meta.exposure.type = "NRS_MSASPEC"
+    is_fixed_slit = (getattr(slit, 'quadrant', 0) == 5)
+    
+    if is_fixed_slit:
+        input_model.meta.exposure.type = "NRS_FIXEDSLIT"
+        # For FS, we might want to specify which slit we're using if not provided in 'slit'
+    else:
+        input_model.meta.exposure.type = "NRS_MSASPEC"
+    
     input_model.meta.observation.program_number = "00001" # Needed for MSA metadata
     input_model.meta.observation.date = "2023-06-15"  # Required by CRDS for reference file lookup
     input_model.meta.observation.time = "00:00:00"  # Required by CRDS for reference file lookup
+    if not input_model.meta.subarray.name:
+        input_model.meta.subarray.name = "FULL"
     input_model.meta.dither.position_number = 1
     input_model.meta.wcsinfo.v2_ref = -453.609863
     input_model.meta.wcsinfo.v3_ref = -394.329956
@@ -127,17 +136,31 @@ def calculate_nirspec_mos_trace(
         except Exception as e:
             # Some reference types may not be available for all modes
             ref_files[reftype] = None
-            print(f"Could not retrieve {reftype}: {e}")
-            #log.debug(f"Could not retrieve {reftype}: {e}")
+            log.debug(f"Could not retrieve {reftype}: {e}")
 
     # 2. Build the full WCS pipeline for the given slit
-    # The slit_y_range is a default for MOS slits.
     try:
-        pipeline = nirspec.slitlets_wcs(input_model, ref_files, [slit])
-    except NoDataOnDetectorError as e:
-        print(f"Error: {e}")
-        print(f"The combination of slit {slit.name}, grating {grating}, filter {filt}"
-              f" does not project onto detector {detector}.")
+        if is_fixed_slit:
+            # Fixed Slit: use pipeline's official Slit objects and validation
+            # This silences the "Slit ... is not open" console warnings.
+            input_model.meta.instrument.fixed_slit = slit.name
+            all_fs = nirspec.get_open_fixed_slits(input_model)
+            selected_slit = next((s for s in all_fs if s.name == slit.name), slit)
+            
+            valid_slits = nirspec.validate_open_slits(input_model, [selected_slit], ref_files)
+            if not valid_slits:
+                log.debug(f"Fixed slit {slit.name} does not project on {detector}")
+                return None
+        else:
+            # MOS Mode: Skip validate_open_slits() to avoid mandatory MSA metadata file check.
+            # slitlets_wcs() will still work and NaNs will handle off-detector cases.
+            valid_slits = [slit]
+
+        # Use the validated (or provided) slit to create the WCS pipeline
+        pipeline = nirspec.slitlets_wcs(input_model, ref_files, valid_slits)
+        
+    except (NoDataOnDetectorError, Exception) as e:
+        log.debug(f"Error during WCS creation for {slit.name}: {e}")
         return None
 
     # Create WCS object from the pipeline
@@ -272,6 +295,53 @@ def get_slit_by_quadrant_col_row(quadrant, column, row):
     return slit
 
 
+def get_fixed_slit(slit_name):
+    """
+    Create a Slit object for a NIRSpec fixed slit.
+
+    Parameters
+    ----------
+    slit_name : str
+        The name of the fixed slit (e.g., 'S200A1', 'S200B1', 'S1600A1').
+
+    Returns
+    -------
+    slit : stdatamodels.jwst.transforms.models.Slit
+        A Slit namedtuple with default values for the specified fixed slit.
+    """
+    # Standard NIRSpec fixed slit names
+    valid_names = ['S200A1', 'S200A2', 'S400A1', 'S1600A1', 'S200B1']
+    if slit_name not in valid_names:
+        raise ValueError(f"Invalid fixed slit name: {slit_name}. Must be one of {valid_names}")
+
+    # Use quadrant 5 for all fixed slits in the model
+    # The shutter_id is not strictly used for WCS, but we'll set it to a unique value
+    # based on the slit index to keep them distinct.
+    slit_idx = valid_names.index(slit_name)
+    shutter_id = 100000 + slit_idx
+
+    slit = Slit(
+        slit_name,         # name
+        shutter_id,        # shutter_id (mapped to a fake ID for FS)
+        1,                 # dither_position
+        0.0,               # xcen
+        0.0,               # ycen
+        -0.215,            # ymin
+        0.215,             # ymax
+        5,                 # quadrant (5 is standard for FS in JWST pipeline)
+        1,                 # source_id
+        'x',               # shutter_state
+        f'target_{slit_name}',  # source_name
+        f'alias_{slit_name}',   # source_alias
+        1.0,               # stellarity
+        0.0,               # source_xpos
+        0.0,               # source_ypos
+        0.0,               # source_ra
+        0.0                # source_dec
+    )
+    return slit
+
+
 if __name__ == '__main__':
     # --- Example Usage ---
 
@@ -284,8 +354,8 @@ if __name__ == '__main__':
     # Note: MSA has 365 columns (1-365) and 171 rows (1-171) per quadrant
     slits_to_try = [
         get_slit_by_quadrant_col_row(quadrant=1, column= 50, row= 50),
-        get_slit_by_quadrant_col_row(quadrant=1, column=100, row=100),
-        get_slit_by_quadrant_col_row(quadrant=1, column=200, row=150),
+        get_fixed_slit('S200A1'),
+        get_fixed_slit('S200B1'),
         #get_slit_by_quadrant_col_row(quadrant=2, column=150, row=150),
         #get_slit_by_quadrant_col_row(quadrant=3, column=170, row=10),
         #get_slit_by_quadrant_col_row(quadrant=3, column=365, row=171),

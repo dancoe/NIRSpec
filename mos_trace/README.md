@@ -6,7 +6,7 @@
 
 Interactive plotter for JWST NIRSpec MOS (multi-object spectroscopy) observations
 
-* Select: shutter (quadrant, row, and column) on the MSA (Micro-Shutter Assembly)
+* Select: shutter (quadrant, row, and column) on the MSA (Micro-Shutter Assembly) or Fixed Slits 
 * See: detector pixel traces on NRS1 and NRS2 with wavelength color-coding
     * calculated using the JWST pipeline (required)
 
@@ -20,6 +20,7 @@ Interactive plotter for JWST NIRSpec MOS (multi-object spectroscopy) observation
 - **Save & Load Shutters**: Save shutters and result summaries to CSV files. (Full traces are not saved and must be recomputed.)
 - **Wavelength Color-Coding**: Spectral traces are color-coded by wavelength (rainbow colormap).
 - **PRISM / Gratings & Dispersers**: Switch between PRISM and gratings (G140M/H, G235M/H, G395M/H)
+- **Fixed Slit Support**: Dedicated buttons to toggle traces for S200A1, S200A2, S400A1, S1600A1, and S200B1.
 
 ## Installation
 
@@ -64,17 +65,19 @@ python3 mos_trace.py
 
 ### Controls
 
-1. **Click to Add**: Click anywhere on the MSA to lock a shutter position and add it to your list.
-2. **Auto-calculate on hover**: (Checkbox) When enabled, moving the mouse over the MSA updates the detector trace live. Performance may be slow.
-3. **Plot multiple traces**: (Checkbox) Option to plot multiple traces or one at a time.
-4. **Automatic Grids (1, 2x2, 3x3)**: Understand the geometry by plotting multiple traces from a grid of shutters. Adjust **Buffer** (distance from edge) and **Stagger** (vertical shift to avoid overlap) in the popup.
-5. **Save / Load / Clear**: Save shutters and result summaries to a CSV file. Reload shutters and recalcuate traces. Clear (reset) all shutters and traces.
-6. **Grating Selectors**: Use the grid of buttons to switch between dispersers (PRISM, High-res H, Medium-res M).
+1. **Fixed Slit Buttons**: Click a button (S200A1, S1600A1, etc.) to toggle its trace. Buttons stay "depressed" while the trace is shown.
+2. **ALL Button**: Quickly toggle all 5 Fixed Slits at once.
+3. **Click to Add**: Click anywhere on the MSA to lock a shutter position and add it to your list.
+4. **Auto-calculate on hover**: (Checkbox) When enabled, moving the mouse over the MSA updates the detector trace live. Performance may be slow.
+5. **Plot multiple traces**: (Checkbox) Option to plot multiple traces or one at a time.
+6. **Automatic Grids (1, 2x2, 3x3)**: Understand the geometry by plotting multiple traces from a grid of shutters. Adjust **Buffer** (distance from edge) and **Stagger** (vertical shift to avoid overlap) in the popup.
+7. **Save / Load / Clear**: Save shutters and result summaries to a CSV file. Reload shutters and recalcuate traces. Clear (reset) all shutters and traces.
+8. **Grating Selectors**: Use the grid of buttons to switch between dispersers (PRISM, High-res H, Medium-res M).
 
 ## Terminal Command Line Interface (CLI)
 For quick trace calculations in the Terminal without launching the GUI:
 ```bash
-# Basic usage (defaults to PRISM/CLEAR)
+# Basic MSA usage (defaults to PRISM/CLEAR)
 python3 mos_trace.py Q3 319 108
 
 # Specify a configuration (G395H, G140M, etc.)
@@ -85,6 +88,10 @@ python3 mos_trace.py G140M/F070LP Q3 319 108
 
 # Use compact shutter ID format
 python3 mos_trace.py q3d319s108
+
+# Calculate Fixed Slit traces
+python3 mos_trace.py S200A1  # (defaults to PRISM/CLEAR)
+python3 mos_trace.py G395M S1600A1
 
 # Process a CSV file (auto-detects grating/filter from filename)
 python3 mos_trace.py traces/4246/4246-obs3-exp1-c1e1n1-G395H-F290LP.csv

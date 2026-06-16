@@ -42,7 +42,7 @@ from matplotlib.colors import Normalize
 import matplotlib.patches as patches
 import matplotlib.gridspec as gridspec
 from matplotlib.collections import LineCollection
-from calculate_trace import calculate_nirspec_mos_trace, get_slit_by_quadrant_col_row, print_crds_status
+from calculate_trace import calculate_nirspec_mos_trace, get_slit_by_quadrant_col_row, get_fixed_slit, print_crds_status
 
 
 # Global instrument configurations for NIRSpec gratings and filters
@@ -132,8 +132,27 @@ INSTRUMENT_CONFIGS = {
 }
 
 
+# NIRSpec Fixed Slit coordinates in MSA frame (arcsec)
+# Values staggered to match physical layout (Jakobsen et al. 2022)
+FIXED_SLITS = {
+    'S200A1':  {'x': -73.0, 'y':  7.3,  'w': 0.2, 'h': 3.2},
+    'S200A2':  {'x': -92.8, 'y':  3.5,  'w': 0.2, 'h': 3.2},
+    'S400A1':  {'x': -79.3, 'y': -0.5,  'w': 0.4, 'h': 3.65},
+    'S1600A1': {'x': -76.2, 'y': -3.8,  'w': 1.6, 'h': 1.6},
+    'S200B1':  {'x':  85.0, 'y': -7.0,  'w': 0.2, 'h': 3.2},
+}
+
+
+
 def get_msa_coords(quadrant, col, row):
     """Convert quadrant, column, row to MSA position (msa_x, msa_y) in arcsec"""
+    if quadrant == 5:
+        # For fixed slits, 'row' is actually the slit name
+        name = row
+        if name in FIXED_SLITS:
+            return FIXED_SLITS[name]['x'], FIXED_SLITS[name]['y']
+        return 0, 0
+
     shutter_pitch_x = 0.27  # arcsec
     shutter_pitch_y = 0.53  # arcsec
     x_num_cols = 365
@@ -222,6 +241,12 @@ def get_quadrant_col_row(msa_x, msa_y):
             y_frac = y_from_top / quad_height
             shutter_col = int(x_frac * x_num_cols) + 1
             shutter_row = int(y_frac * y_num_rows) + 1
+
+    if quadrant is None:
+        # Check if near a fixed slit
+        for name, info in FIXED_SLITS.items():
+            if abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0:
+                return 5, 0, name
 
     return quadrant, shutter_col, shutter_row
 
@@ -364,6 +389,36 @@ class UnifiedPlotCanvas(FigureCanvas):
                 ly = qy + j * quad_h / num_y
                 ax.plot([qx, qx + quad_w], [ly, ly], 'w-', alpha=0.15, linewidth=0.5)
         
+        # Draw Fixed Slits
+        for name, info in FIXED_SLITS.items():
+            # Draw slit rectangle (slightly enlarged for visibility)
+            fx, fy = info['x'], info['y']
+            fw, fh = info['w'], info['h']
+            
+            # Make the rectangle more visible by using a minimum size for the plot
+            pw = max(fw, 1.0)
+            ph = max(fh, 1.0)
+            
+            rect = patches.Rectangle((fx - pw/2, fy - ph/2), pw, ph,
+                                    linewidth=1.5, edgecolor='yellow',
+                                    facecolor='#ffffcc', alpha=0.8,
+                                    zorder=10)
+            ax.add_patch(rect)
+            
+            # Add label (offset to avoid overlapping the slit)
+            # S200A1 and S1600A1 requested to be to the right
+            if name in ['S200A1', 'S1600A1', 'S200B1'] or fx > 0:
+                ha = 'left'
+                label_x = fx + pw/2 + 1
+            else:
+                ha = 'right'
+                label_x = fx - pw/2 - 1
+
+            ax.text(label_x, fy, name,
+                   ha=ha, va='center', color='yellow', alpha=0.6,
+                   fontsize=9, fontweight='bold')
+
+        
         # Store quadrant info for hover detection
         self.quad_info = {
             'Q3': ((-quad_w - quad_gap_x/2, quad_gap_y/2), (quad_w, quad_h)),
@@ -432,6 +487,16 @@ class UnifiedPlotCanvas(FigureCanvas):
             self.hover_pos = None
             return
         
+        # Check if hovering over fixed slits
+        hovered_fs = None
+        for name, info in FIXED_SLITS.items():
+            if (abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0):
+                hovered_fs = name
+                break
+        
+        if self.main_window and hasattr(self.main_window, 'update_fs_hover_text'):
+            self.main_window.update_fs_hover_text(hovered_fs)
+
         self.hover_pos = (msa_x, msa_y)
         
         # Check if mouse has moved significantly (for deselecting slit) - but NOT if we're dragging
@@ -524,6 +589,14 @@ class UnifiedPlotCanvas(FigureCanvas):
         
         if msa_x is None or msa_y is None:
             return
+        
+        # Check if clicking near a fixed slit
+        clicked_fs = None
+        for name, info in FIXED_SLITS.items():
+            if (abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0):
+                clicked_fs = name
+                msa_x, msa_y = info['x'], info['y'] # Snap to FS
+                break
         
         # Check if multiple traces mode is enabled
         multiple_mode = self.main_window and hasattr(self.main_window, 'plot_multiple') and self.main_window.plot_multiple.isChecked()
@@ -709,82 +782,103 @@ class UnifiedPlotCanvas(FigureCanvas):
         diagnostic_lines.append(f"Configuration: {display_name}")
         diagnostic_lines.append("")
         
+        diagnostic_lines.append("")
+        
+        # Check if it's a fixed slit
+        is_fs = False
+        fs_name = None
+        for name, info in FIXED_SLITS.items():
+            if abs(msa_x - info['x']) < 0.1 and abs(msa_y - info['y']) < 0.1:
+                is_fs = True
+                fs_name = name
+                break
+        
         self.clear_traces()
         
-        # Convert MSA position to quadrant, column, row
-        shutter_pitch_x = 0.27  # arcsec
-        shutter_pitch_y = 0.53  # arcsec
-        x_num_cols = 365
-        y_num_rows = 171
-        quad_width  = x_num_cols * shutter_pitch_x
-        quad_height = y_num_rows * shutter_pitch_y
-        gap_x = 23  # arcsec
-        gap_y = 37  # arcsec
-        half_gap_x = gap_x / 2
-        half_gap_y = gap_y / 2
-        
-        quadrant = None
-        shutter_col = None
-        shutter_row = None
+        if is_fs:
+            diagnostic_lines.append(f"Fixed Slit: {fs_name}")
+            diagnostic_lines.append(f"Grating: {grating_name}")
+            diagnostic_lines.append(f"Filter: {filter_name}")
+            diagnostic_lines.append(f"Expected detectors: {', '.join(expected_detectors)}")
+            diagnostic_lines.append(f"Wavelength range: {wave_min:.2f} - {wave_max:.2f} μm")
+            diagnostic_lines.append("")
+            
+            slit = get_fixed_slit(fs_name)
+        else:
+            # Convert MSA position to quadrant, column, row
+            shutter_pitch_x = 0.27  # arcsec
+            shutter_pitch_y = 0.53  # arcsec
+            x_num_cols = 365
+            y_num_rows = 171
+            quad_width  = x_num_cols * shutter_pitch_x
+            quad_height = y_num_rows * shutter_pitch_y
+            gap_x = 23  # arcsec
+            gap_y = 37  # arcsec
+            half_gap_x = gap_x / 2
+            half_gap_y = gap_y / 2
+            
+            quadrant = None
+            shutter_col = None
+            shutter_row = None
 
-        if msa_x < -half_gap_x and msa_y > half_gap_y:  # Q3 (upper-left)
-            x_from_left_edge = -half_gap_x - msa_x
-            y_from_bottom = msa_y - half_gap_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
-                quadrant = 3
-                x_frac = x_from_left_edge / quad_width
-                y_frac = 1 - y_from_bottom / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x < -half_gap_x and msa_y < -half_gap_y:  # Q4 (lower-left)
-            x_from_left_edge = -half_gap_x - msa_x
-            y_from_top = -half_gap_y - msa_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
-                quadrant = 4
-                x_frac = x_from_left_edge / quad_width
-                y_frac = y_from_top / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x > half_gap_x and msa_y > half_gap_y:  # Q1 (upper-right)
-            x_from_left_edge = msa_x - half_gap_x
-            y_from_bottom = msa_y - half_gap_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
-                quadrant = 1
-                x_frac = 1 - x_from_left_edge / quad_width
-                y_frac = 1 - y_from_bottom / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
-        elif msa_x > half_gap_x and msa_y < -half_gap_y:  # Q2 (lower-right)
-            x_from_left_edge = msa_x - half_gap_x
-            y_from_top = -half_gap_y - msa_y
-            if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
-                quadrant = 2
-                x_frac = 1 - x_from_left_edge / quad_width
-                y_frac = y_from_top / quad_height
-                shutter_col = int(x_frac * x_num_cols) + 1
-                shutter_row = int(y_frac * y_num_rows) + 1
+            if msa_x < -half_gap_x and msa_y > half_gap_y:  # Q3 (upper-left)
+                x_from_left_edge = -half_gap_x - msa_x
+                y_from_bottom = msa_y - half_gap_y
+                if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+                    quadrant = 3
+                    x_frac = x_from_left_edge / quad_width
+                    y_frac = 1 - y_from_bottom / quad_height
+                    shutter_col = int(x_frac * x_num_cols) + 1
+                    shutter_row = int(y_frac * y_num_rows) + 1
+            elif msa_x < -half_gap_x and msa_y < -half_gap_y:  # Q4 (lower-left)
+                x_from_left_edge = -half_gap_x - msa_x
+                y_from_top = -half_gap_y - msa_y
+                if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+                    quadrant = 4
+                    x_frac = x_from_left_edge / quad_width
+                    y_frac = y_from_top / quad_height
+                    shutter_col = int(x_frac * x_num_cols) + 1
+                    shutter_row = int(y_frac * y_num_rows) + 1
+            elif msa_x > half_gap_x and msa_y > half_gap_y:  # Q1 (upper-right)
+                x_from_left_edge = msa_x - half_gap_x
+                y_from_bottom = msa_y - half_gap_y
+                if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_bottom <= quad_height:
+                    quadrant = 1
+                    x_frac = 1 - x_from_left_edge / quad_width
+                    y_frac = 1 - y_from_bottom / quad_height
+                    shutter_col = int(x_frac * x_num_cols) + 1
+                    shutter_row = int(y_frac * y_num_rows) + 1
+            elif msa_x > half_gap_x and msa_y < -half_gap_y:  # Q2 (lower-right)
+                x_from_left_edge = msa_x - half_gap_x
+                y_from_top = -half_gap_y - msa_y
+                if 0 <= x_from_left_edge <= quad_width and 0 <= y_from_top <= quad_height:
+                    quadrant = 2
+                    x_frac = 1 - x_from_left_edge / quad_width
+                    y_frac = y_from_top / quad_height
+                    shutter_col = int(x_frac * x_num_cols) + 1
+                    shutter_row = int(y_frac * y_num_rows) + 1
 
-        if quadrant is None or shutter_col is None or shutter_row is None:
-            diagnostic_lines.append("✗ Position is not in any MSA quadrant")
-            if verbose:
-                print("Position is not in any MSA quadrant")
-            return "\n".join(diagnostic_lines) if force else None
-        
-        # Validate shutter bounds
-        if not (1 <= shutter_col <= 365 and 1 <= shutter_row <= 171):
-            diagnostic_lines.append(f"✗ Shutter position out of bounds: Q{quadrant} Col={shutter_col} Row={shutter_row}")
-            if verbose:
-                print(f"Shutter position out of bounds")
-            return "\n".join(diagnostic_lines) if force else None
-        
-        diagnostic_lines.append(f"MSA Shutter: Q{quadrant}, Col={shutter_col}, Row={shutter_row}")
-        diagnostic_lines.append(f"Grating: {grating_name}")
-        diagnostic_lines.append(f"Filter: {filter_name}")
-        diagnostic_lines.append(f"Expected detectors: {', '.join(expected_detectors)}")
-        diagnostic_lines.append(f"Wavelength range: {wave_min:.2f} - {wave_max:.2f} μm")
-        diagnostic_lines.append("")
-        # Create slit object
-        slit = get_slit_by_quadrant_col_row(quadrant, shutter_col, shutter_row)
+            if quadrant is None or shutter_col is None or shutter_row is None:
+                diagnostic_lines.append("✗ Position is not in any MSA quadrant or fixed slit")
+                if verbose:
+                    print("Position is not in any MSA quadrant or fixed slit")
+                return "\n".join(diagnostic_lines) if force else None
+            
+            # Validate shutter bounds
+            if not (1 <= shutter_col <= 365 and 1 <= shutter_row <= 171):
+                diagnostic_lines.append(f"✗ Shutter position out of bounds: Q{quadrant} Col={shutter_col} Row={shutter_row}")
+                if verbose:
+                    print(f"Shutter position out of bounds")
+                return "\n".join(diagnostic_lines) if force else None
+            
+            diagnostic_lines.append(f"MSA Shutter: Q{quadrant}, Col={shutter_col}, Row={shutter_row}")
+            diagnostic_lines.append(f"Grating: {grating_name}")
+            diagnostic_lines.append(f"Filter: {filter_name}")
+            diagnostic_lines.append(f"Expected detectors: {', '.join(expected_detectors)}")
+            diagnostic_lines.append(f"Wavelength range: {wave_min:.2f} - {wave_max:.2f} μm")
+            diagnostic_lines.append("")
+            # Create slit object
+            slit = get_slit_by_quadrant_col_row(quadrant, shutter_col, shutter_row)
         
         # Compute traces for each detector
         traces = {}
@@ -1555,6 +1649,82 @@ class NIRSpecViewer(QMainWindow):
         self.grating_button_group.buttonClicked.connect(self.on_grating_button_clicked)
         grating_layout.addWidget(grid_widget)
         
+        # Add Fixed Slit selection buttons
+        fs_row_layout = QHBoxLayout()
+        fs_label = QLabel("Fixed Slits:")
+        fs_label.setStyleSheet("color: white; font-size: 11pt; font-weight: bold;")
+        fs_row_layout.addWidget(fs_label)
+        fs_row_layout.addSpacing(5)
+        
+        self.fs_buttons = {}
+        self.fs_button_group = QButtonGroup(self)
+        self.fs_button_group.setExclusive(True) # Default to exclusive (single selection)
+        
+        for name in FIXED_SLITS.keys():
+            btn = QPushButton(name)
+            btn.setFixedWidth(65)
+            btn.setCheckable(True)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3e3e4a;
+                    color: yellow;
+                    font-weight: bold;
+                    border: 1px solid #5e5e6a;
+                    border-radius: 4px;
+                    padding: 3px;
+                }
+                QPushButton:hover { background-color: #4e4e6a; }
+                QPushButton:pressed { 
+                    background-color: #21212a; 
+                    border: 1px solid #5e5e6a;
+                }
+                QPushButton:checked {
+                    background-color: #21212a;
+                    color: yellow;
+                    border: 1px solid #7e7e8a;
+                }
+            """)
+            btn.clicked.connect(lambda checked, n=name: self.on_fs_button_clicked(n))
+            fs_row_layout.addWidget(btn)
+            self.fs_buttons[name] = btn
+            self.fs_button_group.addButton(btn)
+            
+        # Add "ALL" button
+        self.btn_plot_all_fs = QPushButton("ALL")
+        self.btn_plot_all_fs.setFixedWidth(65)
+        self.btn_plot_all_fs.setCheckable(True)
+        self.btn_plot_all_fs.setStyleSheet("""
+            QPushButton {
+                background-color: #3e3e4a;
+                color: yellow;
+                font-weight: bold;
+                border: 1px solid #5e5e6a;
+                border-radius: 4px;
+                padding: 3px;
+                margin-left: 5px;
+            }
+            QPushButton:hover { background-color: #4e4e6a; }
+            QPushButton:pressed { 
+                background-color: #21212a; 
+                border: 1px solid #5e5e6a;
+            }
+            QPushButton:checked {
+                background-color: #21212a;
+                color: yellow;
+                border: 1px solid #7e7e8a;
+            }
+        """)
+        self.btn_plot_all_fs.clicked.connect(self.on_plot_all_fs_clicked)
+        fs_row_layout.addWidget(self.btn_plot_all_fs)
+        
+        self.fs_hover_label = QLabel("")
+        self.fs_hover_label.setStyleSheet("color: #ffff88; font-size: 10pt; font-weight: bold; margin-left: 10px;")
+        fs_row_layout.addWidget(self.fs_hover_label)
+        fs_row_layout.addStretch()
+        
+        bottom_controls_layout.addLayout(fs_row_layout)
+        bottom_controls_layout.addSpacing(10)
+
         bottom_controls_layout.addLayout(grating_layout)
         main_layout.addLayout(bottom_controls_layout)
         
@@ -1571,6 +1741,105 @@ class NIRSpecViewer(QMainWindow):
                 color: white;
             }
         """)
+    
+    def on_fs_button_clicked(self, name):
+        """Handle clicking a fixed slit button"""
+        if name in FIXED_SLITS:
+            info = FIXED_SLITS[name]
+            
+            # If in multiple mode, add it to the list if not already there
+            if self.plot_multiple.isChecked():
+                # Check if already in list
+                exists = False
+                existing_index = -1
+                for i, (sx, sy, q, c, r) in enumerate(self.plot_canvas.multiple_slits):
+                    if abs(sx - info['x']) < 0.1 and abs(sy - info['y']) < 0.1:
+                        exists = True
+                        existing_index = i
+                        break
+                
+                if not exists:
+                    # Q5, col=0, row=name for fixed slits
+                    self.plot_canvas.multiple_slits.append((info['x'], info['y'], 5, 0, name))
+                    self.plot_canvas.selected_slit_index = len(self.plot_canvas.multiple_slits) - 1
+                    self.plot_multiple_traces()
+                    self.update_selected_slits_display()
+                else:
+                    # If already exists and we clicked it, maybe we want to select it/refresh?
+                    self.plot_canvas.selected_slit_index = existing_index
+                    self.on_msa_click(info['x'], info['y'])
+            else:
+                # Single mode - trigger click
+                self.on_msa_click(info['x'], info['y'])
+            
+            # Sync buttons with current selections
+            self.sync_fs_buttons_with_traces()
+
+    def sync_fs_buttons_with_traces(self):
+        """Update Fixed Slit button depressed states based on whether their traces are shown"""
+        if self.plot_multiple.isChecked():
+            # In multiple mode, check all that are in the list
+            self.fs_button_group.setExclusive(False)
+            current_fs_names = []
+            for sx, sy, q, c, r in self.plot_canvas.multiple_slits:
+                if q == 5:
+                    current_fs_names.append(str(r))
+            
+            for name, btn in self.fs_buttons.items():
+                btn.setChecked(name in current_fs_names)
+            
+            # Update 'ALL' button state
+            all_present = all(name in current_fs_names for name in FIXED_SLITS.keys())
+            self.btn_plot_all_fs.setChecked(all_present)
+        else:
+            # Single mode - find which is current
+            self.fs_button_group.setExclusive(True)
+            active_fs = None
+            if hasattr(self.plot_canvas, 'current_msa_pos') and self.plot_canvas.current_msa_pos:
+                msa_x, msa_y = self.plot_canvas.current_msa_pos
+                for name, info in FIXED_SLITS.items():
+                    if abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0:
+                        active_fs = name
+                        break
+            
+            if active_fs:
+                self.fs_buttons[active_fs].setChecked(True)
+                self.btn_plot_all_fs.setChecked(False)
+            else:
+                self.fs_button_group.setExclusive(False)
+                for btn in self.fs_buttons.values():
+                    btn.setChecked(False)
+                self.fs_button_group.setExclusive(True)
+                self.btn_plot_all_fs.setChecked(False)
+
+    def on_plot_all_fs_clicked(self):
+        """Plot all 5 fixed slits at once"""
+        # Switch to multiple mode if not already
+        if not self.plot_multiple.isChecked():
+            self.plot_multiple.setChecked(True)
+            
+        for name, info in FIXED_SLITS.items():
+            # Check if already in list
+            exists = False
+            for sx, sy, q, c, r in self.plot_canvas.multiple_slits:
+                if abs(sx - info['x']) < 0.1 and abs(sy - info['y']) < 0.1:
+                    exists = True
+                    break
+            
+            if not exists:
+                self.plot_canvas.multiple_slits.append((info['x'], info['y'], 5, 0, name))
+        
+        self.plot_canvas.selected_slit_index = len(self.plot_canvas.multiple_slits) - 1
+        self.plot_multiple_traces()
+        self.update_selected_slits_display()
+        self.sync_fs_buttons_with_traces()
+
+    def update_fs_hover_text(self, name):
+        """Update the FS hover label in the UI"""
+        if name:
+            self.fs_hover_label.setText(f"Hovering: {name}")
+        else:
+            self.fs_hover_label.setText("")
         
     def on_plot_multiple_changed(self, state):
         """Handle plot multiple checkbox state change"""
@@ -1612,13 +1881,17 @@ class NIRSpecViewer(QMainWindow):
                     self.plot_multiple_traces()
                     self.update_selected_slits_display()
                     self.plot_canvas.draw()
+                    self.sync_fs_buttons_with_traces()
                     return
             
             # Otherwise, restore slits for this config if they exist
             if self.current_config_key in self.plot_canvas.slits_by_config:
                 self.plot_canvas.multiple_slits = list(self.plot_canvas.slits_by_config[self.current_config_key])
-                self.plot_multiple_traces()
-                self.update_selected_slits_display()
+                if self.plot_canvas.multiple_slits:
+                    self.plot_canvas.selected_slit_index = len(self.plot_canvas.multiple_slits) - 1
+                    self.plot_multiple_traces()
+                    self.update_selected_slits_display()
+                    self.plot_canvas.draw()
             else:
                 self.plot_canvas.multiple_slits = []
                 self.plot_canvas.selected_slit_index = None
@@ -1748,7 +2021,10 @@ class NIRSpecViewer(QMainWindow):
         expected_detectors = config['detectors']
         
         # Create slit object
-        slit = get_slit_by_quadrant_col_row(quadrant, col, row)
+        if quadrant == 5:
+            slit = get_fixed_slit(row) # row is fs_name here
+        else:
+            slit = get_slit_by_quadrant_col_row(quadrant, col, row)
         
         # Compute traces for each detector
         for detector in expected_detectors:
@@ -1833,7 +2109,10 @@ class NIRSpecViewer(QMainWindow):
             lines = []
             for i, q, c, r, x, y, w in all_nrs1_info:
                 marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
-                lines.append(f"{marker}Q{q} ({c:3d},{r:3d}): X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
+                if q == 5:
+                    lines.append(f"{marker}FS {r:7s}: X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
+                else:
+                    lines.append(f"{marker}Q{q} ({c:3d},{r:3d}): X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
             self.text_nrs1.setPlainText("\n".join(lines))
         else:
             self.text_nrs1.setPlainText("No NRS1 traces")
@@ -1842,7 +2121,10 @@ class NIRSpecViewer(QMainWindow):
             lines = []
             for i, q, c, r, x, y, w in all_nrs2_info:
                 marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
-                lines.append(f"{marker}Q{q} ({c:3d},{r:3d}): X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
+                if q == 5:
+                    lines.append(f"{marker}FS {r:7s}: X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
+                else:
+                    lines.append(f"{marker}Q{q} ({c:3d},{r:3d}): X=[{x.min():4.0f},{x.max():4.0f}] Y=[{y.min():4.0f},{y.max():4.0f}] λ=[{w.min():.2f},{w.max():.2f}]μm")
             self.text_nrs2.setPlainText("\n".join(lines))
         else:
             self.text_nrs2.setPlainText("No NRS2 traces")
@@ -1861,7 +2143,10 @@ class NIRSpecViewer(QMainWindow):
         
         for i, (msa_x, msa_y, quadrant, col, row) in enumerate(self.plot_canvas.multiple_slits):
             marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
-            item_text = f"{marker}Q{quadrant} Slit ({col:3d}, {row:3d})"
+            if quadrant == 5:
+                item_text = f"{marker}Fixed Slit {row}"
+            else:
+                item_text = f"{marker}Q{quadrant} Slit ({col:3d}, {row:3d})"
             self.text_msa_selected.addItem(item_text)
             if i == self.plot_canvas.selected_slit_index:
                 self.text_msa_selected.setCurrentRow(i)
@@ -1961,7 +2246,17 @@ class NIRSpecViewer(QMainWindow):
                 shutter_col = int(x_frac * x_num_cols) + 1
                 shutter_row = int(y_frac * y_num_rows) + 1
 
-        if quadrant is not None and shutter_col is not None and shutter_row is not None:
+        # Check if hovering over fixed slits
+        hovered_fs = None
+        for name, info in FIXED_SLITS.items():
+            if (abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0):
+                hovered_fs = name
+                break
+
+        if hovered_fs:
+            text = f'Fixed Slit: {hovered_fs}\n({msa_x:+4.1f}", {msa_y:+4.1f}")'
+            self.text_msa_hover.setPlainText(text)
+        elif quadrant is not None and shutter_col is not None and shutter_row is not None:
             text = f'Q{quadrant} Slit ({shutter_col:3d}, {shutter_row:3d})\n({msa_x:+4.1f}", {msa_y:+4.1f}")'
             self.text_msa_hover.setPlainText(text)
         else:
@@ -2023,7 +2318,18 @@ class NIRSpecViewer(QMainWindow):
                 shutter_col = int(x_frac * x_num_cols) + 1
                 shutter_row = int(y_frac * y_num_rows) + 1
 
-        if quadrant is not None and shutter_col is not None and shutter_row is not None:
+        # Check if clicking near a fixed slit
+        clicked_fs = None
+        for name, info in FIXED_SLITS.items():
+            if (abs(msa_x - info['x']) < 5.0 and abs(msa_y - info['y']) < 5.0):
+                clicked_fs = name
+                break
+
+        if clicked_fs:
+            text = f'Fixed Slit: {clicked_fs}\n({msa_x:+.1f}", {msa_y:+.1f}")'
+            self.text_msa_selected.clear()
+            self.text_msa_selected.addItem(text)
+        elif quadrant is not None and shutter_col is not None and shutter_row is not None:
             text = f'Q{quadrant} Slit ({shutter_col}, {shutter_row})\n({msa_x:+.1f}", {msa_y:+.1f}")'
             self.text_msa_selected.clear()
             self.text_msa_selected.addItem(text)
@@ -2103,8 +2409,15 @@ class NIRSpecViewer(QMainWindow):
             
             self.first_trace_calculation = False
             
+            # Sync FS button states
+            self.sync_fs_buttons_with_traces()
+
             # Update detector text boxes with trace info
             self.update_detector_text_boxes()
+            
+            # Force redraw
+            self.plot_canvas.draw()
+
             
         except Exception as e:
             self.text_nrs1.setPlainText(f"Error: {str(e)}")
@@ -2140,7 +2453,7 @@ class NIRSpecViewer(QMainWindow):
                     parts = [int(p.strip()) for p in new_val.split(',')]
                     if len(parts) == 3:
                         nq, nc, nr = parts
-                        if 1 <= nq <= 4 and 1 <= nc <= 365 and 1 <= nr <= 171:
+                        if (1 <= nq <= 4 and 1 <= nc <= 365 and 1 <= nr <= 171) or nq == 5:
                             nx, ny = self.plot_canvas.get_msa_coords(nq, nc, nr)
                             self.plot_canvas.multiple_slits[index] = (nx, ny, nq, nc, nr)
                             # Update plots
@@ -2167,6 +2480,7 @@ class NIRSpecViewer(QMainWindow):
             self.update_selected_slits_display()
             self.text_nrs1.setPlainText("")
             self.text_nrs2.setPlainText("")
+            self.sync_fs_buttons_with_traces()
 
     def on_save_shutters(self):
         """Save current list of shutters to a CSV file including calculated trace info"""
@@ -2201,7 +2515,10 @@ class NIRSpecViewer(QMainWindow):
                     }
                     
                     # Compute trace summary info for "full data"
-                    slit_obj = get_slit_by_quadrant_col_row(q, c, r)
+                    if q == 5:
+                        slit_obj = get_fixed_slit(r) # r is name
+                    else:
+                        slit_obj = get_slit_by_quadrant_col_row(q, c, r)
                     calc_results = {}
                     for det in ['NRS1', 'NRS2']:
                         try:
@@ -2302,7 +2619,13 @@ class NIRSpecViewer(QMainWindow):
                         sx = float(row.get('MSA_X_arcsec', row.get('MSA_X', 0)))
                         sy = float(row.get('MSA_Y_arcsec', row.get('MSA_Y', 0)))
                         if sx == 0 and sy == 0:
-                            sx, sy = get_msa_coords(q, c, r)
+                            if q == 5:
+                                # Look up FS name in case it's in another column
+                                fs_name = row.get('Fixed Slit', row.get('Shutter', ''))
+                                if not fs_name and isinstance(r, str): fs_name = r
+                                sx, sy = get_msa_coords(5, 0, fs_name)
+                            else:
+                                sx, sy = get_msa_coords(q, c, r)
                             
                         if config_key not in new_slits_by_config:
                             new_slits_by_config[config_key] = []
@@ -2511,6 +2834,8 @@ def handle_cli():
     # Check for help
     if args[0] in ['-h', '--help', 'help']:
         print("Usage:")
+        print("  python3 mos_trace.py S1600A1")
+        print("  python3 mos_trace.py PRISM S1600A1")
         print("  python3 mos_trace.py Q3 319 108")
         print("  python3 mos_trace.py PRISM Q3 319 108")
         print("  python3 mos_trace.py G395H Q3 319 108")
@@ -2796,31 +3121,46 @@ def handle_cli():
             print(f"Error reading CSV: {e}")
         return True
 
-    # Parse as single shutter
-    raw_shutter = " ".join(remaining_args)
-    match = re.search(r'[qQ]([1-4])[dD](\d+)[sS](\d+)', raw_shutter)
-    if match:
-        quadrant = int(match.group(1))
-        col = int(match.group(2))
-        row = int(match.group(3))
-    elif len(remaining_args) >= 3:
-        q_arg = remaining_args[0].upper()
-        if q_arg.startswith('Q'):
-            try: quadrant = int(q_arg[1:])
+    # Check for Fixed Slit names first
+    fs_name = None
+    for arg in remaining_args:
+        normalized_arg = arg.upper().replace('-', '').replace('_', '')
+        for fs_key in FIXED_SLITS:
+            if normalized_arg == fs_key.upper().replace('-', '').replace('_', ''):
+                fs_name = fs_key
+                break
+        if fs_name: break
+            
+    if fs_name:
+        quadrant = 5
+        col = 0
+        row = fs_name
+    else:
+        # Parse as single shutter
+        raw_shutter = " ".join(remaining_args)
+        match = re.search(r'[qQ]([1-4])[dD](\d+)[sS](\d+)', raw_shutter)
+        if match:
+            quadrant = int(match.group(1))
+            col = int(match.group(2))
+            row = int(match.group(3))
+        elif len(remaining_args) >= 3:
+            q_arg = remaining_args[0].upper()
+            if q_arg.startswith('Q'):
+                try: quadrant = int(q_arg[1:])
+                except ValueError: return False
+            else:
+                try: quadrant = int(q_arg)
+                except ValueError: return False
+            try:
+                col = int(remaining_args[1])
+                row = int(remaining_args[2])
             except ValueError: return False
         else:
-            try: quadrant = int(q_arg)
-            except ValueError: return False
-        try:
-            col = int(remaining_args[1])
-            row = int(remaining_args[2])
-        except ValueError: return False
-    else:
-        return False
+            return False
 
     # Validate quadrant
-    if not (1 <= quadrant <= 4):
-        print(f"Error: Quadrant must be 1-4, got {quadrant}")
+    if not (1 <= quadrant <= 5):
+        print(f"Error: Quadrant must be 1-5, got {quadrant}")
         return True
 
     # Calculate MSA coordinates
@@ -2830,7 +3170,10 @@ def handle_cli():
     
     # Create slit object
     try:
-        slit = get_slit_by_quadrant_col_row(quadrant, col, row)
+        if quadrant == 5:
+            slit = get_fixed_slit(row)
+        else:
+            slit = get_slit_by_quadrant_col_row(quadrant, col, row)
     except ValueError as e:
         print(f"Error: {e}")
         return True
@@ -2870,9 +3213,14 @@ def handle_cli():
                 'y_min': f"{y.min():.1f}",
                 'y_max': f"{y.max():.1f}",
             }
-            print(f"{det_name} Trace: Q{quadrant} ({col:d}, {row:d}): "
-                  f"X=[{x.min():4.0f}, {x.max():4.0f}] Y=[{y.min():4.0f}, {y.max():4.0f}] "
-                  f"λ=[{w.min():.2f},{w.max():.2f}]μm")
+            if quadrant == 5:
+                print(f"{det_name} Trace: FS {row}: "
+                      f"X=[{x.min():4.0f}, {x.max():4.0f}] Y=[{y.min():4.0f}, {y.max():4.0f}] "
+                      f"λ=[{w.min():.2f},{w.max():.2f}]μm")
+            else:
+                print(f"{det_name} Trace: Q{quadrant} ({col:d}, {row:d}): "
+                      f"X=[{x.min():4.0f}, {x.max():4.0f}] Y=[{y.min():4.0f}, {y.max():4.0f}] "
+                      f"λ=[{w.min():.2f},{w.max():.2f}]μm")
     
     # Add wavelengths first
     for det in ['NRS1', 'NRS2']:
