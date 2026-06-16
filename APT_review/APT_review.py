@@ -2097,20 +2097,46 @@ class NIRSpecMOSReviewer:
 
             plans_list = self.stats['program_metadata'].get('plans', [])
             
-            write_plans("=================================================================================================================================================")
-            write_plans("ALL PLANS IN FILE")
-            write_plans("=================================================================================================================================================")
-            plans_header = f"{'#':>3} | {'Plan Name':<70} | {'# Configs':<9} | {'# Exposures':<11} | {'# Primary S...':<14} | {'# Secondar...':<13} | {'Plan APA':<12} | Plan Catalog"
-            write_plans(plans_header)
-            write_plans("-" * len(plans_header))
+            # Determine which plans are used in the active observations
+            active_plan_names = set()
+            for o in sorted(self.analytics.keys(), key=int):
+                if self.obs_info.get(o, {}).get('sign') == "👷":
+                    continue
+                obs_plans = self.analytics[o].get('plans', [])
+                if obs_plans:
+                    active_plan_names.add(obs_plans[0].replace('„', ',').replace('  ', ' ').strip())
+
+            used_plans = []
+            excluded_plans = []
             for idx, plan_name in enumerate(plans_list, 1):
                 norm_xml_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
                 p_info = plan_details.get(norm_xml_name)
                 clean_plan_name = plan_name.replace('„', ',')
+                item = (idx, clean_plan_name, p_info)
+                if norm_xml_name in active_plan_names:
+                    used_plans.append(item)
+                else:
+                    excluded_plans.append(item)
+
+            write_plans("=================================================================================================================================================")
+            write_plans("🗂️ ALL PLANS IN FILE")
+            write_plans("=================================================================================================================================================")
+            plans_header = f"{'#':>3} | {'Plan Name':<70} | {'# Configs':<9} | {'# Exposures':<11} | {'# Primary S...':<14} | {'# Secondar...':<13} | {'Plan APA':<12} | Plan Catalog"
+            write_plans(plans_header)
+            write_plans("-" * len(plans_header))
+            for idx, clean_plan_name, p_info in used_plans:
                 if p_info:
                     write_plans(f"{idx:>3} | {clean_plan_name:<70} | {p_info['cfgs']:<9} | {p_info['exps']:<11} | {p_info['primaries']:<14} | {p_info['secondaries']:<13} | {p_info['apa']:<12.4f} | {p_info['catalog']}")
                 else:
                     write_plans(f"{idx:>3} | {clean_plan_name:<70} | {'-':<9} | {'-':<11} | {'-':<14} | {'-':<13} | {'-':<12} | -")
+            
+            if excluded_plans:
+                write_plans("\nEXCLUDED PLANS")
+                for idx, clean_plan_name, p_info in excluded_plans:
+                    if p_info:
+                        write_plans(f"{idx:>3} | {clean_plan_name:<70} | {p_info['cfgs']:<9} | {p_info['exps']:<11} | {p_info['primaries']:<14} | {p_info['secondaries']:<13} | {p_info['apa']:<12.4f} | {p_info['catalog']}")
+                    else:
+                        write_plans(f"{idx:>3} | {clean_plan_name:<70} | {'-':<9} | {'-':<11} | {'-':<14} | {'-':<13} | {'-':<12} | -")
             write_plans("")
             
             # Print the MPT PLANS table into plans file
@@ -2254,7 +2280,7 @@ class NIRSpecMOSReviewer:
         pointings = self.exports_data.get('pointings_data', {})
         if pointings:
             write("\n" + "="*145)
-            write("POINTINGS")
+            write("🎯 POINTINGS")
             write("="*145)
             
             plans = self.stats['program_metadata'].get('plans', [])
