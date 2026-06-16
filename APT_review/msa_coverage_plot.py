@@ -1152,12 +1152,11 @@ def main():
             
             for text_obj in leg.get_texts():
                 lbl = text_obj.get_text()
+                if lbl.startswith("  Filter:") or lbl.startswith("  Readout:") or lbl.startswith("  Range:"):
+                    text_obj.set_weight('bold')
                 for key, color in label_colors.items():
                     if key in lbl:
                         text_obj.set_color(color)
-                        # Bold the active/selected filter range label
-                        if color == '#1a252f':
-                            text_obj.set_weight('bold')
                         break
             
             # Extract and display the reference stars table below the legend
