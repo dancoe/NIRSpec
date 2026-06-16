@@ -1190,12 +1190,12 @@ def main():
             table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
             table_lines.append("")
             
-            f110_hdr = 'F110W*' if active_mag_col == 'NRS_F110W' else 'F110W'
-            f140_hdr = 'F140X*' if active_mag_col == 'NRS_F140W' else 'F140X'
-            clear_hdr = 'CLEAR*' if active_mag_col == 'NRS_CLEAR' else 'CLEAR'
+            f110_hdr = '*F110W*' if active_mag_col == 'NRS_F110W' else ' F110W '
+            f140_hdr = '*F140X*' if active_mag_col == 'NRS_F140W' else ' F140X '
+            clear_hdr = '*CLEAR*' if active_mag_col == 'NRS_CLEAR' else ' CLEAR '
             
-            table_lines.append(f"{'quad':<4} | {'ID':>8} | {f110_hdr:>6} | {f140_hdr:>6} | {clear_hdr:>6}")
-            table_lines.append("-" * 43)
+            table_lines.append(f"{'quad':^4}|{'ID':^8}|{f110_hdr}|{f140_hdr}|{clear_hdr}")
+            table_lines.append("-" * 37)
             
             def ref_id_key(r):
                 try: return int(r['id'])
@@ -1211,7 +1211,7 @@ def main():
                 f140_str = f"{f140_val:.1f}" if f140_val is not None else "—"
                 clear_str = f"{clear_val:.1f}" if clear_val is not None else "—"
                 
-                table_lines.append(f"{r['quad']:<4} | {str(r['id']):>8} | {f110_str:>6} | {f140_str:>6} | {clear_str:>6}")
+                table_lines.append(f"{r['quad']:^4}| {str(r['id']):>6} |{f110_str:^7}|{f140_str:^7}|{clear_str:^7}")
                 
             table_text = "\n".join(table_lines)
             
