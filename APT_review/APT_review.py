@@ -2144,7 +2144,7 @@ class NIRSpecMOSReviewer:
             write_plans("")
             
             # Print the POINTINGS table into plans file
-            self._report_pointings(write_plans)
+            self._report_pointings(write_plans, is_plans_file=True)
             
             with open(plans_path, 'w') as f_plans:
                 f_plans.write(plans_output.getvalue())
@@ -2275,61 +2275,62 @@ class NIRSpecMOSReviewer:
             clean_plan_name = plan_name.replace('„', ',')
             write(f"{o:<5} | {plan_num:<6} | {clean_plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
 
-    def _report_pointings(self, write):
+    def _report_pointings(self, write, is_plans_file=False):
         # 1. Previous POINTINGS tables (from CSV exports, 9 rows per obs)
-        pointings = self.exports_data.get('pointings_data', {})
-        if pointings:
-            write("\n" + "="*145)
-            write("🎯 POINTINGS")
-            write("="*145)
-            
-            plans = self.stats['program_metadata'].get('plans', [])
-            sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
-            
-            # Group pointings by Observation number
-            grouped_pointings = {}
-            for key in sorted_keys:
-                p = pointings[key]
-                obs_num = p['obs']
+        if is_plans_file:
+            pointings = self.exports_data.get('pointings_data', {})
+            if pointings:
+                write("\n" + "="*145)
+                write("🎯 POINTINGS")
+                write("="*145)
                 
-                plan_num = "-"
-                plan_name = "None specified"
-                obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
-                if obs_plans:
-                    plan_name = obs_plans[0].replace('„', ',')
-                    if plans:
-                        try:
-                            norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
-                            norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
-                            plan_num = str(norm_plans.index(norm_obs_plan) + 1)
-                        except ValueError:
-                            pass
+                plans = self.stats['program_metadata'].get('plans', [])
+                sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
                 
-                group_key = (obs_num, plan_num, plan_name)
-                if group_key not in grouped_pointings:
-                    grouped_pointings[group_key] = []
-                grouped_pointings[group_key].append(p)
-            
-            # Output separate tables sorted by Observation number
-            def sort_group_key(gk):
-                obs_num_str = gk[0]
-                try:
-                    return (int(obs_num_str), gk[1])
-                except ValueError:
-                    return (999, gk[1])
+                # Group pointings by Observation number
+                grouped_pointings = {}
+                for key in sorted_keys:
+                    p = pointings[key]
+                    obs_num = p['obs']
+                    
+                    plan_num = "-"
+                    plan_name = "None specified"
+                    obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
+                    if obs_plans:
+                        plan_name = obs_plans[0].replace('„', ',')
+                        if plans:
+                            try:
+                                norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
+                                norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
+                                plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                            except ValueError:
+                                pass
+                    
+                    group_key = (obs_num, plan_num, plan_name)
+                    if group_key not in grouped_pointings:
+                        grouped_pointings[group_key] = []
+                    grouped_pointings[group_key].append(p)
+                
+                # Output separate tables sorted by Observation number
+                def sort_group_key(gk):
+                    obs_num_str = gk[0]
+                    try:
+                        return (int(obs_num_str), gk[1])
+                    except ValueError:
+                        return (999, gk[1])
 
-            for g_key in sorted(grouped_pointings.keys(), key=sort_group_key):
-                obs_num, plan_num, plan_name = g_key
-                write(f"\nObs #{obs_num}, Plan #{plan_num}: {plan_name}")
-                
-                header = f"{'#':>3} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
-                write(header)
-                write("-" * len(header))
-                
-                for idx, p in enumerate(grouped_pointings[g_key], 1):
-                    ra_hms = deg_to_hms(p['ra'])
-                    dec_dms = deg_to_dms(p['dec'])
-                    write(f"{idx:>3} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
+                for g_key in sorted(grouped_pointings.keys(), key=sort_group_key):
+                    obs_num, plan_num, plan_name = g_key
+                    write(f"\nObs #{obs_num}, Plan #{plan_num}: {plan_name}")
+                    
+                    header = f"{'#':>3} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                    write(header)
+                    write("-" * len(header))
+                    
+                    for idx, p in enumerate(grouped_pointings[g_key], 1):
+                        ra_hms = deg_to_hms(p['ra'])
+                        dec_dms = deg_to_dms(p['dec'])
+                        write(f"{idx:>3} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
 
         # 2. INDIVIDUAL PLANS tables (from JSON inside .aptx, 3 rows per plan)
         plans = self.stats['program_metadata'].get('plans', [])
@@ -2355,9 +2356,10 @@ class NIRSpecMOSReviewer:
         if not active_plans:
             return
             
-        write("\n" + "="*145)
-        write("INDIVIDUAL PLANS")
-        write("="*145)
+        if is_plans_file:
+            write("\n" + "="*145)
+            write("INDIVIDUAL PLANS")
+            write("="*145)
         
         # Load all JSON plans from the zip if it exists
         json_plans_data = {}
@@ -2424,59 +2426,60 @@ class NIRSpecMOSReviewer:
                 write("  (No plan configuration details found in .aptx archive)")
 
         # 3. EXCLUDED PLANS tables (from JSON inside .aptx, 3 rows per plan)
-        active_plan_names_set = {v[1].replace('„', ',').replace('  ', ' ').strip() for v in active_plans.values()}
-        excluded_plans_list = []
-        for idx, plan_name in enumerate(plans, 1):
-            norm_pname = plan_name.replace('„', ',').replace('  ', ' ').strip()
-            if norm_pname not in active_plan_names_set:
-                excluded_plans_list.append((str(idx), plan_name))
-                
-        if excluded_plans_list:
-            write("\n" + "="*145)
-            write("EXCLUDED PLANS")
-            write("="*145)
-            
-            for plan_num, plan_name in excluded_plans_list:
-                clean_plan_name = plan_name.replace('„', ',')
-                norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
-                
-                write(f"\nPlan #{plan_num}: {clean_plan_name}")
-                
-                header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
-                write(header)
-                write("-" * len(header))
-                
-                p_data = json_plans_data.get(norm_name)
-                if p_data:
-                    cfgs = p_data.get('configs', [])
-                    cat_name = p_data.get('catalog', {}).get('name', '')
-                    cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+        if is_plans_file:
+            active_plan_names_set = {v[1].replace('„', ',').replace('  ', ' ').strip() for v in active_plans.values()}
+            excluded_plans_list = []
+            for idx, plan_name in enumerate(plans, 1):
+                norm_pname = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                if norm_pname not in active_plan_names_set:
+                    excluded_plans_list.append((str(idx), plan_name))
                     
-                    idx = 1
-                    for c in cfgs:
-                        for exp in c.get('exposures', []):
-                            exp_name = exp.get('name') or ''
-                            exp_name_disp = exp_name
-                            ra_val = exp.get('ra') or 0.0
-                            dec_val = exp.get('dec') or 0.0
-                            gf_val = (exp.get('gratingFilter') or '').replace('_', '/')
-                            apa_val = p_data.get('aperturePA') or 0.0
-                            
-                            source_ids = exp.get('sourceIds', [])
-                            target_set_size = len(source_ids)
-                            
-                            total_weight = 0.0
-                            for sid in source_ids:
-                                sid_str = str(sid).strip()
-                                total_weight += float(cat_sources.get(sid_str, {}).get('weight', 0.0))
+            if excluded_plans_list:
+                write("\n" + "="*145)
+                write("EXCLUDED PLANS")
+                write("="*145)
+                
+                for plan_num, plan_name in excluded_plans_list:
+                    clean_plan_name = plan_name.replace('„', ',')
+                    norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                    
+                    write(f"\nPlan #{plan_num}: {clean_plan_name}")
+                    
+                    header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                    write(header)
+                    write("-" * len(header))
+                    
+                    p_data = json_plans_data.get(norm_name)
+                    if p_data:
+                        cfgs = p_data.get('configs', [])
+                        cat_name = p_data.get('catalog', {}).get('name', '')
+                        cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+                        
+                        idx = 1
+                        for c in cfgs:
+                            for exp in c.get('exposures', []):
+                                exp_name = exp.get('name') or ''
+                                exp_name_disp = exp_name
+                                ra_val = exp.get('ra') or 0.0
+                                dec_val = exp.get('dec') or 0.0
+                                gf_val = (exp.get('gratingFilter') or '').replace('_', '/')
+                                apa_val = p_data.get('aperturePA') or 0.0
                                 
-                            ra_hms = deg_to_hms(ra_val)
-                            dec_dms = deg_to_dms(dec_val)
-                            
-                            write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
-                            idx += 1
-                else:
-                    write("  (No plan configuration details found in .aptx archive)")
+                                source_ids = exp.get('sourceIds', [])
+                                target_set_size = len(source_ids)
+                                
+                                total_weight = 0.0
+                                for sid in source_ids:
+                                    sid_str = str(sid).strip()
+                                    total_weight += float(cat_sources.get(sid_str, {}).get('weight', 0.0))
+                                    
+                                ra_hms = deg_to_hms(ra_val)
+                                dec_dms = deg_to_dms(dec_val)
+                                
+                                write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
+                                idx += 1
+                    else:
+                        write("  (No plan configuration details found in .aptx archive)")
 
     def _report_aperture_pa(self, write, icons):
         if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]
