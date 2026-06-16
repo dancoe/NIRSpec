@@ -3231,7 +3231,10 @@ class NIRSpecMOSReviewer:
         else:
             for obs_num, v_key, info in items_to_print:
                 if info is None:
-                    write(f"❌ Obs {obs_num} has no reference stars!")
+                    v_keys = sorted(self.analytics.get(str(obs_num), {}).get('visit_info', {}).keys(), key=int)
+                    if not v_keys: v_keys = ['1']
+                    for vk in v_keys:
+                        write(f"❌ Visit {obs_num}:{vk} – No reference stars found")
                 else:
                     count = info['count']
                     quads = len(info['quads'])

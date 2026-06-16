@@ -1166,7 +1166,7 @@ def main():
                         if vid in obs_quads:
                             for q_idx, q_poly in obs_quads[vid].items():
                                 if is_inside((src['ra'], src['dec']), q_poly):
-                                    quad_found = f"Q{q_idx}"
+                                    quad_found = f"{q_idx}"
                                     break
                         if quad_found:
                             break
@@ -1185,7 +1185,7 @@ def main():
             table_lines = []
             table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
             table_lines.append("")
-            table_lines.append(f"{'ID':<8} | {'mag':<5} | {'Quad':<4}")
+            table_lines.append(f"{'ID':>8} | {'mag':<5} | {'quad':<4}")
             table_lines.append("-" * 23)
             
             def ref_id_key(r):
@@ -1193,13 +1193,13 @@ def main():
                 except: return r['id']
                 
             for r in sorted(plotted_refs, key=ref_id_key):
-                mag_str = f"{r['mag']:.2f}" if r['mag'] is not None else "N/A"
-                table_lines.append(f"{str(r['id']):<8} | {mag_str:<5} | {r['quad']:<4}")
+                mag_str = f"{r['mag']:.1f}" if r['mag'] is not None else "N/A"
+                table_lines.append(f"{str(r['id']):>8} | {mag_str:<5} | {r['quad']:<4}")
                 
             table_text = "\n".join(table_lines)
             
-            plt.text(1.05, 0.0, table_text, transform=plt.gca().transAxes, fontsize=6.5,
-                     family='monospace', va='bottom', ha='left',
+            plt.text(1.05, 0.40, table_text, transform=plt.gca().transAxes, fontsize=6.5,
+                     family='monospace', va='top', ha='left',
                      bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.7', alpha=0.9))
         
         plt.grid(False)
