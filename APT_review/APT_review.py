@@ -1978,6 +1978,17 @@ class NIRSpecMOSReviewer:
             except:
                 self.log("MOS Plan", "Error parsing plan JSON.", "WARNING", obs_num)
 
+    def _get_sorted_obs_nums(self, iterable):
+        def sort_key(obs):
+            obs_str = str(obs)
+            if obs_str in self.all_obs_nums:
+                return self.all_obs_nums.index(obs_str)
+            try:
+                return 10000 + int(obs_str)
+            except ValueError:
+                return 99999
+        return sorted(iterable, key=sort_key)
+
     def print_report(self):
         output = io.StringIO()
         icons = {
@@ -2158,7 +2169,7 @@ class NIRSpecMOSReviewer:
                  if info.get('sign') == "🔎"]
         
         if ready:
-            write(f"\n🔎 Observations ready for review: {', '.join(sorted(ready, key=int))}\n")
+            write(f"\n🔎 Observations ready for review: {', '.join(self._get_sorted_obs_nums(ready))}\n")
         else:
             write("\n✅ No observations currently flagged as 'ready for review' (🔎).\n")
 
@@ -2180,7 +2191,7 @@ class NIRSpecMOSReviewer:
         write(header)
         write("-" * len(header))
         
-        for obs_num in sorted(self.all_obs_nums):
+        for obs_num in self._get_sorted_obs_nums(self.all_obs_nums):
             info = self.obs_info.get(obs_num, {})
             label = info.get('label', "")
             status = info.get('status', "")
@@ -2221,7 +2232,7 @@ class NIRSpecMOSReviewer:
                 write(f"{icons.get(status, ' ')} {msg}")
 
         # Observation-specific (Warnings/Errors only)
-        for obs_num_str in sorted(obs_map.keys(), key=int):
+        for obs_num_str in self._get_sorted_obs_nums(obs_map.keys()):
             sign = self.obs_info.get(obs_num_str, {}).get('sign')
             if sign not in ["🔎", "👷", "☑️"]:
                 continue # Skip detailed findings for excluded/drafts
@@ -2245,7 +2256,9 @@ class NIRSpecMOSReviewer:
         write(header)
         write("-" * len(header))
         
-        for o in sorted(self.analytics.keys(), key=int):
+        # Order observations as they appear in the XML
+        ordered_obs = [o for o in self.all_obs_nums if o in self.analytics]
+        for o in ordered_obs:
             if self.obs_info.get(o, {}).get('sign') == "👷":
                 continue
             
@@ -2257,7 +2270,7 @@ class NIRSpecMOSReviewer:
                 try:
                     norm_obs_plan = plan_name.replace('„', ',').replace('  ', ' ').strip()
                     norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
-                    plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                    plan_num = str(norm_plans.index(norm_obs_plan) + 2)
                 except ValueError:
                     pass
             
@@ -2273,7 +2286,18 @@ class NIRSpecMOSReviewer:
             
             # Print names with „ replaced by single commas
             clean_plan_name = plan_name.replace('„', ',')
-            write(f"{o:>3} | {plan_num:>6} | {clean_plan_name:<52} | {n_configs:^7} | {n_exposures:^9} | {primary_cnt:^7} | {secondary_cnt:^9} | {plan_apa:<15} | {catalog}")
+            
+            # Formatting Obs and Plan # right justified to 2 digits
+            obs_str = f"{o:>2}"
+            pnum_str = f"{plan_num:>2}"
+            
+            # Formatting numeric columns centered and right justified
+            cfg_str = f"{f'{n_configs:>2}':^7}"
+            exp_str = f"{f'{n_exposures:>2}':^9}"
+            prim_str = f"{f'{primary_cnt:>2}':^7}"
+            sec_str = f"{f'{secondary_cnt:>2}':^9}"
+            
+            write(f" {obs_str} |   {pnum_str}   | {clean_plan_name:<52} | {cfg_str} | {exp_str} | {prim_str} | {sec_str} | {plan_apa:<15} | {catalog}")
 
     def _report_pointings(self, write, is_plans_file=False):
         # 1. Previous POINTINGS tables (from CSV exports, 9 rows per obs)
@@ -2302,7 +2326,7 @@ class NIRSpecMOSReviewer:
                             try:
                                 norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
                                 norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
-                                plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                                plan_num = str(norm_plans.index(norm_obs_plan) + 2)
                             except ValueError:
                                 pass
                     
@@ -2311,11 +2335,11 @@ class NIRSpecMOSReviewer:
                         grouped_pointings[group_key] = []
                     grouped_pointings[group_key].append(p)
                 
-                # Output separate tables sorted by Observation number
+                # Output separate tables sorted by Observation XML order
                 def sort_group_key(gk):
                     obs_num_str = gk[0]
                     try:
-                        return (int(obs_num_str), gk[1])
+                        return (self.all_obs_nums.index(obs_num_str), gk[1])
                     except ValueError:
                         return (999, gk[1])
 
@@ -2337,7 +2361,8 @@ class NIRSpecMOSReviewer:
         
         # Determine which plans are used in the active observations
         active_plans = {}
-        for o in sorted(self.analytics.keys(), key=int):
+        ordered_obs = [o for o in self.all_obs_nums if o in self.analytics]
+        for o in ordered_obs:
             if self.obs_info.get(o, {}).get('sign') == "👷":
                 continue
             obs_plans = self.analytics[o].get('plans', [])
@@ -2348,7 +2373,7 @@ class NIRSpecMOSReviewer:
                     try:
                         norm_obs_plan = plan_name.replace('„', ',').replace('  ', ' ').strip()
                         norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
-                        plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                        plan_num = str(norm_plans.index(norm_obs_plan) + 2)
                     except ValueError:
                         pass
                 active_plans[o] = (plan_num, plan_name)
@@ -2380,14 +2405,16 @@ class NIRSpecMOSReviewer:
                             except: pass
             except: pass
 
-        for o in sorted(active_plans.keys(), key=int):
+        # Sort active plans by the order they appear in XML
+        ordered_active_obs = [o for o in self.all_obs_nums if o in active_plans]
+        for o in ordered_active_obs:
             plan_num, plan_name = active_plans[o]
             clean_plan_name = plan_name.replace('„', ',')
             norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
             
             write(f"\nObs #{o}, Plan #{plan_num}: {clean_plan_name}")
             
-            header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+            header = f"{'#':>3} | {'Plan':^6} | {'Config':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
             write(header)
             write("-" * len(header))
             
@@ -2403,7 +2430,6 @@ class NIRSpecMOSReviewer:
                     # Pointings inside JSON configurations are listed under exposures
                     for exp in c.get('exposures', []):
                         exp_name = exp.get('name') or ''
-                        # If the name is c1e1, etc. but the program uses nods, format it to show c1e1n1, etc.
                         exp_name_disp = exp_name
                         ra_val = exp.get('ra') or 0.0
                         dec_val = exp.get('dec') or 0.0
@@ -2422,7 +2448,12 @@ class NIRSpecMOSReviewer:
                         ra_hms = deg_to_hms(ra_val)
                         dec_dms = deg_to_dms(dec_val)
                         
-                        write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
+                        idx_str = f"{f'{idx:>2}':^3}"
+                        pnum_str = f"{f'{plan_num:>2}':^6}"
+                        size_str = f"{f'{target_set_size:>2}':^15}"
+                        weight_str = f"{f'{int(total_weight):>4}':^12}"
+                        
+                        write(f"{idx_str} | {pnum_str} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {size_str} | {weight_str}")
                         idx += 1
             else:
                 write("  (No plan configuration details found in .aptx archive)")
@@ -2431,7 +2462,7 @@ class NIRSpecMOSReviewer:
         if is_plans_file:
             active_plan_names_set = {v[1].replace('„', ',').replace('  ', ' ').strip() for v in active_plans.values()}
             excluded_plans_list = []
-            for idx, plan_name in enumerate(plans, 1):
+            for idx, plan_name in enumerate(plans, 2):
                 norm_pname = plan_name.replace('„', ',').replace('  ', ' ').strip()
                 if norm_pname not in active_plan_names_set:
                     excluded_plans_list.append((str(idx), plan_name))
@@ -2447,7 +2478,7 @@ class NIRSpecMOSReviewer:
                     
                     write(f"\nPlan #{plan_num}: {clean_plan_name}")
                     
-                    header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                    header = f"{'#':>3} | {'Plan':^6} | {'Config':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
                     write(header)
                     write("-" * len(header))
                     
@@ -2478,7 +2509,12 @@ class NIRSpecMOSReviewer:
                                 ra_hms = deg_to_hms(ra_val)
                                 dec_dms = deg_to_dms(dec_val)
                                 
-                                write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
+                                idx_str = f"{f'{idx:>2}':^3}"
+                                pnum_str = f"{f'{plan_num:>2}':^6}"
+                                size_str = f"{f'{target_set_size:>2}':^15}"
+                                weight_str = f"{f'{int(total_weight):>4}':^12}"
+                                
+                                write(f"{idx_str} | {pnum_str} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {size_str} | {weight_str}")
                                 idx += 1
                     else:
                         write("  (No plan configuration details found in .aptx archive)")
@@ -2492,7 +2528,7 @@ class NIRSpecMOSReviewer:
         write("="*80)
         write(f"Obs   | {'Planned APA':<21} | {'Assigned APA'}")
         write("-" * 80)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             planned = self.analytics[obs_num].get('apa_planned', "N/A")
             p_val = self.analytics[obs_num].get('apa_planned_val')
             
@@ -2517,7 +2553,7 @@ class NIRSpecMOSReviewer:
         write("The following targets are located in rows or columns known to have electrical shorts.")
         write("These rows / columns should be avoided to prevent data contamination:\n")
         
-        for obs_num in sorted(shorts_data.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(shorts_data.keys()):
             sign = self.obs_info.get(obs_num, {}).get('sign')
             if sign not in ["🔎", "👷", "☑️"]:
                 continue
@@ -2542,7 +2578,21 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Spec':<5} | {'Grating/Filter':<18} | {'Readout Pattern':<18} | "
               f"{'Groups':<8} | {'Ints':<6} | {'Duration(s)'}")
         write("-" * 95)
-        for s in self.stats['all_exposure_specs']:
+        
+        def sort_spec_key(s):
+            obs_str = str(s['obs'])
+            try:
+                obs_idx = self.all_obs_nums.index(obs_str)
+            except ValueError:
+                try: obs_idx = 10000 + int(obs_str)
+                except: obs_idx = 99999
+            try:
+                spec_id = int(s['id'])
+            except:
+                spec_id = 0
+            return (obs_idx, spec_id)
+            
+        for s in sorted(self.stats['all_exposure_specs'], key=sort_spec_key):
             obs_id = str(s['obs'])
             if self.obs_info.get(obs_id, {}).get('sign') == "👷":
                 continue # Skip for under construction
@@ -2563,7 +2613,7 @@ class NIRSpecMOSReviewer:
         # Track duplicate pointings across the whole project for the final summary
         duplicate_pointings_found = []
         
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if 'configs' in self.analytics[obs_num]:
                 write(f"\nObservation {obs_num}")
                 header = f"  # | {'Config':<12} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Offset (shutters)'}"
@@ -2628,7 +2678,7 @@ class NIRSpecMOSReviewer:
                                     except:
                                         off_suffix = f" Offset ({d_raw}, {c_raw})"
                                 
-                                write(f"  ⚠️ : Configuration {cfg_name} observes the same pointing {len(indices)} times: {p_str}{off_suffix}")
+                                write(f"  ⚠️  Configuration {cfg_name} observes the same pointing {len(indices)} times: {p_str}{off_suffix}")
 
         # Add to global warnings if any found
         if duplicate_pointings_found:
@@ -2650,7 +2700,7 @@ class NIRSpecMOSReviewer:
         write("="*95)
         write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
         write("-" * 95)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if self.obs_info.get(obs_num, {}).get('sign') not in ["🔎", "👷", "☑️"]: continue
             p = self.analytics[obs_num].get('parallel', "None")
             d = self.analytics[obs_num].get('dither',   "NONE")
@@ -2675,7 +2725,7 @@ class NIRSpecMOSReviewer:
         write("="*110)
         write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
         write("-" * 110)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             d = self.analytics[obs_num].get(
                 'special_reqs_data', {'apa_range': "None", 'bg_lim': "None", 'others': []})
@@ -2692,7 +2742,7 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Config':<12} | {'Slitlets (Lengths)':<35} | {'Primaries':<12} | "
               f"{'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
         write("-" * 140)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             conf = "✚" if self.analytics[obs_num].get('conf_img')    else "No"
             leak = "✚" if self.analytics[obs_num].get('has_leakcal') else "No"
             nod  = self.analytics[obs_num].get('nod_pattern', "NONE")
@@ -2715,7 +2765,7 @@ class NIRSpecMOSReviewer:
         write("\nREFERENCE STARS USED (from TA export)")
         write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10}")
         write("-" * 80)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             
             v_info_map = self.analytics[obs_num].get('visit_info', {})
@@ -2741,7 +2791,7 @@ class NIRSpecMOSReviewer:
                     elif quad_val == 3: q_emoji = icons['MOSTLY']
                     elif quad_val == 2: q_emoji = icons['PARTIAL']
                     else: q_emoji = icons['ERROR']
-
+ 
                 stars_str = f"{star_val if star_val is not None else 'N/A'}"
                 if s_emoji: stars_str += f"  {s_emoji}"
                 quads_str = f"{quad_val if quad_val is not None else 'N/A'}"
@@ -2754,30 +2804,30 @@ class NIRSpecMOSReviewer:
         """Per-visit listing of reference stars used, with magnitudes from the catalog."""
         # Check for data first...
         # (Table follows)
-
+ 
         mag_cols = ['NRS_F110W', 'NRS_F140W', 'NRS_CLEAR']
-
-        for obs_num in sorted(self.analytics.keys(), key=int):
+ 
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             ta_data = self.exports_data['ta_stars'].get(obs_num, {})
             if not ta_data: continue
-
+ 
             # Determine the catalog for this observation (for magnitude lookup)
             cat_name = self.analytics[obs_num].get('target_name')
             cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
-
+ 
             # Check which mag columns actually exist in the catalog
             present_cols = [c for c in mag_cols
                             if any(c in (cat_sources.get(sid) or {}).get('mags', {})
                                    and (cat_sources.get(sid) or {}).get('mags', {}).get(c) is not None
                                    for sid in cat_sources)]
-
+ 
             v_keys = sorted(ta_data.keys(), key=int)
             for v_key in v_keys:
                 v_data = ta_data[v_key]
                 star_rows = v_data.get('star_rows', [])
                 if not star_rows: continue
-
+ 
                 # Get TA parameters from XML extraction
                 ta_params = self.exports_data.get('ta_params', {}).get(str(obs_num), {}).get(str(v_key))
                 ta_note = ""
@@ -2803,17 +2853,17 @@ class NIRSpecMOSReviewer:
                         elif "F140W" in ta_filter.upper(): active_mag_col = "NRS_F140W"
                     else:
                         ta_note = f" [{ta_params}]"
-
+ 
                 obs_label = f"Obs {obs_num}" if len(v_keys) == 1 else f"Obs {obs_num} Visit {v_key}"
                 write(f"\n{obs_label}{ta_note}  ({len(star_rows)} stars, {v_data.get('file', '')})")
-
+ 
                 # Filter columns to only show the active magnitude if requested
                 display_cols = []
                 if active_mag_col and active_mag_col in present_cols:
                     display_cols = [active_mag_col]
                 else:
                     display_cols = present_cols
-
+ 
                 # Build header
                 col_w = 10
                 hdr = f"  {'ID':>6} {'Quad':>4}"
@@ -2821,7 +2871,7 @@ class NIRSpecMOSReviewer:
                     hdr += f"  {c:>{col_w}}"
                 write(hdr)
                 write("  " + "-" * (len(hdr) - 2))
-
+ 
                 # Sort by Active Magnitude (low to high), then ID
                 def sort_key(s):
                     sid = s['id']
@@ -2831,7 +2881,7 @@ class NIRSpecMOSReviewer:
                     # If no value, sort to the bottom (using 99.0 as high mag)
                     mag_val = val if val is not None else 99.0
                     return (mag_val, sid)
-
+ 
                 for star in sorted(star_rows, key=sort_key):
                     sid = star['id']
                     q   = star['quad']
@@ -2841,7 +2891,7 @@ class NIRSpecMOSReviewer:
                         val = (src or {}).get('mags', {}).get(c)
                         row_str += f"  {f'{val:.2f}':>{col_w}}" if val is not None else f"  {'—':>{col_w}}"
                     write(row_str)
-
+ 
     def _report_availability(self, write):
         avail = self.exports_data.get('availability')
         if not avail:
@@ -2855,7 +2905,26 @@ class NIRSpecMOSReviewer:
         write(header)
         write("-" * len(header))
         
-        for vid in sorted(self.exports_data['availability'].keys()):
+        def sort_vid_key(vid):
+            v_num_str = str(vid)
+            if len(v_num_str) >= 6:
+                try:
+                    o = str(int(v_num_str[-6:-3]))
+                    v = int(v_num_str[-3:])
+                except:
+                    o = v_num_str
+                    v = 0
+            else:
+                o = v_num_str
+                v = 0
+            try:
+                obs_idx = self.all_obs_nums.index(o)
+            except ValueError:
+                try: obs_idx = 10000 + int(o)
+                except: obs_idx = 99999
+            return (obs_idx, v)
+
+        for vid in sorted(self.exports_data['availability'].keys(), key=sort_vid_key):
             # Format long Visit IDs (e.g. 07729001001) for readability: Obs:Visit (e.g. 1:1)
             v_num_str = str(vid)
             if len(v_num_str) >= 6:
@@ -2961,7 +3030,7 @@ class NIRSpecMOSReviewer:
                     continue
                 
                 # Filter out those individual observations that are excluded from the display list
-                visible_obs = sorted([o for o in obs_nums if self.obs_info.get(o, {}).get('sign') != "👷"], key=int)
+                visible_obs = self._get_sorted_obs_nums([o for o in obs_nums if self.obs_info.get(o, {}).get('sign') != "👷"])
                 if not visible_obs: continue
                 
                 obs_prefix = f"(Obs {', '.join(visible_obs)}) "
@@ -2996,7 +3065,7 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Target Catalog Name':<35} | {'Sources':<8} | {'Ref':<5} | "
               f"{'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
         write("-" * 160)
-        for obs_num in sorted(self.analytics.keys(), key=int):
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
             target  = self.analytics[obs_num].get('target_name', 'Unknown')
             info    = self.stats['catalog_info'].get(target, {})
@@ -3022,7 +3091,7 @@ class NIRSpecMOSReviewer:
         write("="*60)
             
         # Group catalogs by observation usage
-        active_obs = sorted(self.analytics.keys(), key=int)
+        active_obs = self._get_sorted_obs_nums(self.analytics.keys())
         
         for obs_num in active_obs:
             if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
@@ -3296,17 +3365,17 @@ class NIRSpecMOSReviewer:
             time_status = icons['SUCCESS'] if charg <= alloc else icons['ERROR']
             write(f"{time_status} {charg:.1f} Hours Total Charged / {alloc:.1f} Hours Allocated")
         
-        all_obs = sorted(self.all_obs_nums)
+        all_obs = self._get_sorted_obs_nums(self.all_obs_nums)
         n_total = len(all_obs)
         write(f"{n_total} observation{'s' if n_total > 1 else ''}: {', '.join(map(str, all_obs))}")
         write('')
         
         # Separate observations by sign/status
-        reviewed_full = sorted([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"])
-        under_construction = sorted([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "👷"])
-        completed = sorted([o for o in all_obs if self.obs_status.get(o) == "COMPLETED"])
-        excl_comp = sorted([o for o in completed if o not in self.reviewed_obs_nums])
-        other_excl = sorted([o for o in all_obs if o not in self.reviewed_obs_nums and o not in completed])
+        reviewed_full = self._get_sorted_obs_nums([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "🔎"])
+        under_construction = self._get_sorted_obs_nums([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') == "👷"])
+        completed = self._get_sorted_obs_nums([o for o in all_obs if self.obs_status.get(o) == "COMPLETED"])
+        excl_comp = self._get_sorted_obs_nums([o for o in completed if o not in self.reviewed_obs_nums])
+        other_excl = self._get_sorted_obs_nums([o for o in all_obs if o not in self.reviewed_obs_nums and o not in completed])
         
         n_rev = len(reviewed_full)
         n_uc = len(under_construction)
@@ -3363,7 +3432,7 @@ class NIRSpecMOSReviewer:
                 msata_icon = icons['SUCCESS'] if (min_s >= 8 and min_q >= 3) else icons['MOSTLY']
                 write(f"{msata_icon} MSATA: {s_range} stars in {q_range} quads")
             
-            for obs_num in sorted(no_ref_obs, key=int):
+            for obs_num in self._get_sorted_obs_nums(no_ref_obs):
                 write(f"❌  Obs {obs_num} has no reference stars!")
 
             # Catalogs
@@ -3496,7 +3565,7 @@ class NIRSpecMOSReviewer:
 
     def _report_spar_review(self, write, icons):
         """ Consolidation of review checks in a checklist format. """
-        reviewed_obs = [o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') in ["🔎", "☑️"]]
+        reviewed_obs = self._get_sorted_obs_nums([o for o in self.reviewed_obs_nums if self.obs_info.get(o, {}).get('sign') in ["🔎", "☑️"]])
         active_catalogs = sorted({self.analytics[o].get('target_name') for o in reviewed_obs if self.analytics.get(o, {}).get('target_name')})
         
         write("\n" + "="*80)
@@ -3527,7 +3596,7 @@ class NIRSpecMOSReviewer:
         # 4. Special Requirements
         write("\nSPECIAL REQUIREMENTS")
         srs = []
-        for o in sorted(reviewed_obs, key=int):
+        for o in reviewed_obs:
             sr_data = self.analytics[o].get('special_reqs_data', {})
             if sr_data.get('apa_range') and sr_data['apa_range'] != "None":
                 srs.append(f"Aperture PA {sr_data['apa_range']}")
@@ -3548,7 +3617,20 @@ class NIRSpecMOSReviewer:
         write("\nEXPOSURE PARAMETERS")
         specs = self.stats.get('all_exposure_specs', [])
         
-        for spec in specs:
+        def sort_spec_key(s):
+            obs_str = str(s['obs'])
+            try:
+                obs_idx = self.all_obs_nums.index(obs_str)
+            except ValueError:
+                try: obs_idx = 10000 + int(obs_str)
+                except: obs_idx = 99999
+            try:
+                spec_id = int(s['id'])
+            except:
+                spec_id = 0
+            return (obs_idx, spec_id)
+            
+        for spec in sorted(specs, key=sort_spec_key):
              if str(spec['obs']) in reviewed_obs:
                 irs2 = "IRS2" in (spec['rp'] or "")
                 time_ok = spec['dur'] <= 1500

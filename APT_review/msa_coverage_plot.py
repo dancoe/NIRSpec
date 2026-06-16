@@ -105,7 +105,11 @@ def load_ta_params(xml_path):
     for elem in root.iter():
         tag_local = elem.tag.split('}')[-1]
         if tag_local == 'Observation':
-            obs_num = elem.get('Number')
+            obs_num = None
+            for child in elem:
+                if child.tag.split('}')[-1] == 'Number':
+                    obs_num = child.text
+                    break
             if not obs_num:
                 continue
             obs_num_norm = str(int(obs_num))
@@ -1185,16 +1189,29 @@ def main():
             table_lines = []
             table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
             table_lines.append("")
-            table_lines.append(f"{'ID':>8} | {'mag':<5} | {'quad':<4}")
-            table_lines.append("-" * 23)
+            
+            f110_hdr = 'F110W*' if active_mag_col == 'NRS_F110W' else 'F110W'
+            f140_hdr = 'F140X*' if active_mag_col == 'NRS_F140W' else 'F140X'
+            clear_hdr = 'CLEAR*' if active_mag_col == 'NRS_CLEAR' else 'CLEAR'
+            
+            table_lines.append(f"{'quad':<4} | {'ID':>8} | {f110_hdr:>6} | {f140_hdr:>6} | {clear_hdr:>6}")
+            table_lines.append("-" * 43)
             
             def ref_id_key(r):
                 try: return int(r['id'])
                 except: return r['id']
                 
             for r in sorted(plotted_refs, key=ref_id_key):
-                mag_str = f"{r['mag']:.1f}" if r['mag'] is not None else "N/A"
-                table_lines.append(f"{str(r['id']):>8} | {mag_str:<5} | {r['quad']:<4}")
+                src = next(s for s in all_sources if s['id'] == r['id'])
+                f110_val = src['mags'].get('NRS_F110W')
+                f140_val = src['mags'].get('NRS_F140W')
+                clear_val = src['mags'].get('NRS_CLEAR')
+                
+                f110_str = f"{f110_val:.1f}" if f110_val is not None else "—"
+                f140_str = f"{f140_val:.1f}" if f140_val is not None else "—"
+                clear_str = f"{clear_val:.1f}" if clear_val is not None else "—"
+                
+                table_lines.append(f"{r['quad']:<4} | {str(r['id']):>8} | {f110_str:>6} | {f140_str:>6} | {clear_str:>6}")
                 
             table_text = "\n".join(table_lines)
             
