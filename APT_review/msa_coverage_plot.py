@@ -1065,7 +1065,8 @@ def main():
             # Info header line
             filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
             readout_val_str = f"$\\bf{{{active_readout}}}$" if active_readout else "N/A"
-            range_val_str = f"$\\bf{{{active_range[0]:.1f}}}$ – $\\bf{{{active_range[1]:.1f}}}$" if active_range else "N/A"
+            range_val_bold = f"$\\bf{{{active_range[0]:.1f}}}$ – $\\bf{{{active_range[1]:.1f}}}$" if active_range else "N/A"
+            range_val_plain = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
 
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
             custom_labels.append(f"MSATA Config:")
@@ -1075,12 +1076,12 @@ def main():
             custom_labels.append(f"  Readout: {readout_val_str}")
             
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Range: {range_val_str}")
+            custom_labels.append(f"  Range: {range_val_bold}")
             
             # Color key
             custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
-                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
-            custom_labels.append(f"In range ({range_val_str})")
+                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_labels.append(f"In range ({range_val_plain})")
             
             custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
