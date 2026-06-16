@@ -335,7 +335,7 @@ def main():
     output_dir = Path(visits_csv).parent
     availability_report = []
 
-    def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False):
+    def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False, is_compilation=False):
         if refstars_only:
             if "Obs" in title:
                 title = title.replace("Obs", "Obs (Ref Stars)")
@@ -407,20 +407,26 @@ def main():
                 active_filter = parts[0]
                 active_readout = parts[1]
                 
-        # Default fallback
-        if not active_filter:
-            active_filter = "CLEAR"
-        if not active_readout:
-            active_readout = "NRSRAPIDD6"
+        if is_compilation:
+            active_filter = None
+            active_readout = None
+            active_mag_col = None
+        else:
+            # Default fallback
+            if not active_filter:
+                active_filter = "CLEAR"
+            if not active_readout:
+                active_readout = "NRSRAPIDD6"
             
         # Map active filter to catalog column
         active_mag_col = None
-        if "CLEAR" in active_filter.upper():
-            active_mag_col = "NRS_CLEAR"
-        elif "F110W" in active_filter.upper():
-            active_mag_col = "NRS_F110W"
-        elif "F140W" in active_filter.upper() or "F140X" in active_filter.upper():
-            active_mag_col = "NRS_F140W"
+        if active_filter:
+            if "CLEAR" in active_filter.upper():
+                active_mag_col = "NRS_CLEAR"
+            elif "F110W" in active_filter.upper():
+                active_mag_col = "NRS_F110W"
+            elif "F140W" in active_filter.upper() or "F140X" in active_filter.upper():
+                active_mag_col = "NRS_F140W"
             
         lookup_filter = "F140X" if active_filter == "F140W" else active_filter
         
@@ -1057,21 +1063,24 @@ def main():
 
         if refstars_only:
             # Info header line
+            filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
+            readout_val_str = f"$\\bf{{{active_readout}}}$" if active_readout else "N/A"
+            range_val_str = f"$\\bf{{{active_range[0]:.1f}}}$ – $\\bf{{{active_range[1]:.1f}}}$" if active_range else "N/A"
+
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
             custom_labels.append(f"MSATA Config:")
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Filter: {active_filter}")
+            custom_labels.append(f"  Filter: {filter_val_str}")
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Readout: {active_readout}")
+            custom_labels.append(f"  Readout: {readout_val_str}")
             
-            range_str = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Range: {range_str}")
+            custom_labels.append(f"  Range: {range_val_str}")
             
             # Color key
             custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
-            custom_labels.append(f"In range ({range_str})")
+            custom_labels.append(f"In range ({range_val_str})")
             
             custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
@@ -1152,75 +1161,74 @@ def main():
             
             for text_obj in leg.get_texts():
                 lbl = text_obj.get_text()
-                if lbl.startswith("  Filter:") or lbl.startswith("  Readout:") or lbl.startswith("  Range:"):
-                    text_obj.set_weight('bold')
                 for key, color in label_colors.items():
                     if key in lbl:
                         text_obj.set_color(color)
                         break
             
             # Extract and display the reference stars table below the legend
-            plotted_refs = []
-            for src in all_sources:
-                if src['is_ref'] and src['id'] in used_ref_ids:
-                    quad_found = None
-                    for row in rows:
-                        vid = row['Visit ID']
-                        if vid in obs_quads:
-                            for q_idx, q_poly in obs_quads[vid].items():
-                                if is_inside((src['ra'], src['dec']), q_poly):
-                                    quad_found = f"{q_idx}"
-                                    break
-                        if quad_found:
-                            break
+            if not is_compilation:
+                plotted_refs = []
+                for src in all_sources:
+                    if src['is_ref'] and src['id'] in used_ref_ids:
+                        quad_found = None
+                        for row in rows:
+                            vid = row['Visit ID']
+                            if vid in obs_quads:
+                                for q_idx, q_poly in obs_quads[vid].items():
+                                    if is_inside((src['ra'], src['dec']), q_poly):
+                                        quad_found = f"{q_idx}"
+                                        break
+                            if quad_found:
+                                break
+                        
+                        mag_val = src['mags'].get(active_mag_col) if (active_mag_col and src.get('mags')) else None
+                        plotted_refs.append({
+                            'id': src['id'],
+                            'mag': mag_val,
+                            'quad': quad_found or 'N/A'
+                        })
+                
+                used_quads = {r['quad'] for r in plotted_refs if r['quad'] != 'N/A'}
+                n_quads = len(used_quads)
+                n_stars = len(plotted_refs)
+                
+                table_lines = []
+                table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
+                table_lines.append("")
+                
+                is_chosen_f110 = (active_mag_col == 'NRS_F110W' and n_stars > 0)
+                is_chosen_f140 = (active_mag_col == 'NRS_F140W' and n_stars > 0)
+                is_chosen_clear = (active_mag_col == 'NRS_CLEAR' and n_stars > 0)
+                
+                f110_hdr = '*F110W*' if is_chosen_f110 else ' F110W '
+                f140_hdr = '*F140X*' if is_chosen_f140 else ' F140X '
+                clear_hdr = '*CLEAR*' if is_chosen_clear else ' CLEAR '
+                
+                table_lines.append(f"{'quad':^4}|{'ID':^8}|{f110_hdr}|{f140_hdr}|{clear_hdr}")
+                table_lines.append("-" * 37)
+                
+                def ref_id_key(r):
+                    try: return int(r['id'])
+                    except: return r['id']
                     
-                    mag_val = src['mags'].get(active_mag_col) if (active_mag_col and src.get('mags')) else None
-                    plotted_refs.append({
-                        'id': src['id'],
-                        'mag': mag_val,
-                        'quad': quad_found or 'N/A'
-                    })
-            
-            used_quads = {r['quad'] for r in plotted_refs if r['quad'] != 'N/A'}
-            n_quads = len(used_quads)
-            n_stars = len(plotted_refs)
-            
-            table_lines = []
-            table_lines.append(f"{n_stars} reference stars in {n_quads} quads")
-            table_lines.append("")
-            
-            is_chosen_f110 = (active_mag_col == 'NRS_F110W' and n_stars > 0)
-            is_chosen_f140 = (active_mag_col == 'NRS_F140W' and n_stars > 0)
-            is_chosen_clear = (active_mag_col == 'NRS_CLEAR' and n_stars > 0)
-            
-            f110_hdr = '*F110W*' if is_chosen_f110 else ' F110W '
-            f140_hdr = '*F140X*' if is_chosen_f140 else ' F140X '
-            clear_hdr = '*CLEAR*' if is_chosen_clear else ' CLEAR '
-            
-            table_lines.append(f"{'quad':^4}|{'ID':^8}|{f110_hdr}|{f140_hdr}|{clear_hdr}")
-            table_lines.append("-" * 37)
-            
-            def ref_id_key(r):
-                try: return int(r['id'])
-                except: return r['id']
+                for r in sorted(plotted_refs, key=ref_id_key):
+                    src = next(s for s in all_sources if s['id'] == r['id'])
+                    f110_val = src['mags'].get('NRS_F110W')
+                    f140_val = src['mags'].get('NRS_F140W')
+                    clear_val = src['mags'].get('NRS_CLEAR')
+                    
+                    f110_str = f"{f110_val:.1f}" if f110_val is not None else "—"
+                    f140_str = f"{f140_val:.1f}" if f140_val is not None else "—"
+                    clear_str = f"{clear_val:.1f}" if clear_val is not None else "—"
+                    
+                    table_lines.append(f"{r['quad']:^4}| {str(r['id']):>6} |{f110_str:^7}|{f140_str:^7}|{clear_str:^7}")
+                    
+                table_text = "\n".join(table_lines)
                 
-            for r in sorted(plotted_refs, key=ref_id_key):
-                src = next(s for s in all_sources if s['id'] == r['id'])
-                f110_val = src['mags'].get('NRS_F110W')
-                f140_val = src['mags'].get('NRS_F140W')
-                clear_val = src['mags'].get('NRS_CLEAR')
-                
-                f110_str = f"{f110_val:.1f}" if f110_val is not None else "—"
-                f140_str = f"{f140_val:.1f}" if f140_val is not None else "—"
-                clear_str = f"{clear_val:.1f}" if clear_val is not None else "—"
-                
-                table_lines.append(f"{r['quad']:^4}| {str(r['id']):>6} |{f110_str:^7}|{f140_str:^7}|{clear_str:^7}")
-                
-            table_text = "\n".join(table_lines)
-            
-            plt.text(1.05, 0.40, table_text, transform=plt.gca().transAxes, fontsize=6.5,
-                     family='monospace', va='top', ha='left',
-                     bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.7', alpha=0.9))
+                plt.text(1.05, 0.40, table_text, transform=plt.gca().transAxes, fontsize=6.5,
+                         family='monospace', va='top', ha='left',
+                         bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='0.7', alpha=0.9))
         
         plt.grid(False)
         plt.tight_layout()
@@ -1325,8 +1333,8 @@ def main():
     
     if do_combined:
         all_rows = [r for rows in obs_groups.values() for r in rows]
-        plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}", common_limits=common_limits)
-        plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}_refstars", common_limits=common_limits, refstars_only=True)
+        plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}", common_limits=common_limits, is_compilation=True)
+        plot_group(all_rows, f"JWST {prog_num} Observations", f"{xml_stem}_refstars", common_limits=common_limits, refstars_only=True, is_compilation=True)
     
     if 0:
         # Print availability summary
