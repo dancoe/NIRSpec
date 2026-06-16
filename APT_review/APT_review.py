@@ -2050,16 +2050,62 @@ class NIRSpecMOSReviewer:
             def write_plans(text):
                 plans_output.write(text + "\n")
 
+            # Try to read details of all plans from the .aptx zip JSON files
+            import json
+            plan_details = {}
+            if self.input_path.suffix.lower() == '.aptx' and self.input_path.exists():
+                try:
+                    with zipfile.ZipFile(self.input_path, 'r') as zipf:
+                        for item_name in zipf.namelist():
+                            if item_name.endswith('.json') and 'MPT_UI_STATE' not in item_name:
+                                try:
+                                    p_data = json.loads(zipf.read(item_name).decode('utf-8'))
+                                    p_name = p_data.get('name')
+                                    if p_name:
+                                        cfgs = p_data.get('configs', [])
+                                        n_cfgs = len(cfgs)
+                                        # Count exposures and unique primary/secondary targets
+                                        n_exps = 0
+                                        primary_count = 0
+                                        secondary_count = 0
+                                        
+                                        # MPT JSONs store plannerSpecification metadata
+                                        p_spec = p_data.get('plannerSpecification', {})
+                                        stats_list = p_data.get('stats', [])
+                                        if stats_list:
+                                            # stats contains target details
+                                            primary_count = stats_list[0].get('numberOfTargets', 0)
+                                        
+                                        for c in cfgs:
+                                            n_exps += len(c.get('exposures', []))
+                                        
+                                        norm_name = p_name.replace('„', ',').replace('  ', ' ').strip()
+                                        plan_details[norm_name] = {
+                                            'cfgs': n_cfgs,
+                                            'exps': n_exps,
+                                            'primaries': primary_count,
+                                            'secondaries': secondary_count,
+                                            'apa': p_data.get('aperturePA', 0.0),
+                                            'catalog': p_data.get('catalog', {}).get('name', '')
+                                        }
+                                except: pass
+                except: pass
+
             plans_list = self.stats['program_metadata'].get('plans', [])
             
             write_plans("=================================================================================================================================================")
             write_plans("ALL PLANS IN FILE")
             write_plans("=================================================================================================================================================")
-            plans_header = f"{'#':>3} | Plan Name"
+            plans_header = f"{'#':>3} | {'Plan Name':<60} | {'# Configs':<9} | {'# Exposures':<11} | {'# Primary S...':<14} | {'# Secondar...':<13} | {'Plan APA':<12} | Plan Catalog"
             write_plans(plans_header)
-            write_plans("-" * 80)
+            write_plans("-" * len(plans_header))
             for idx, plan_name in enumerate(plans_list, 1):
-                write_plans(f"{idx:>3} | {plan_name}")
+                norm_xml_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                p_info = plan_details.get(norm_xml_name)
+                if p_info:
+                    write_plans(f"{idx:>3} | {plan_name:<60} | {p_info['cfgs']:<9} | {p_info['exps']:<11} | {p_info['primaries']:<14} | {p_info['secondaries']:<13} | {p_info['apa']:<12.4f} | {p_info['catalog']}")
+                else:
+                    write_plans(f"{idx:>3} | {plan_name:<60} | {'-':<9} | {'-':<11} | {'-':<14} | {'-':<13} | {'-':<12} | -")
             write_plans("")
             
             # Print the MPT PLANS table into plans file
