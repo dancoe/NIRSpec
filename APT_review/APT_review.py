@@ -2261,7 +2261,7 @@ class NIRSpecMOSReviewer:
         plans = self.stats['program_metadata'].get('plans', [])
         sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
         
-        # Group pointings by plan number
+        # Group pointings by Observation number
         grouped_pointings = {}
         for key in sorted_keys:
             p = pointings[key]
@@ -2280,23 +2280,22 @@ class NIRSpecMOSReviewer:
                     except ValueError:
                         pass
             
-            group_key = (plan_num, plan_name)
+            group_key = (obs_num, plan_num, plan_name)
             if group_key not in grouped_pointings:
                 grouped_pointings[group_key] = []
             grouped_pointings[group_key].append(p)
         
-        # Output separate tables sorted by plan number/name
-        # For sorting, convert plan_num to int if possible, otherwise default to high number
+        # Output separate tables sorted by Observation number
         def sort_group_key(gk):
-            pnum_str = gk[0]
+            obs_num_str = gk[0]
             try:
-                return (int(pnum_str), gk[1])
+                return (int(obs_num_str), gk[1])
             except ValueError:
                 return (999, gk[1])
 
         for g_key in sorted(grouped_pointings.keys(), key=sort_group_key):
-            plan_num, plan_name = g_key
-            write(f"\nPlan #{plan_num}: {plan_name}")
+            obs_num, plan_num, plan_name = g_key
+            write(f"\nObs #{obs_num}, Plan #{plan_num}: {plan_name}")
             
             header = f"{'#':>3} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
             write(header)
