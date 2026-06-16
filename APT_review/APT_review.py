@@ -2258,31 +2258,54 @@ class NIRSpecMOSReviewer:
         write("POINTINGS")
         write("="*145)
         
-        header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
-        write(header)
-        write("-" * len(header))
-        
         plans = self.stats['program_metadata'].get('plans', [])
         sorted_keys = sorted(pointings.keys(), key=lambda k: (int(k[0]), k[1], k[2]))
         
-        for idx, key in enumerate(sorted_keys, 1):
+        # Group pointings by plan number
+        grouped_pointings = {}
+        for key in sorted_keys:
             p = pointings[key]
             obs_num = p['obs']
             
             plan_num = "-"
+            plan_name = "None specified"
             obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
-            if obs_plans and plans:
-                try:
-                    norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
-                    norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
-                    plan_num = str(norm_plans.index(norm_obs_plan) + 1)
-                except ValueError:
-                    pass
+            if obs_plans:
+                plan_name = obs_plans[0].replace('„', ',')
+                if plans:
+                    try:
+                        norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
+                        norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
+                        plan_num = str(norm_plans.index(norm_obs_plan) + 1)
+                    except ValueError:
+                        pass
             
-            ra_hms = deg_to_hms(p['ra'])
-            dec_dms = deg_to_dms(p['dec'])
+            group_key = (plan_num, plan_name)
+            if group_key not in grouped_pointings:
+                grouped_pointings[group_key] = []
+            grouped_pointings[group_key].append(p)
+        
+        # Output separate tables sorted by plan number/name
+        # For sorting, convert plan_num to int if possible, otherwise default to high number
+        def sort_group_key(gk):
+            pnum_str = gk[0]
+            try:
+                return (int(pnum_str), gk[1])
+            except ValueError:
+                return (999, gk[1])
+
+        for g_key in sorted(grouped_pointings.keys(), key=sort_group_key):
+            plan_num, plan_name = g_key
+            write(f"\nPlan #{plan_num}: {plan_name}")
             
-            write(f"{idx:>3} | {plan_num:<11} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
+            header = f"{'#':>3} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+            write(header)
+            write("-" * len(header))
+            
+            for idx, p in enumerate(grouped_pointings[g_key], 1):
+                ra_hms = deg_to_hms(p['ra'])
+                dec_dms = deg_to_dms(p['dec'])
+                write(f"{idx:>3} | {p['name']:<12} | {p['ra']:<12.6f} | {p['dec']:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {p['pa']:<10.4f} | {p['gf']:<18} | {p['size']:<15} | {int(p['weight'])}")
 
     def _report_aperture_pa(self, write, icons):
         if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]
