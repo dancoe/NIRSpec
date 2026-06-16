@@ -1896,6 +1896,7 @@ class NIRSpecMOSReviewer:
             self._report_observation_table(write)                         # All observations summary table
             self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
             self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
+            self._report_plans(write)                                     # MPT Plans section
             self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
             self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
             self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
@@ -2005,6 +2006,33 @@ class NIRSpecMOSReviewer:
                 write(f"\n[Observation {obs_num_str}: {target}]")
                 for status, msg in obs_findings:
                     write(f"  {icons.get(status, ' ')} {msg}")
+
+    def _report_plans(self, write):
+        plans = self.stats['program_metadata'].get('plans', [])
+        if not plans and not any(self.analytics.get(o, {}).get('plans') or self.analytics.get(o, {}).get('json_plan') for o in self.analytics):
+            return
+        write("\n" + "="*80)
+        write("🗺️ MPT PLANS")
+        write("="*80)
+        if plans:
+            write(f"Program Plans (ToolData): {', '.join(plans)}")
+            
+        for o in sorted(self.analytics.keys(), key=int):
+            if self.obs_info.get(o, {}).get('sign') == "👷":
+                continue
+            obs_plans = self.analytics[o].get('plans', [])
+            json_plan = self.analytics[o].get('json_plan')
+            
+            plan_list = []
+            if obs_plans:
+                plan_list.extend(obs_plans)
+            if json_plan:
+                plan_list.append(f"JSON: {json_plan}")
+                
+            if plan_list:
+                write(f"Obs {o}: {', '.join(plan_list)}")
+            else:
+                write(f"Obs {o}: None specified")
 
     def _report_aperture_pa(self, write, icons):
         if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]
@@ -2427,8 +2455,6 @@ class NIRSpecMOSReviewer:
         write("="*80)
         write(f"APT Version: {meta['apt_version']}")
         write(f"Has Errors:  {meta['has_errors']}")
-        if meta.get('plans'):
-            write(f"MPT Plans:   {', '.join(meta['plans'])}")
         if meta['email'] != "None":
             write(f"Email:       {meta['email']}")
         if meta['submission_comments'] != "None":
