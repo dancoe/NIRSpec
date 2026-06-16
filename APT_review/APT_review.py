@@ -2869,7 +2869,7 @@ class NIRSpecMOSReviewer:
                 write(f"{msata_icon} MSATA: {s_range} stars in {q_range} quads")
             
             for obs_num in sorted(no_ref_obs, key=int):
-                write(f"❌ Obs {obs_num} has no reference stars!")
+                write(f"❌  Obs {obs_num} has no reference stars!")
 
             # Catalogs
             active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
@@ -3234,7 +3234,7 @@ class NIRSpecMOSReviewer:
                     v_keys = sorted(self.analytics.get(str(obs_num), {}).get('visit_info', {}).keys(), key=int)
                     if not v_keys: v_keys = ['1']
                     for vk in v_keys:
-                        write(f"❌ Visit {obs_num}:{vk} – No reference stars found")
+                        write(f"❌  Visit {obs_num}:{vk} – No reference stars found")
                 else:
                     count = info['count']
                     quads = len(info['quads'])
