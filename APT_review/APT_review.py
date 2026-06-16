@@ -2044,6 +2044,35 @@ class NIRSpecMOSReviewer:
                 f.write(output.getvalue())
             print(f"\nReport saved to: {self.output_path}")
 
+            # Generate plans output file (JWST[PID]_plans.txt)
+            plans_path = self.output_path.with_name(f"JWST{self.pid or '6927'}_plans.txt")
+            plans_output = io.StringIO()
+            def write_plans(text):
+                plans_output.write(text + "\n")
+
+            plans_list = self.stats['program_metadata'].get('plans', [])
+            
+            write_plans("=================================================================================================================================================")
+            write_plans("ALL PLANS IN FILE")
+            write_plans("=================================================================================================================================================")
+            plans_header = f"{'#':>3} | Plan Name"
+            write_plans(plans_header)
+            write_plans("-" * 80)
+            for idx, plan_name in enumerate(plans_list, 1):
+                write_plans(f"{idx:>3} | {plan_name}")
+            write_plans("")
+            
+            # Print the MPT PLANS table into plans file
+            self._report_plans(write_plans)
+            write_plans("")
+            
+            # Print the POINTINGS table into plans file
+            self._report_pointings(write_plans)
+            
+            with open(plans_path, 'w') as f_plans:
+                f_plans.write(plans_output.getvalue())
+            print(f"Plans details saved to: {plans_path}")
+
     # ── Report section methods ───────────────────────────────────────────
 
     def _report_review_ready_summary(self, write):
