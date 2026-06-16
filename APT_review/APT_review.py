@@ -2096,16 +2096,17 @@ class NIRSpecMOSReviewer:
             write_plans("=================================================================================================================================================")
             write_plans("ALL PLANS IN FILE")
             write_plans("=================================================================================================================================================")
-            plans_header = f"{'#':>3} | {'Plan Name':<60} | {'# Configs':<9} | {'# Exposures':<11} | {'# Primary S...':<14} | {'# Secondar...':<13} | {'Plan APA':<12} | Plan Catalog"
+            plans_header = f"{'#':>3} | {'Plan Name':<70} | {'# Configs':<9} | {'# Exposures':<11} | {'# Primary S...':<14} | {'# Secondar...':<13} | {'Plan APA':<12} | Plan Catalog"
             write_plans(plans_header)
             write_plans("-" * len(plans_header))
             for idx, plan_name in enumerate(plans_list, 1):
                 norm_xml_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
                 p_info = plan_details.get(norm_xml_name)
+                clean_plan_name = plan_name.replace('„', ',')
                 if p_info:
-                    write_plans(f"{idx:>3} | {plan_name:<60} | {p_info['cfgs']:<9} | {p_info['exps']:<11} | {p_info['primaries']:<14} | {p_info['secondaries']:<13} | {p_info['apa']:<12.4f} | {p_info['catalog']}")
+                    write_plans(f"{idx:>3} | {clean_plan_name:<70} | {p_info['cfgs']:<9} | {p_info['exps']:<11} | {p_info['primaries']:<14} | {p_info['secondaries']:<13} | {p_info['apa']:<12.4f} | {p_info['catalog']}")
                 else:
-                    write_plans(f"{idx:>3} | {plan_name:<60} | {'-':<9} | {'-':<11} | {'-':<14} | {'-':<13} | {'-':<12} | -")
+                    write_plans(f"{idx:>3} | {clean_plan_name:<70} | {'-':<9} | {'-':<11} | {'-':<14} | {'-':<13} | {'-':<12} | -")
             write_plans("")
             
             # Print the MPT PLANS table into plans file
@@ -2224,7 +2225,9 @@ class NIRSpecMOSReviewer:
             plan_num = "-"
             if obs_plans and plans:
                 try:
-                    plan_num = str(plans.index(plan_name) + 1)
+                    norm_obs_plan = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                    norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
+                    plan_num = str(norm_plans.index(norm_obs_plan) + 1)
                 except ValueError:
                     pass
             
@@ -2238,7 +2241,9 @@ class NIRSpecMOSReviewer:
             plan_apa = self.analytics[o].get('apa_planned', "N/A")
             catalog = self.analytics[o].get('catalog_name', "N/A")
             
-            write(f"{o:<5} | {plan_num:<6} | {plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
+            # Print names with „ replaced by single commas
+            clean_plan_name = plan_name.replace('„', ',')
+            write(f"{o:<5} | {plan_num:<6} | {clean_plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
 
     def _report_pointings(self, write):
         pointings = self.exports_data.get('pointings_data', {})
@@ -2264,7 +2269,9 @@ class NIRSpecMOSReviewer:
             obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
             if obs_plans and plans:
                 try:
-                    plan_num = str(plans.index(obs_plans[0]) + 1)
+                    norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
+                    norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
+                    plan_num = str(norm_plans.index(norm_obs_plan) + 1)
                 except ValueError:
                     pass
             
