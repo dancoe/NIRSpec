@@ -2423,6 +2423,61 @@ class NIRSpecMOSReviewer:
             else:
                 write("  (No plan configuration details found in .aptx archive)")
 
+        # 3. EXCLUDED PLANS tables (from JSON inside .aptx, 3 rows per plan)
+        active_plan_names_set = {v[1].replace('„', ',').replace('  ', ' ').strip() for v in active_plans.values()}
+        excluded_plans_list = []
+        for idx, plan_name in enumerate(plans, 1):
+            norm_pname = plan_name.replace('„', ',').replace('  ', ' ').strip()
+            if norm_pname not in active_plan_names_set:
+                excluded_plans_list.append((str(idx), plan_name))
+                
+        if excluded_plans_list:
+            write("\n" + "="*145)
+            write("EXCLUDED PLANS")
+            write("="*145)
+            
+            for plan_num, plan_name in excluded_plans_list:
+                clean_plan_name = plan_name.replace('„', ',')
+                norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                
+                write(f"\nPlan #{plan_num}: {clean_plan_name}")
+                
+                header = f"{'#':>3} | {'Plan number':<11} | {'Name':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                write(header)
+                write("-" * len(header))
+                
+                p_data = json_plans_data.get(norm_name)
+                if p_data:
+                    cfgs = p_data.get('configs', [])
+                    cat_name = p_data.get('catalog', {}).get('name', '')
+                    cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+                    
+                    idx = 1
+                    for c in cfgs:
+                        for exp in c.get('exposures', []):
+                            exp_name = exp.get('name') or ''
+                            exp_name_disp = exp_name
+                            ra_val = exp.get('ra') or 0.0
+                            dec_val = exp.get('dec') or 0.0
+                            gf_val = (exp.get('gratingFilter') or '').replace('_', '/')
+                            apa_val = p_data.get('aperturePA') or 0.0
+                            
+                            source_ids = exp.get('sourceIds', [])
+                            target_set_size = len(source_ids)
+                            
+                            total_weight = 0.0
+                            for sid in source_ids:
+                                sid_str = str(sid).strip()
+                                total_weight += float(cat_sources.get(sid_str, {}).get('weight', 0.0))
+                                
+                            ra_hms = deg_to_hms(ra_val)
+                            dec_dms = deg_to_dms(dec_val)
+                            
+                            write(f"{idx:>3} | {plan_num:<11} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {target_set_size:<15} | {int(total_weight)}")
+                            idx += 1
+                else:
+                    write("  (No plan configuration details found in .aptx archive)")
+
     def _report_aperture_pa(self, write, icons):
         if not any('apa_assigned' in self.analytics[o] or 'apa_planned' in self.analytics[o]
                    for o in self.analytics):
