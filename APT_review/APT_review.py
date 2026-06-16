@@ -2241,7 +2241,7 @@ class NIRSpecMOSReviewer:
         write("🗺️ MPT PLANS")
         write("="*145)
         
-        header = f"Obs   | {'Plan #':<6} | {'Plan name':<50} | {'Configs':<7} | {'Exposures':<9} | {'Primary':<7} | {'Secondary':<9} | {'Plan APA':<15} | Catalog"
+        header = f"Obs | Plan # | {'Plan name':<52} | Configs | Exposures | Primary | Secondary | {'Plan APA':<15} | Catalog"
         write(header)
         write("-" * len(header))
         
@@ -2273,7 +2273,7 @@ class NIRSpecMOSReviewer:
             
             # Print names with „ replaced by single commas
             clean_plan_name = plan_name.replace('„', ',')
-            write(f"{o:<5} | {plan_num:<6} | {clean_plan_name:<50} | {n_configs:<7} | {n_exposures:<9} | {primary_cnt:<7} | {secondary_cnt:<9} | {plan_apa:<15} | {catalog}")
+            write(f"{o:>3} | {plan_num:>6} | {clean_plan_name:<52} | {n_configs:^7} | {n_exposures:^9} | {primary_cnt:^7} | {secondary_cnt:^9} | {plan_apa:<15} | {catalog}")
 
     def _report_pointings(self, write, is_plans_file=False):
         # 1. Previous POINTINGS tables (from CSV exports, 9 rows per obs)
@@ -2360,6 +2360,8 @@ class NIRSpecMOSReviewer:
             write("\n" + "="*145)
             write("INDIVIDUAL PLANS")
             write("="*145)
+        else:
+            write("\nINDIVIDUAL PLANS:")
         
         # Load all JSON plans from the zip if it exists
         json_plans_data = {}
