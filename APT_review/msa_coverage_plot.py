@@ -669,21 +669,8 @@ def main():
             'sci_highest_obs': {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'lws': [], 'alphas': [], 'zorder': 7, 'marker': 'o'},
         }
 
-        # Collect reference star magnitudes for scaling if in refstars_only mode
-        mag_min, mag_max = 19.0, 26.0
-        if refstars_only:
-            all_ref_mags = []
-            for src in all_sources:
-                if src['is_ref'] and src.get('mags'):
-                    val_mag = src['mags'].get(active_mag_col)
-                    if val_mag is not None:
-                        all_ref_mags.append(val_mag)
-            if all_ref_mags:
-                mag_min = min(all_ref_mags)
-                mag_max = max(all_ref_mags)
-                if mag_max - mag_min < 1.0:
-                    mag_min = 19.0
-                    mag_max = 26.0
+        # Fixed reference star magnitude scaling bounds (based on Obs 19 catalog)
+        mag_min, mag_max = 17.8, 26.6
 
         for src in all_sources:
             if refstars_only and not src['is_ref']:
@@ -1087,12 +1074,8 @@ def main():
                 custom_labels.append(f'Weight: {w_str}')
 
         if refstars_only:
-            # Count reference stars in this observation range
-            n_stars = 0
-            for src in all_sources:
-                if src['is_ref']:
-                    if abs(src['ra'] - obs_c_ra) <= 0.75 and abs(src['dec'] - obs_c_dec) <= 0.75:
-                        n_stars += 1
+            # Count reference stars actually used in this observation
+            n_stars = len([src for src in all_sources if src['is_ref'] and src['id'] in used_ref_ids])
 
             if n_stars > 0:
                 # Info header line
