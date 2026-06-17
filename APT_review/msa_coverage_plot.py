@@ -336,6 +336,9 @@ def main():
     availability_report = []
 
     def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False, is_compilation=False):
+        # Determine number of reference stars used/selected in this observation
+        n_stars = len([src for src in all_sources if src['is_ref'] and src['id'] in used_ref_ids]) if 'all_sources' in locals() or 'all_sources' in globals() else 0
+
         if refstars_only:
             if "Obs" in title:
                 title = title.replace("Obs", "Obs (Ref Stars)")
@@ -709,7 +712,7 @@ def main():
                                     filt_other_ranges.append(r_range)
                                     
                             pt_color = '#bdc3c7'
-                            if filt_range and filt_range[0] <= m <= filt_range[1]:
+                            if n_stars > 0 and filt_range and filt_range[0] <= m <= filt_range[1]:
                                 pt_color = '#2ecc71'
                             else:
                                 in_other = False
@@ -1075,9 +1078,6 @@ def main():
                 custom_labels.append(f'Weight: {w_str}')
 
         if refstars_only:
-            # Count reference stars actually used in this observation
-            n_stars = len([src for src in all_sources if src['is_ref'] and src['id'] in used_ref_ids])
-
             if n_stars > 0:
                 # Info header line
                 filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
@@ -1127,11 +1127,11 @@ def main():
             custom_labels.append("Observed Ref Star")
             
             # Size key
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50',
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='none',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=12, linestyle='None'))
             custom_labels.append("Brighter Star")
             
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='0.50',
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='none',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=3.5, linestyle='None'))
             custom_labels.append("Fainter Star")
         else:
