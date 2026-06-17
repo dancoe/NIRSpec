@@ -336,8 +336,7 @@ def main():
     availability_report = []
 
     def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False, is_compilation=False):
-        # Determine number of reference stars used/selected in this observation
-        n_stars = len([src for src in all_sources if src['is_ref'] and src['id'] in used_ref_ids]) if 'all_sources' in locals() or 'all_sources' in globals() else 0
+
 
         if refstars_only:
             if "Obs" in title:
@@ -645,6 +644,10 @@ def main():
         
         # Sort by weight ascending so higher weights are plotted last (on top) within categories
         all_sources = sorted(combined_sources.values(), key=lambda x: x['weight'])
+        
+        # Determine number of reference stars used/selected in this observation
+        n_stars = len([src for src in all_sources if src['is_ref'] and src['id'] in used_ref_ids])
+        
         weights = [s['weight'] for s in all_sources if s['weight'] > 0]
         
         if not weights:
