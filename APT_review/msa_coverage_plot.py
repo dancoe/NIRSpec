@@ -1078,7 +1078,7 @@ def main():
                 custom_labels.append(f'Weight: {w_str}')
 
         if refstars_only:
-            if n_stars > 0:
+            if n_stars > 0 and not is_compilation:
                 # Info header line
                 filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
                 readout_val_str = f"$\\bf{{{active_readout}}}$" if active_readout else "N/A"
