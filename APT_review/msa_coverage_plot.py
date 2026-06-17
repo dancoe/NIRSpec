@@ -702,42 +702,67 @@ def main():
             if src['is_ref']:
                 if refstars_only:
                     is_used = src['id'] in used_ref_ids
-                    c = cats['ref_used'] if is_used else cats['ref_unused']
-                    c['ras'].append(src['ra'])
-                    c['decs'].append(src['dec'])
                     
-                    # Magnitude-based sizing
-                    m = None
-                    if active_mag_col and src.get('mags'):
-                        m = src['mags'].get(active_mag_col)
+                    filters_info = []
+                    for filt_name, mag_col, range_key, ec in [
+                        ('F110W', 'NRS_F110W', 'F110W', '#e67e22'),
+                        ('F140X', 'NRS_F140W', 'F140X', '#e74c3c'),
+                        ('CLEAR', 'NRS_CLEAR', 'CLEAR', '#1a252f')
+                    ]:
+                        m = src['mags'].get(mag_col) if src.get('mags') else None
+                        if m is not None:
+                            norm = (mag_max - m) / (mag_max - mag_min) if mag_max > mag_min else 0.5
+                            norm = max(0.0, min(1.0, norm))
+                            size = 10 + 170 * norm
+                            
+                            filt_range = MSATA_RANGES.get(range_key, {}).get(active_readout)
+                            filt_other_ranges = []
+                            for r_mode, r_range in MSATA_RANGES.get(range_key, {}).items():
+                                if r_mode != active_readout:
+                                    filt_other_ranges.append(r_range)
+                                    
+                            pt_color = '#bdc3c7'
+                            if filt_range and filt_range[0] <= m <= filt_range[1]:
+                                pt_color = '#2ecc71'
+                            else:
+                                in_other = False
+                                for r_range in filt_other_ranges:
+                                    if r_range and r_range[0] <= m <= r_range[1]:
+                                        in_other = True
+                                        break
+                                if in_other:
+                                    pt_color = '#f1c40f'
+                                    
+                            filters_info.append({
+                                'filt_name': filt_name,
+                                'size': size,
+                                'color': pt_color,
+                                'edgecolor': ec
+                            })
+                            
+                    filters_info.sort(key=lambda x: x['size'], reverse=True)
                     
-                    if m is not None:
-                        norm = (mag_max - m) / (mag_max - mag_min) if mag_max > mag_min else 0.5
-                        norm = max(0.0, min(1.0, norm))
-                        size = 10 + 170 * norm
-                    else:
-                        size = 20
-                        
-                    # Color based on ranges
-                    pt_color = '#bdc3c7' # Default out of range (silver/gray)
-                    if m is not None:
-                        if active_range and active_range[0] <= m <= active_range[1]:
-                            pt_color = '#2ecc71' # Green (emerald)
-                        else:
-                            # Check other ranges
-                            in_other = False
-                            for r_range in other_ranges:
-                                if r_range and r_range[0] <= m <= r_range[1]:
-                                    in_other = True
-                                    break
-                            if in_other:
-                                pt_color = '#f1c40f' # Yellow (gold)
-                                
-                    c['sizes'].append(size)
-                    c['colors'].append(pt_color)
-                    c['edgecolors'].append('magenta' if is_used else 'black')
-                    c['lws'].append(0.5)
-                    c['alphas'].append(1.0 if is_used else 0.70)
+                    base_zorder = 8 if is_used else 5
+                    for idx, f_info in enumerate(filters_info):
+                        z = base_zorder + idx * 0.1
+                        alpha = 1.0 if is_used else 0.70
+                        plt.scatter(src['ra'], src['dec'], marker='*', s=f_info['size'],
+                                    color=f_info['color'], edgecolors=f_info['edgecolor'],
+                                    linewidths=0.6, alpha=alpha, zorder=z)
+                                    
+                    if is_used:
+                        plt.annotate(
+                            str(src['id']),
+                            xy=(src['ra'], src['dec']),
+                            xytext=(0, -8),
+                            textcoords='offset points',
+                            fontsize=5.5,
+                            fontweight='bold',
+                            color='black',
+                            ha='center',
+                            va='top',
+                            zorder=20
+                        )
                 else:
                     if not all_refs_mode:
                         is_used = src['id'] in used_ref_ids
@@ -1062,30 +1087,43 @@ def main():
                 custom_labels.append(f'Weight: {w_str}')
 
         if refstars_only:
-            # Info header line
-            filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
-            readout_val_str = f"$\\bf{{{active_readout}}}$" if active_readout else "N/A"
-            range_val_bold = f"$\\bf{{{active_range[0]:.1f}}}$ – $\\bf{{{active_range[1]:.1f}}}$" if active_range else "N/A"
-            range_val_plain = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
+            # Count reference stars in this observation range
+            n_stars = 0
+            for src in all_sources:
+                if src['is_ref']:
+                    if abs(src['ra'] - obs_c_ra) <= 0.75 and abs(src['dec'] - obs_c_dec) <= 0.75:
+                        n_stars += 1
 
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"MSATA Config:")
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Filter: {filter_val_str}")
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Readout: {readout_val_str}")
-            
-            custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
-            custom_labels.append(f"  Range: {range_val_bold}")
-            
-            # Color key
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
-                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
-            custom_labels.append(f"In range ({range_val_plain})")
-            
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
-                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
-            custom_labels.append("In other ranges")
+            if n_stars > 0:
+                # Info header line
+                filter_val_str = f"$\\bf{{{active_filter}}}$" if active_filter else "N/A"
+                readout_val_str = f"$\\bf{{{active_readout}}}$" if active_readout else "N/A"
+                range_val_bold = f"$\\bf{{{active_range[0]:.1f}}}$ – $\\bf{{{active_range[1]:.1f}}}$" if active_range else "N/A"
+                range_val_plain = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
+
+                custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+                custom_labels.append(f"MSATA Config:")
+                custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+                custom_labels.append(f"  Filter: {filter_val_str}")
+                custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+                custom_labels.append(f"  Readout: {readout_val_str}")
+                
+                custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
+                custom_labels.append(f"  Range: {range_val_bold}")
+                
+                # Color key
+                custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
+                                            markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+                custom_labels.append(f"In range ({range_val_plain})")
+                
+                custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
+                                           markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+                custom_labels.append("In other ranges")
+            else:
+                # n_stars == 0
+                custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#f1c40f',
+                                           markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
+                custom_labels.append("In ranges")
             
             # Full allowed range for each filter
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
@@ -1133,31 +1171,10 @@ def main():
         
         # Color specific filter range lines in the legend
         if refstars_only:
-            # Determine color for the three filters in the legend based on active_filter
-            # Standard colors: Orange (#e67e22), Red (#e74c3c)
-            # Filter selected is always black (#1a252f)
-            c_f110 = '#e67e22' # Orange
-            c_f140 = '#e74c3c' # Red
-            c_clear = '#1a252f' # Black
-            
-            active_upper = str(active_filter).upper() if active_filter else ""
-            if 'F110W' in active_upper:
-                c_f110 = '#1a252f'
-                c_f140 = '#e74c3c'
-                c_clear = '#e67e22'
-            elif 'F140X' in active_upper or 'F140W' in active_upper:
-                c_f110 = '#e67e22'
-                c_f140 = '#1a252f'
-                c_clear = '#e74c3c'
-            else: # CLEAR or others
-                c_f110 = '#e67e22'
-                c_f140 = '#e74c3c'
-                c_clear = '#1a252f'
-                
             label_colors = {
-                "F110W: 19.5 – 24.0": c_f110,
-                "F140X: 20.6 – 25.0": c_f140,
-                "CLEAR: 21.3 – 25.7": c_clear
+                "F110W: 19.5 – 24.0": '#e67e22', # Always Orange
+                "F140X: 20.6 – 25.0": '#e74c3c', # Always Red
+                "CLEAR: 21.3 – 25.7": '#1a252f'  # Always Black
             }
             
             for text_obj in leg.get_texts():
