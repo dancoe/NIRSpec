@@ -733,8 +733,9 @@ def main():
                     for idx, f_info in enumerate(filters_info):
                         z = base_zorder + idx * 0.1
                         alpha = 1.0 if is_used else 0.70
+                        facecolor = 'magenta' if is_used else f_info['color']
                         plt.scatter(src['ra'], src['dec'], marker='*', s=f_info['size'],
-                                    color=f_info['color'], edgecolors=f_info['edgecolor'],
+                                    color=facecolor, edgecolors=f_info['edgecolor'],
                                     linewidths=0.6, alpha=alpha, zorder=z)
                                     
                     if is_used:
@@ -1121,8 +1122,8 @@ def main():
             custom_labels.append("Out of range")
             
             # Usage key
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#2ecc71',
-                                       markeredgecolor='magenta', markeredgewidth=0.5, markersize=10, linestyle='None'))
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='magenta',
+                                       markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
             custom_labels.append("Observed Ref Star")
             
             # Size key
