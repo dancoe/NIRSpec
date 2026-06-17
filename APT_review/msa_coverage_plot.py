@@ -711,7 +711,7 @@ def main():
                                 if r_mode != active_readout:
                                     filt_other_ranges.append(r_range)
                                     
-                            pt_color = '#bdc3c7'
+                            pt_color = 'none'
                             if n_stars > 0 and filt_range and filt_range[0] <= m <= filt_range[1]:
                                 pt_color = '#2ecc71'
                             else:
@@ -1117,7 +1117,7 @@ def main():
             custom_lines.append(Line2D([0], [0], color='w', linestyle='None'))
             custom_labels.append("  CLEAR: 21.3 – 25.7")
             
-            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='#bdc3c7',
+            custom_lines.append(Line2D([0], [0], marker='*', color='w', markerfacecolor='none',
                                        markeredgecolor='black', markeredgewidth=0.5, markersize=10, linestyle='None'))
             custom_labels.append("Out of range")
             
