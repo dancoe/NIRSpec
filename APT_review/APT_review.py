@@ -2031,7 +2031,8 @@ class NIRSpecMOSReviewer:
             self._report_submission_info(write, icons)                    # APT version, email, submission comments, diagnostic justification, submission log
             self._report_findings(write, icons, obs_map, general_issues)  # Per-observation warnings & errors
             self._report_plans(write)                                     # MPT Plans section
-            self._report_pointings(write)                                 # POINTINGS section
+            self._report_pointings_section(write)                         # New POINTINGS section
+            self._report_pointings(write)                                 # MPT Individual Plans section
             self._report_aperture_pa(write, icons)                        # Planned vs. assigned aperture PA table
             self._report_exposure_specs(write)                            # Grating/filter, readout, groups/ints, duration table
             self._report_configs_pointings(write)                         # Configuration pointings: nod pattern, total ints & time
@@ -2298,6 +2299,129 @@ class NIRSpecMOSReviewer:
             sec_str = f"{f'{secondary_cnt:>2}':^9}"
             
             write(f" {obs_str} |   {pnum_str}   | {clean_plan_name:<52} | {cfg_str} | {exp_str} | {prim_str} | {sec_str} | {plan_apa:<15} | {catalog}")
+
+    def _get_c1e1_coords(self, obs_num):
+        # 1. Try to find in json_plans_data (MPT JSONs from zip)
+        json_plans_data = {}
+        if self.input_path.suffix.lower() == '.aptx' and self.input_path.exists():
+            try:
+                import json
+                with zipfile.ZipFile(self.input_path, 'r') as zipf:
+                    for item_name in zipf.namelist():
+                        if item_name.endswith('.json') and 'MPT_UI_STATE' not in item_name:
+                            try:
+                                p_data = json.loads(zipf.read(item_name).decode('utf-8'))
+                                p_name = p_data.get('name')
+                                if p_name:
+                                    norm_pname = p_name.replace('„', ',').replace('  ', ' ').strip()
+                                    json_plans_data[norm_pname] = p_data
+                            except: pass
+            except: pass
+
+        obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
+        if obs_plans:
+            plan_name = obs_plans[0]
+            norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
+            p_data = json_plans_data.get(norm_name)
+            if p_data:
+                cfgs = p_data.get('configs', [])
+                if cfgs and cfgs[0].get('exposures'):
+                    exp = cfgs[0]['exposures'][0]
+                    ra = exp.get('ra')
+                    dec = exp.get('dec')
+                    if ra is not None and dec is not None:
+                        return ra, dec
+
+        # 2. Try to find in exports_data['pointings_data']
+        pointings = self.exports_data.get('pointings_data', {})
+        for (o_num, p_name, gf), p in pointings.items():
+            if str(o_num) == str(obs_num):
+                p_name_lower = p_name.lower()
+                if p_name_lower.startswith('c1e1') or p_name_lower == 'c1':
+                    return p['ra'], p['dec']
+        
+        # Fallback to any pointing in exports_data for this obs
+        for (o_num, p_name, gf), p in pointings.items():
+            if str(o_num) == str(obs_num):
+                return p['ra'], p['dec']
+
+        return None, None
+
+    def _report_pointings_section(self, write):
+        write("\n" + "="*120)
+        write("🎯 POINTINGS")
+        write("="*120)
+        
+        header = f"   {'Obs':<4} | {'Plan':<52} | {'RA (deg)':<12} | {'Dec (deg)':<12} | {'RA (HMS)':<15} | {'Dec (DMS)':<15}"
+        write(header)
+        write("-" * len(header))
+        
+        obs_coords = []
+        
+        for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
+            if self.obs_info.get(obs_num, {}).get('sign') == "👷":
+                continue
+            
+            ra, dec = self._get_c1e1_coords(obs_num)
+            
+            plan_name = "None"
+            obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
+            if obs_plans:
+                plan_name = obs_plans[0].replace('„', ',')
+            
+            if len(plan_name) > 52:
+                plan_name = plan_name[:49] + "..."
+                
+            if ra is not None and dec is not None:
+                ra_hms = deg_to_hms(ra)
+                dec_dms = deg_to_dms(dec)
+                write(f"   {obs_num:<4} | {plan_name:<52} | {ra:<12.6f} | {dec:<12.6f} | {ra_hms:<15} | {dec_dms:<15}")
+                obs_coords.append((obs_num, ra, dec))
+            else:
+                write(f"   {obs_num:<4} | {plan_name:<52} | {'n/a':<12} | {'n/a':<12} | {'n/a':<15} | {'n/a':<15}")
+                
+        write("-" * len(header))
+        
+        if len(obs_coords) >= 2:
+            import math
+            def get_distance_arcsec(ra1, dec1, ra2, dec2):
+                dec_rad = math.radians((dec1 + dec2) / 2.0)
+                dra = (ra1 - ra2) * math.cos(dec_rad) * 3600.0
+                ddec = (dec1 - dec2) * 3600.0
+                return math.sqrt(dra**2 + ddec**2)
+
+            def compute_subset_span(subset):
+                if len(subset) < 2:
+                    return 0.0
+                max_d = 0.0
+                for i in range(len(subset)):
+                    for j in range(i + 1, len(subset)):
+                        d = get_distance_arcsec(subset[i][1], subset[i][2], subset[j][1], subset[j][2])
+                        if d > max_d:
+                            max_d = d
+                return max_d
+
+            write("\nWithin | Obs")
+            
+            S = obs_coords[:]
+            while len(S) >= 2:
+                span = compute_subset_span(S)
+                obs_str = ", ".join(sorted([str(item[0]) for item in S], key=int))
+                write(f"{span:>5.1f}\" | {obs_str}")
+                if len(S) == 2:
+                    break
+                
+                # Exclude the most distant from the rest that will yield the shortest distance between the rest
+                best_span = None
+                best_idx = None
+                for idx in range(len(S)):
+                    temp_subset = S[:idx] + S[idx+1:]
+                    s_span = compute_subset_span(temp_subset)
+                    if best_span is None or s_span < best_span:
+                        best_span = s_span
+                        best_idx = idx
+                S = S[:best_idx] + S[best_idx+1:]
+            write("")
 
     def _report_pointings(self, write, is_plans_file=False):
         # 1. Previous POINTINGS tables (from CSV exports, 9 rows per obs)
@@ -2604,7 +2728,7 @@ class NIRSpecMOSReviewer:
             return
         
         write("\n" + "="*145)
-        write("📍 CONFIGURATIONS / POINTINGS")
+        write("⚙️ CONFIGURATIONS")
         write("="*145)
         
         write("\nDispersion and Cross-Dispersion offsets are given in parentheses (Disp, Cross) in units of shutters.")

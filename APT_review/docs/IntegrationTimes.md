@@ -59,4 +59,4 @@ $$ 758.622 \times 1 \times 2 = 1517.245 \text{ s} $$
 
 ---
 > [!NOTE]
-> These calculations are used in the **EXPOSURE SPECIFICATIONS** and **CONFIGURATIONS / POINTINGS** sections of the review report.
+> These calculations are used in the **EXPOSURE SPECIFICATIONS** and **CONFIGURATIONS** sections of the review report.

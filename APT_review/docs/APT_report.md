@@ -94,7 +94,7 @@ Extracted from `<nsmos:Exposures>/<nsmos:Exposure>`:
 
 ---
 
-## 8. Configurations & Pointings
+## 8. Configurations
 
 Extracted from `<nsmos:ConfigurationPointings>/<nsmos:ConfigurationPointing>`:
 
@@ -204,17 +204,18 @@ The `print_report()` method generates the following sections in order:
 | 5 | **Detailed Findings** | Warnings, Errors, Info messages consolidated by observation |
 | 6 | **Aperture PA Summary** | Planned (JSON) vs. Assigned (XML/Diagnostics) per observation |
 | 7 | **Exposure Specs** | Program-wide exposure configurations |
-| 8 | **Configs / Pointings** | Pointings, nods, total integration times, and dither offsets |
-| 9 | **Parallels & Dithers** | Coordinated activity and dither check |
-| 10 | **Special Requirements** | Orientation, background, and other constraints |
-| 11 | **MSA Configurations** | Slitlet/primary/filler counts, leakcal, confirmation image |
-| 12 | **MSATA & Stars** | Star counts, quadrant distribution, and availability grid |
-| 13 | **Target Catalog Info** | Source counts, accuracy, and weight filters |
-| 14 | **High Priority Targets** | Coverage and wavelength analysis for top 20 sources |
-| 15 | **Catalog Check Details** | Warnings for specific catalogs (IDs, stellarity, etc.) |
-| 16 | **Final Summary** | Compliance sign-off, Strategy/Clustering flags, Electrical Shorts warnings |
-| 17 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, repeated pointing warnings, Electrical Shorts, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
-| 18 | **Files Used Log** | List of all file contributions and modification dates. |
+| 8 | **Pointings** | Single row for each observation / plan giving c1e1 RA and Dec coordinates, and distance analysis |
+| 9 | **Configs** | Pointings, nods, total integration times, and dither offsets |
+| 10 | **Parallels & Dithers** | Coordinated activity and dither check |
+| 11 | **Special Requirements** | Orientation, background, and other constraints |
+| 12 | **MSA Configurations** | Slitlet/primary/filler counts, leakcal, confirmation image |
+| 13 | **MSATA & Stars** | Star counts, quadrant distribution, and availability grid |
+| 14 | **Target Catalog Info** | Source counts, accuracy, and weight filters |
+| 15 | **High Priority Targets** | Coverage and wavelength analysis for top 20 sources |
+| 16 | **Catalog Check Details** | Warnings for specific catalogs (IDs, stellarity, etc.) |
+| 17 | **Final Summary** | Compliance sign-off, Strategy/Clustering flags, Electrical Shorts warnings |
+| 18 | **SPAR Review** | Consolidated checklist showing only analyzed (🔎) observations. Includes: TA method, Parallels, Special Requirements, Nods/Dithers, repeated pointing warnings, Electrical Shorts, Catalog metrics (weight max, stellarity range), MPT configurations, High-priority target depth, and Reference stars. |
+| 19 | **Files Used Log** | List of all file contributions and modification dates. |
 
 ### SPAR Review Logic
 *   **Analyzed Observations**: Only data from observations marked with 🔎 is included.

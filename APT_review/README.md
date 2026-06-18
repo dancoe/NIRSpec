@@ -234,18 +234,19 @@ The report is organized into 18 sections that are printed in sequence:
 5.  **Detailed Findings** — Observation-specific warnings and errors (e.g. TA method, exposure duration, non-IRS2 readout).
 6.  **Aperture PA Summary** — Compares the Planned PA (from the MPT JSON) against the Assigned PA (from the Visit Planner diagnostics).
 7.  **Exposure Specifications** — All grating/filter, readout, and group/integration settings.
-8.  **Configurations / Pointings** — Every telescope pointing, nod pattern, and total time on sky.
-9.  **Parallels & Dithers** — Which observations are coordinated parallels and whether dithering is compatible.
-10. **Special Requirements** — Orientation constraints, background limits, and other flags.
-11. **MSA Configurations & Strategy** — Slitlet counts, primary/filler breakdown, and whether Leakcal and Confirmation Images are enabled.
-12. **MSATA & Reference Stars** — Detailed breakdown of reference stars *used* (from TA CSV) and *available* (calculated via **PySIAF**), including quadrant coverage.
-13. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
-14. **High Priority Targets** — Per-visit coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
-15. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
-16. **Electrical Shorts (SHORTS)** — Flags targets located in problematic rows/columns (e.g. q4d16s36 "Wilhelm").
-17. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
-18. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
-19. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
+8.  **Pointings** — Single row for each observation / plan giving c1e1 RA and Dec coordinates, along with a distance analysis.
+9.  **Configurations** — Every configuration details, nod pattern, and total time on sky.
+10. **Parallels & Dithers** — Which observations are coordinated parallels and whether dithering is compatible.
+11. **Special Requirements** — Orientation constraints, background limits, and other flags.
+12. **MSA Configurations & Strategy** — Slitlet counts, primary/filler breakdown, and whether Leakcal and Confirmation Images are enabled.
+13. **MSATA & Reference Stars** — Detailed breakdown of reference stars *used* (from TA CSV) and *available* (calculated via **PySIAF**), including quadrant coverage.
+14. **Target Catalog** — Source counts, reference-star counts, astrometric accuracy, and weight filters per catalog.
+15. **High Priority Targets** — Per-visit coverage analysis for the top 20 weighted targets, identifying detector gaps and spectral cutoffs.
+16. **Target Catalog Errors/Warnings** — Detailed warnings for specific catalogs (e.g. IDs, stellarity).
+17. **Electrical Shorts (SHORTS)** — Flags targets located in problematic rows/columns (e.g. q4d16s36 "Wilhelm").
+18. **Final Summary** — A concise technical sign-off including time budget and compliance for MSATA, Integration Times, and IRS2.
+19. **SPAR Review** — A consolidated checklist format review (as seen in `docs/JWST7729_review.md`).
+20. **Files Used** — A log of every `.aptx`, `.xml`, and `.csv` file contribution to the report.
 
 ---
 
