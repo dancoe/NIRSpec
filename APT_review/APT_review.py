@@ -93,6 +93,7 @@ class NIRSpecMOSReviewer:
         self.exclude_set = self._parse_obs_list(exclude) if exclude else set()
         
         self.target_name_map = {}
+        self.plan_details = {}
         self.obs_info = {} # int -> {label, status, target_name}
         self.results = []
         self.catalogs = {}
@@ -200,9 +201,44 @@ class NIRSpecMOSReviewer:
                                     self.config_to_obs[cfg_name] = set()
                                 self.config_to_obs[cfg_name].add(num)
 
+    def _load_plan_details(self):
+        """Read details of all plans from the .aptx zip JSON files."""
+        self.plan_details = {}
+        if self.input_path.suffix.lower() == '.aptx' and self.input_path.exists():
+            try:
+                import json
+                with zipfile.ZipFile(self.input_path, 'r') as zipf:
+                    for item_name in zipf.namelist():
+                        if item_name.endswith('.json') and 'MPT_UI_STATE' not in item_name:
+                            try:
+                                p_data = json.loads(zipf.read(item_name).decode('utf-8'))
+                                p_name = p_data.get('name')
+                                if p_name:
+                                    cfgs = p_data.get('configs', [])
+                                    n_cfgs = len(cfgs)
+                                    n_exps = sum(len(c.get('exposures', [])) for c in cfgs)
+                                    primary_count = 0
+                                    secondary_count = 0
+                                    stats_list = p_data.get('stats', [])
+                                    if stats_list:
+                                        primary_count = stats_list[0].get('numberOfTargets', 0)
+                                    norm_name = p_name.replace('„', ',').replace('  ', ' ').strip()
+                                    self.plan_details[norm_name] = {
+                                        'cfgs': n_cfgs,
+                                        'exps': n_exps,
+                                        'primaries': primary_count,
+                                        'secondaries': secondary_count,
+                                        'apa': p_data.get('aperturePA', 0.0),
+                                        'catalog': p_data.get('catalog', {}).get('name', ''),
+                                        'p_data': p_data
+                                    }
+                            except: pass
+            except: pass
+
     def _load_exports(self, _is_retry=False):
         """Search for and parse exported files (diag, csv) to supplement XML data."""
         self._build_config_map()
+        self._load_plan_details()
         potential_dirs = []
         if self.exports_path:
             potential_dirs.append(self.exports_path)
@@ -2066,46 +2102,7 @@ class NIRSpecMOSReviewer:
             def write_plans(text):
                 plans_output.write(text + "\n")
 
-            # Try to read details of all plans from the .aptx zip JSON files
-            import json
-            plan_details = {}
-            if self.input_path.suffix.lower() == '.aptx' and self.input_path.exists():
-                try:
-                    with zipfile.ZipFile(self.input_path, 'r') as zipf:
-                        for item_name in zipf.namelist():
-                            if item_name.endswith('.json') and 'MPT_UI_STATE' not in item_name:
-                                try:
-                                    p_data = json.loads(zipf.read(item_name).decode('utf-8'))
-                                    p_name = p_data.get('name')
-                                    if p_name:
-                                        cfgs = p_data.get('configs', [])
-                                        n_cfgs = len(cfgs)
-                                        # Count exposures and unique primary/secondary targets
-                                        n_exps = 0
-                                        primary_count = 0
-                                        secondary_count = 0
-                                        
-                                        # MPT JSONs store plannerSpecification metadata
-                                        p_spec = p_data.get('plannerSpecification', {})
-                                        stats_list = p_data.get('stats', [])
-                                        if stats_list:
-                                            # stats contains target details
-                                            primary_count = stats_list[0].get('numberOfTargets', 0)
-                                        
-                                        for c in cfgs:
-                                            n_exps += len(c.get('exposures', []))
-                                        
-                                        norm_name = p_name.replace('„', ',').replace('  ', ' ').strip()
-                                        plan_details[norm_name] = {
-                                            'cfgs': n_cfgs,
-                                            'exps': n_exps,
-                                            'primaries': primary_count,
-                                            'secondaries': secondary_count,
-                                            'apa': p_data.get('aperturePA', 0.0),
-                                            'catalog': p_data.get('catalog', {}).get('name', '')
-                                        }
-                                except: pass
-                except: pass
+            plan_details = self.plan_details
 
             plans_list = self.stats['program_metadata'].get('plans', [])
             
@@ -2115,8 +2112,8 @@ class NIRSpecMOSReviewer:
                 if self.obs_info.get(o, {}).get('sign') == "👷":
                     continue
                 obs_plans = self.analytics[o].get('plans', [])
-                if obs_plans:
-                    active_plan_names.add(obs_plans[0].replace('„', ',').replace('  ', ' ').strip())
+                for plan_name in obs_plans:
+                    active_plan_names.add(plan_name.replace('„', ',').replace('  ', ' ').strip())
 
             used_plans = []
             excluded_plans = []
@@ -2264,66 +2261,60 @@ class NIRSpecMOSReviewer:
                 continue
             
             obs_plans = self.analytics[o].get('plans', [])
-            plan_name = obs_plans[0] if obs_plans else "None specified"
-            
-            plan_num = "-"
-            if obs_plans and plans:
-                try:
-                    norm_obs_plan = plan_name.replace('„', ',').replace('  ', ' ').strip()
-                    norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
-                    plan_num = str(norm_plans.index(norm_obs_plan) + 2)
-                except ValueError:
-                    pass
-            
-            msa_configs = self.analytics[o].get('msa_configs', [])
-            n_configs = len(msa_configs)
-            n_exposures = len(self.analytics[o].get('configs', []))
-            
-            primary_cnt = msa_configs[0]['n_primaries'] if msa_configs else 0
-            secondary_cnt = msa_configs[0]['n_secondaries'] if msa_configs else 0
-            
-            plan_apa = self.analytics[o].get('apa_planned', "N/A")
-            catalog = self.analytics[o].get('catalog_name', "N/A")
-            
-            # Print names with „ replaced by single commas
-            clean_plan_name = plan_name.replace('„', ',')
-            
-            # Formatting Obs and Plan # right justified to 2 digits
-            obs_str = f"{o:>2}"
-            pnum_str = f"{plan_num:>2}"
-            
-            # Formatting numeric columns centered and right justified
-            cfg_str = f"{f'{n_configs:>2}':^7}"
-            exp_str = f"{f'{n_exposures:>2}':^9}"
-            prim_str = f"{f'{primary_cnt:>2}':^7}"
-            sec_str = f"{f'{secondary_cnt:>2}':^9}"
-            
-            write(f" {obs_str} |   {pnum_str}   | {clean_plan_name:<52} | {cfg_str} | {exp_str} | {prim_str} | {sec_str} | {plan_apa:<15} | {catalog}")
+            if not obs_plans:
+                obs_plans = ["None specified"]
+                
+            for plan_name in obs_plans:
+                plan_num = "-"
+                if plan_name != "None specified" and plans:
+                    try:
+                        norm_obs_plan = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                        norm_plans = [p.replace('„', ',').replace('  ', ' ').strip() for p in plans]
+                        plan_num = str(norm_plans.index(norm_obs_plan) + 2)
+                    except ValueError:
+                        pass
+                
+                norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
+                p_info = self.plan_details.get(norm_name)
+                
+                if p_info:
+                    n_configs = p_info['cfgs']
+                    n_exposures = p_info['exps']
+                    primary_cnt = p_info['primaries']
+                    secondary_cnt = p_info['secondaries']
+                    plan_apa = f"{p_info['apa']:.4f} Degrees"
+                    catalog = p_info['catalog']
+                else:
+                    msa_configs = self.analytics[o].get('msa_configs', [])
+                    n_configs = len(msa_configs)
+                    n_exposures = len(self.analytics[o].get('configs', []))
+                    primary_cnt = msa_configs[0]['n_primaries'] if msa_configs else 0
+                    secondary_cnt = msa_configs[0]['n_secondaries'] if msa_configs else 0
+                    plan_apa = self.analytics[o].get('apa_planned', "N/A")
+                    catalog = self.analytics[o].get('catalog_name', "N/A")
+                
+                clean_plan_name = plan_name.replace('„', ',')
+                
+                # Formatting Obs and Plan # right justified to 2 digits
+                obs_str = f"{o:>2}"
+                pnum_str = f"{plan_num:>2}"
+                
+                # Formatting numeric columns centered and right justified
+                cfg_str = f"{f'{n_configs:>2}':^7}"
+                exp_str = f"{f'{n_exposures:>2}':^9}"
+                prim_str = f"{f'{primary_cnt:>2}':^7}"
+                sec_str = f"{f'{secondary_cnt:>2}':^9}"
+                
+                write(f" {obs_str} |   {pnum_str}   | {clean_plan_name:<52} | {cfg_str} | {exp_str} | {prim_str} | {sec_str} | {plan_apa:<15} | {catalog}")
 
     def _get_c1e1_coords(self, obs_num):
-        # 1. Try to find in json_plans_data (MPT JSONs from zip)
-        json_plans_data = {}
-        if self.input_path.suffix.lower() == '.aptx' and self.input_path.exists():
-            try:
-                import json
-                with zipfile.ZipFile(self.input_path, 'r') as zipf:
-                    for item_name in zipf.namelist():
-                        if item_name.endswith('.json') and 'MPT_UI_STATE' not in item_name:
-                            try:
-                                p_data = json.loads(zipf.read(item_name).decode('utf-8'))
-                                p_name = p_data.get('name')
-                                if p_name:
-                                    norm_pname = p_name.replace('„', ',').replace('  ', ' ').strip()
-                                    json_plans_data[norm_pname] = p_data
-                            except: pass
-            except: pass
-
+        # 1. Try to find in self.plan_details
         obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
-        if obs_plans:
-            plan_name = obs_plans[0]
+        for plan_name in obs_plans:
             norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
-            p_data = json_plans_data.get(norm_name)
-            if p_data:
+            p_info = self.plan_details.get(norm_name)
+            if p_info and 'p_data' in p_info:
+                p_data = p_info['p_data']
                 cfgs = p_data.get('configs', [])
                 if cfgs and cfgs[0].get('exposures'):
                     exp = cfgs[0]['exposures'][0]
@@ -2444,11 +2435,22 @@ class NIRSpecMOSReviewer:
                     plan_num = "-"
                     plan_name = "None specified"
                     obs_plans = self.analytics.get(obs_num, {}).get('plans', [])
-                    if obs_plans:
-                        plan_name = obs_plans[0].replace('„', ',')
+                    
+                    # Find which plan this pointing belongs to by checking if the plan name is in the filename
+                    file_name_lower = p.get('file', '').lower()
+                    matched_plan = None
+                    for pl in obs_plans:
+                        if pl.lower() in file_name_lower:
+                            matched_plan = pl
+                            break
+                    if not matched_plan and obs_plans:
+                        matched_plan = obs_plans[0]
+                        
+                    if matched_plan:
+                        plan_name = matched_plan.replace('„', ',')
                         if plans:
                             try:
-                                norm_obs_plan = obs_plans[0].replace('„', ',').replace('  ', ' ').strip()
+                                norm_obs_plan = matched_plan.replace('„', ',').replace('  ', ' ').strip()
                                 norm_plans = [pl.replace('„', ',').replace('  ', ' ').strip() for pl in plans]
                                 plan_num = str(norm_plans.index(norm_obs_plan) + 2)
                             except ValueError:
@@ -2484,14 +2486,14 @@ class NIRSpecMOSReviewer:
         plans = self.stats['program_metadata'].get('plans', [])
         
         # Determine which plans are used in the active observations
-        active_plans = {}
+        active_plans = {} # o -> list of (plan_num, plan_name)
         ordered_obs = [o for o in self.all_obs_nums if o in self.analytics]
         for o in ordered_obs:
             if self.obs_info.get(o, {}).get('sign') == "👷":
                 continue
             obs_plans = self.analytics[o].get('plans', [])
-            if obs_plans:
-                plan_name = obs_plans[0]
+            active_plans[o] = []
+            for plan_name in obs_plans:
                 plan_num = "-"
                 if plans:
                     try:
@@ -2500,9 +2502,9 @@ class NIRSpecMOSReviewer:
                         plan_num = str(norm_plans.index(norm_obs_plan) + 2)
                     except ValueError:
                         pass
-                active_plans[o] = (plan_num, plan_name)
+                active_plans[o].append((plan_num, plan_name))
         
-        if not active_plans:
+        if not any(active_plans.values()):
             return
             
         if is_plans_file:
@@ -2532,59 +2534,63 @@ class NIRSpecMOSReviewer:
         # Sort active plans by the order they appear in XML
         ordered_active_obs = [o for o in self.all_obs_nums if o in active_plans]
         for o in ordered_active_obs:
-            plan_num, plan_name = active_plans[o]
-            clean_plan_name = plan_name.replace('„', ',')
-            norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
-            
-            write(f"\nObs #{o}, Plan #{plan_num}: {clean_plan_name}")
-            
-            header = f"{'#':>3} | {'Plan':^6} | {'Config':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
-            write(header)
-            write("-" * len(header))
-            
-            p_data = json_plans_data.get(norm_name)
-            if p_data:
-                # Extract pointings from configs and exposures
-                cfgs = p_data.get('configs', [])
-                cat_name = p_data.get('catalog', {}).get('name', '')
-                cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+            for plan_num, plan_name in active_plans[o]:
+                clean_plan_name = plan_name.replace('„', ',')
+                norm_name = plan_name.replace('„', ',').replace('  ', ' ').strip()
                 
-                idx = 1
-                for c in cfgs:
-                    # Pointings inside JSON configurations are listed under exposures
-                    for exp in c.get('exposures', []):
-                        exp_name = exp.get('name') or ''
-                        exp_name_disp = exp_name
-                        ra_val = exp.get('ra') or 0.0
-                        dec_val = exp.get('dec') or 0.0
-                        gf_val = (exp.get('gratingFilter') or '').replace('_', '/')
-                        apa_val = p_data.get('aperturePA') or 0.0
-                        
-                        source_ids = exp.get('sourceIds', [])
-                        target_set_size = len(source_ids)
-                        
-                        # Sum target weights from catalog sources
-                        total_weight = 0.0
-                        for sid in source_ids:
-                            sid_str = str(sid).strip()
-                            total_weight += float(cat_sources.get(sid_str, {}).get('weight', 0.0))
+                write(f"\nObs #{o}, Plan #{plan_num}: {clean_plan_name}")
+                
+                header = f"{'#':>3} | {'Plan':^6} | {'Config':<12} | {'RA':<12} | {'Dec':<13} | {'RA (HMS)':<15} | {'Dec (DMS)':<15} | {'APA':<10} | {'Grating/Filter':<18} | {'Target set size':<15} | Total weight"
+                write(header)
+                write("-" * len(header))
+                
+                p_data = json_plans_data.get(norm_name)
+                if p_data:
+                    # Extract pointings from configs and exposures
+                    cfgs = p_data.get('configs', [])
+                    cat_name = p_data.get('catalog', {}).get('name', '')
+                    cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
+                    
+                    idx = 1
+                    for c in cfgs:
+                        # Pointings inside JSON configurations are listed under exposures
+                        for exp in c.get('exposures', []):
+                            exp_name = exp.get('name') or ''
+                            exp_name_disp = exp_name
+                            ra_val = exp.get('ra') or 0.0
+                            dec_val = exp.get('dec') or 0.0
+                            gf_val = (exp.get('gratingFilter') or '').replace('_', '/')
+                            apa_val = p_data.get('aperturePA') or 0.0
                             
-                        ra_hms = deg_to_hms(ra_val)
-                        dec_dms = deg_to_dms(dec_val)
-                        
-                        idx_str = f"{f'{idx:>2}':^3}"
-                        pnum_str = f"{f'{plan_num:>2}':^6}"
-                        size_str = f"{f'{target_set_size:>2}':^15}"
-                        weight_str = f"{f'{int(total_weight):>4}':^12}"
-                        
-                        write(f"{idx_str} | {pnum_str} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {size_str} | {weight_str}")
-                        idx += 1
-            else:
-                write("  (No plan configuration details found in .aptx archive)")
+                            source_ids = exp.get('sourceIds', [])
+                            target_set_size = len(source_ids)
+                            
+                            # Sum target weights from catalog sources
+                            total_weight = 0.0
+                            for sid in source_ids:
+                                sid_str = str(sid).strip()
+                                total_weight += float(cat_sources.get(sid_str, {}).get('weight', 0.0))
+                                
+                            ra_hms = deg_to_hms(ra_val)
+                            dec_dms = deg_to_dms(dec_val)
+                            
+                            idx_str = f"{f'{idx:>2}':^3}"
+                            pnum_str = f"{f'{plan_num:>2}':^6}"
+                            size_str = f"{f'{target_set_size:>2}':^15}"
+                            weight_str = f"{f'{int(total_weight):>4}':^12}"
+                            
+                            write(f"{idx_str} | {pnum_str} | {exp_name_disp:<12} | {ra_val:<12.6f} | {dec_val:<13.7f} | {ra_hms:<15} | {dec_dms:<15} | {apa_val:<10.4f} | {gf_val:<18} | {size_str} | {weight_str}")
+                            idx += 1
+                else:
+                    write("  (No plan configuration details found in .aptx archive)")
 
         # 3. EXCLUDED PLANS tables (from JSON inside .aptx, 3 rows per plan)
         if is_plans_file:
-            active_plan_names_set = {v[1].replace('„', ',').replace('  ', ' ').strip() for v in active_plans.values()}
+            active_plan_names_set = {
+                pn.replace('„', ',').replace('  ', ' ').strip()
+                for sublist in active_plans.values()
+                for _, pn in sublist
+            }
             excluded_plans_list = []
             for idx, plan_name in enumerate(plans, 2):
                 norm_pname = plan_name.replace('„', ',').replace('  ', ' ').strip()
