@@ -390,8 +390,11 @@ class NIRSpecMOSReviewer:
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"📡 Exporting msatargets using APT...")
             try:
-                subprocess.run(cmd, cwd=str(self.input_path.parent))
+                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=60)
                 any_success = True
+            except subprocess.TimeoutExpired:
+                print("⚠️  Export of msatargets timed out (took > 60s). This can happen if APT tries to contact STScI servers for online validation but is blocked or delayed by the network.")
+                print("👉 Please run the command manually or do the export from within the APT GUI: File -> Export... -> MSA Targets.")
             except Exception as e:
                 print(f"❌ Error during msatargets export: {e}")
 
@@ -407,8 +410,11 @@ class NIRSpecMOSReviewer:
 
             print(f"📡 Exporting visit coverage using APT...")
             try:
-                subprocess.run(cmd, cwd=str(self.input_path.parent))
+                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=60)
                 any_success = True
+            except subprocess.TimeoutExpired:
+                print("⚠️  Export of visits timed out (took > 60s). This can happen if APT tries to contact STScI servers for online validation but is blocked or delayed by the network.")
+                print("👉 Please run the command manually or do the export from within the APT GUI: File -> Export... -> CSV.")
             except Exception as e:
                 print(f"❌ Error during visits export: {e}")
 
