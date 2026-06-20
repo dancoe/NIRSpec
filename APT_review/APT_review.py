@@ -4291,6 +4291,11 @@ class NIRSpecMOSReviewer:
                     write(f"   🖼️ Obs {obs_id}: {plot_file.name} (not found)")
                 if ref_plot_file.exists() or (plot_dir / "visits" / ref_plot_file.name).exists():
                     write(f"   🖼️ Obs {obs_id} Ref Stars: {ref_plot_file.name}")
+                
+                # Check for config-specific plots
+                cfg_plots = sorted(list(plot_dir.glob(f"{self.input_path.stem}_Obs{obs_id}_c*.png")))
+                for p in cfg_plots:
+                    write(f"   🖼️ Obs {obs_id} Config Plot: {p.name}")
 
     def generate_plots(self, force=False):
         if not self.visits_csv_path:

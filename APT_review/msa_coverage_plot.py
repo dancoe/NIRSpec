@@ -125,6 +125,46 @@ def load_ta_params(xml_path):
                         ta_params[obs_num_norm][v_num_norm] = rs_bin
     return ta_params
 
+def load_config_mapping(xml_path):
+    """Extract configuration mapping (obs_num, exp_index) -> config_name from XML or APTX."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    xml_content = None
+    if zipfile.is_zipfile(xml_path):
+        with zipfile.ZipFile(xml_path, 'r') as z:
+            xml_name = next((f for f in z.namelist() if f.endswith('.xml')), None)
+            if xml_name:
+                xml_content = z.read(xml_name)
+    
+    if xml_content:
+        root = ET.fromstring(xml_content)
+    else:
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+    config_mapping = {}
+    for obs in root.findall(".//{http://www.stsci.edu/JWST/APT}Observation"):
+        num = obs.findtext("{http://www.stsci.edu/JWST/APT}Number")
+        if not num: continue
+        
+        mos = obs.find(".//{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}NirspecMOS")
+        if mos is not None:
+            pts_node = mos.find("{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}ConfigurationPointings")
+            pt_tag = "{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}ConfigurationPointing"
+            if pts_node is None:
+                pts_node = mos.find("{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}Pointings")
+                pt_tag = "{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}Pointing"
+            
+            if pts_node is not None:
+                for i, pt in enumerate(pts_node.findall(pt_tag)):
+                    cfg = pt.find("{http://www.stsci.edu/JWST/APT/Template/NirspecMOS}Configuration")
+                    if cfg is not None:
+                        cfg_name = (cfg.text or "").strip() or cfg.get('Name')
+                        if cfg_name:
+                            config_mapping[(str(int(num)), str(i+1))] = cfg_name
+    return config_mapping
+
 def load_catalogs(xml_path):
     """Extract all sources from all catalogs from XML or APTX."""
     import zipfile
@@ -291,6 +331,7 @@ def main():
     catalogs, xml_prop_id = load_catalogs(xml_path)
     proposal_id = proposal_id_arg if proposal_id_arg else xml_prop_id
     ta_params = load_ta_params(xml_path)
+    config_mapping = load_config_mapping(xml_path)
     
     # 1. Flexible column mapping for visits CSV
     fnames = df_visits.columns
@@ -335,7 +376,7 @@ def main():
     output_dir = Path(visits_csv).parent
     availability_report = []
 
-    def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False, is_compilation=False):
+    def plot_group(rows, title, filename_prefix, common_limits=None, refstars_only=False, is_compilation=False, config_name=None):
 
 
         if refstars_only:
@@ -439,13 +480,11 @@ def main():
             },
             'F140X': {
                 'NRSRAPID': (20.6, 23.0),
-                'NRSRAPIDD6': (22.3, 25.0),
+                'NRSRAPIDD6': (22.2, 25.0),
             },
             'CLEAR': {
-                'NRSRAPID': (21.3, 23.8),
-                'NRSRAPIDD1': (21.9, 24.5),
-                'NRSRAPIDD2': (22.2, 24.9),
-                'NRSRAPIDD6': (23.1, 25.7),
+                'NRSRAPID': (21.7, 24.0),
+                'NRSRAPIDD6': (23.3, 26.0),
             }
         }
         
@@ -472,6 +511,11 @@ def main():
             for p_id in search_ids:
                 # Science targets
                 for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-exp*.csv"):
+                    if config_name:
+                        def normalize(s):
+                            return "".join(c for c in s.lower() if c.isalnum())
+                        if normalize(config_name) not in normalize(f.name):
+                            continue
                     try:
                         m_df = pd.read_csv(f)
                         id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
@@ -1335,6 +1379,24 @@ def main():
         title = f"JWST {prog_num} Obs {obs_id} ({prefix} {visit_str})"
         plot_group(rows, title, f"{xml_stem}_Obs{obs_id}", common_limits=common_limits)
         plot_group(rows, title, f"{xml_stem}_Obs{obs_id}_refstars", common_limits=common_limits, refstars_only=True)
+        
+        # Get all configuration names for this observation from XML config mapping
+        configs_in_obs = []
+        for (o, e), cfg_name in config_mapping.items():
+            if str(o) == str(obs_id) and cfg_name not in configs_in_obs:
+                configs_in_obs.append(cfg_name)
+        
+        if len(configs_in_obs) > 1:
+            for idx, cfg_name in enumerate(configs_in_obs, start=1):
+                # Clean config name for filename (replace colons/spaces/etc.)
+                safe_cfg_name = cfg_name.replace(" : ", "_").replace(":", "_").replace(" ", "_")
+                safe_cfg_name = "".join(c for c in safe_cfg_name if c.isalnum() or c in "._-")
+                
+                cfg_title = f"{title} - {cfg_name}"
+                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}", 
+                           common_limits=common_limits, config_name=cfg_name)
+                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}_refstars", 
+                           common_limits=common_limits, refstars_only=True, config_name=cfg_name)
     
     if do_combined:
         all_rows = [r for rows in obs_groups.values() for r in rows]
