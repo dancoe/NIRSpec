@@ -17,6 +17,21 @@ import warnings
 import logging
 import contextlib
 
+# Import mos_trace modules
+import sys
+from pathlib import Path
+SCRIPT_DIR = Path(__file__).resolve().parent
+MOS_TRACE_DIR = SCRIPT_DIR.parent / 'mos_trace'
+if str(MOS_TRACE_DIR) not in sys.path:
+    sys.path.insert(0, str(MOS_TRACE_DIR))
+
+try:
+    import numpy as np
+    from calculate_trace import get_slit_by_quadrant_col_row, calculate_nirspec_mos_trace
+except ImportError:
+    get_slit_by_quadrant_col_row = None
+    calculate_nirspec_mos_trace = None
+
 # Suppress binary incompatibility warnings from scipy/numpy
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*MessageStream size changed.*")
 
@@ -152,6 +167,7 @@ class NIRSpecMOSReviewer:
         self.dithers_only = dithers_only
         self.auto_yes = auto_yes
         self.combined = combined
+        self.trace = kwargs.get('trace', False)
         
         try:
             self._load_xml()
@@ -3393,7 +3409,10 @@ class NIRSpecMOSReviewer:
                 write("-" * 60)
 
                 # Header
-                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating/Filt':<12} | {'Shutter':<11} | {'Coverage':<16} | Wavelength Coverage"
+                if self.trace:
+                    header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating/Filt':<12} | {'Shutter':<11} | {'Coverage':<16} | {'Wavelength Coverage':<30} | MOS Trace Coverage"
+                else:
+                    header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating/Filt':<12} | {'Shutter':<11} | {'Coverage':<16} | Wavelength Coverage"
                 write(header)
                 write("-" * len(header))
                 
@@ -3523,6 +3542,99 @@ class NIRSpecMOSReviewer:
                                 best_c = matching_coords[0]
                                 shutter_str = f"q{best_c[0]}d{best_c[1]}s{best_c[2]}"
                             
+                            trace_cov_str = ""
+                            if self.trace and matching_coords and calculate_nirspec_mos_trace is not None:
+                                try:
+                                    q_idx, d_idx, s_idx = best_c[0], best_c[1], best_c[2]
+                                    parts = gf.split('/')
+                                    grating = parts[0]
+                                    filt = parts[1]
+                                    
+                                    slit = get_slit_by_quadrant_col_row(quadrant=q_idx, column=d_idx, row=s_idx)
+                                    
+                                    n1_min = n1_max = n2_min = n2_max = None
+                                    
+                                    trace1 = calculate_nirspec_mos_trace(slit=slit, grating=grating, filt=filt, detector="NRS1")
+                                    if trace1:
+                                        det_x_range = np.linspace(0, 2047, 200)
+                                        det_y = trace1['trace_func'](det_x_range)
+                                        det_w = trace1['wavelength_func'](det_x_range)
+                                        valid = np.isfinite(det_y) & np.isfinite(det_w)
+                                        on_det_w = det_w[valid]
+                                        if len(on_det_w) > 0:
+                                            n1_min = float(np.min(on_det_w)) * 1e6
+                                            n1_max = float(np.max(on_det_w)) * 1e6
+                                            
+                                    trace2 = calculate_nirspec_mos_trace(slit=slit, grating=grating, filt=filt, detector="NRS2")
+                                    if trace2:
+                                        det_x_range = np.linspace(0, 2047, 200)
+                                        det_y = trace2['trace_func'](det_x_range)
+                                        det_w = trace2['wavelength_func'](det_x_range)
+                                        valid = np.isfinite(det_y) & np.isfinite(det_w)
+                                        on_det_w = det_w[valid]
+                                        if len(on_det_w) > 0:
+                                            n2_min = float(np.min(on_det_w)) * 1e6
+                                            n2_max = float(np.max(on_det_w)) * 1e6
+                                            
+                                    norm_gf = gf.replace('-', '/').upper()
+                                    nominal_ranges = {
+                                        'PRISM/CLEAR': (0.6, 5.3),
+                                        'G140M/F070LP': (0.70, 1.27),
+                                        'G140M/F100LP': (0.97, 1.84),
+                                        'G235M/F170LP': (1.66, 3.07),
+                                        'G395M/F290LP': (2.87, 5.10),
+                                        'G140H/F070LP': (0.81, 1.27),
+                                        'G140H/F100LP': (0.97, 1.82),
+                                        'G235H/F170LP': (1.66, 3.05),
+                                        'G395H/F290LP': (2.87, 5.14),
+                                    }
+                                    blue_limit, red_limit = nominal_ranges.get(norm_gf, (0.0, 0.0))
+                                    
+                                    has_n1 = n1_min is not None and n1_max is not None
+                                    has_n2 = n2_min is not None and n2_max is not None
+                                    
+                                    if not has_n1 and not has_n2:
+                                        trace_cov_str = "🌑 No trace"
+                                    else:
+                                        s_parts = []
+                                        icon_w = ""
+                                        if has_n1 and has_n2:
+                                            if n2_min > n1_max:
+                                                s_parts.append(f"GAP: {n1_max:.2f} – {n2_min:.2f} µm")
+                                                icon_w = "🌔"
+                                        
+                                        if has_n1:
+                                            if blue_limit > 0 and n1_min > blue_limit + 0.02:
+                                                s_parts.append(f"MISSING BLUE END: < {n1_min:.2f} µm")
+                                        else:
+                                            if has_n2:
+                                                s_parts.append(f"CUTOFF: (NRS1) – {n2_min:.2f} µm")
+                                                
+                                        if has_n2:
+                                            if red_limit > 0 and n2_max < red_limit - 0.02:
+                                                s_parts.append(f"MISSING RED END: > {n2_max:.2f} µm")
+                                        else:
+                                            if has_n1:
+                                                s_parts.append(f"CUTOFF: {n1_max:.2f} µm – (NRS2)")
+                                                
+                                        if s_parts:
+                                            if not icon_w:
+                                                has_blue = any("BLUE" in p or "(NRS1)" in p for p in s_parts)
+                                                has_red = any("RED" in p or "(NRS2)" in p for p in s_parts)
+                                                if has_blue and has_red: icon_w = "🌓"
+                                                elif has_blue: icon_w = "🌓"
+                                                else: icon_w = "🌗"
+                                            trace_cov_str = f"{icon_w} " + "; ".join(s_parts)
+                                        else:
+                                            if has_n1 and has_n2:
+                                                trace_cov_str = "✅ FULL"
+                                            elif has_n1:
+                                                trace_cov_str = "✅ FULL (NRS1)"
+                                            else:
+                                                trace_cov_str = "✅ FULL (NRS2)"
+                                except Exception as ex:
+                                    trace_cov_str = f"Error: {ex}"
+                            
                             cfg_col_str = cfg if cfg is not None else ""
                             if cfg_col_str.startswith("Config "):
                                 cfg_col_str = cfg_col_str[len("Config "):].strip()
@@ -3533,7 +3645,10 @@ class NIRSpecMOSReviewer:
                             else:
                                 row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {cfg_col_str:<{max_cfg_w}}"
                             
-                            row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s}"
+                            if self.trace:
+                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s:<30} | {trace_cov_str}"
+                            else:
+                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s}"
                             write(row)
                 write("-" * len(header))                
 
@@ -4538,6 +4653,7 @@ def main():
     parser.add_argument("--plots", action="store_true", help="Generate MSA coverage plots only")
     parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
     parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', help="Combined plot strategy")
+    parser.add_argument("--trace", action="store_true", help="Recalculate spectral coverage using mos_trace")
     
     args = parser.parse_args()
 
@@ -4581,7 +4697,8 @@ def main():
         shorts_only=args.shorts_only,
         dithers_only=args.dithers,
         auto_yes=args.exports,
-        combined=args.combined
+        combined=args.combined,
+        trace=args.trace
     )
     if args.plots:
         reviewer.generate_plots(force=True)
