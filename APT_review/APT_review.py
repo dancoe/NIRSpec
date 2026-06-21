@@ -3337,16 +3337,57 @@ class NIRSpecMOSReviewer:
                     rank = analysis[cat_name]['ranks'].get(sid, 0)
                     weight = self.catalogs[cat_name]['sources'][sid]['weight']
                     res_val = analysis_data.get(str(sid), {}).get(str(obs_num), {}).get(v_key, {})
-                    cfgs = ", ".join(sorted(res_val.get('configs', [])))
                     max_rank_w = max(max_rank_w, len(str(rank)))
                     max_id_w = max(max_id_w, len(str(sid)))
                     max_weight_w = max(max_weight_w, len(f"{weight:.0f}"))
-                    max_cfg_w = max(max_cfg_w, len(cfgs))
+                    for cfg_name in res_val.get('configs', []):
+                        cfg_col_name = cfg_name
+                        if cfg_col_name.startswith("Config "):
+                            cfg_col_name = cfg_col_name[len("Config "):].strip()
+                        max_cfg_w = max(max_cfg_w, len(cfg_col_name))
             # Summary counts
                 any_obs_count = len([sid for sid in top_20_ids if sid in observed_in_visit])
                 
+                # Calculate all_in_all: target observed in all configurations where it is planned
+                all_in_all = 0
+                for sid in top_20_ids:
+                    v_res = analysis_data.get(sid, {}).get(str(obs_num), {}).get(v_key, {})
+                    target_gfs = [g for g in v_res.keys() if g != 'configs']
+                    if not target_gfs:
+                        continue
+                    
+                    is_all = True
+                    has_any_gf = False
+                    for gf in target_gfs:
+                        res_gf = v_res.get(gf, {})
+                        if isinstance(res_gf, dict):
+                            by_config = res_gf.get('by_config', {})
+                            if by_config:
+                                for cfg, res in by_config.items():
+                                    has_any_gf = True
+                                    n_obs = res.get('n_obs', 0)
+                                    n_total = res.get('n_total', 0)
+                                    if n_total > 0 and n_obs < n_total:
+                                        is_all = False
+                            else:
+                                has_any_gf = True
+                                n_obs = res_gf.get('n_obs', 0)
+                                n_total = res_gf.get('n_total', 0)
+                                if n_total > 0 and n_obs < n_total:
+                                    is_all = False
+                    if has_any_gf and is_all:
+                        all_in_all += 1
+
+                # Dynamically find highest weight and count observed targets
+                weights = [s['weight'] for s in self.catalogs[cat_name]['sources'].values()]
+                max_catalog_weight = max(weights) if weights else 0
+                highest_priority_sids = [sid for sid, src in self.catalogs[cat_name]['sources'].items() if src['weight'] == max_catalog_weight and max_catalog_weight > 0]
+                observed_highest_count = len([sid for sid in highest_priority_sids if sid in observed_in_visit])
+
                 write(f"\nVisit {obs_num}:{v_key}")
                 write(f"Catalog: {cat_name}")
+                if max_catalog_weight > 0:
+                    write(f"{observed_highest_count:>2}/{len(highest_priority_sids)} highest-priority targets (Weight {max_catalog_weight:.0f}) observed")
                 write(f"{any_obs_count:>2}/{len(top_20)} high-priority targets observed")
                 write(f"{all_in_all:>2}/{len(top_20)} high-priority targets observed in ALL exposures")
                 write("-" * 60)
