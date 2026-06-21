@@ -3393,7 +3393,7 @@ class NIRSpecMOSReviewer:
                 write("-" * 60)
 
                 # Header
-                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating / Filter':<18} | {'Coverage':<16} | Wavelength Coverage"
+                header = f"{'ID':>{max_id_w}} | {'Weight':>{max_weight_w}} | {'Rank':>{max_rank_w}} | {'Configs':<{max_cfg_w}} | {'Grating/Filt':<12} | {'Shutter':<11} | {'Coverage':<16} | Wavelength Coverage"
                 write(header)
                 write("-" * len(header))
                 
@@ -3494,6 +3494,35 @@ class NIRSpecMOSReviewer:
                                             s = f"{icon_w} " + "; ".join(s_parts)
                                 except: pass
                             
+                            # Find matching shutter coordinates for this target and configuration
+                            shutter_str = ""
+                            obs_shutter_coords = self.exports_data.get('shutter_coords', {}).get(obs_num, {})
+                            target_coords = obs_shutter_coords.get(sid_str, set())
+                            matching_coords = []
+                            for c in target_coords:
+                                # c = (q_idx, d_idx, s_idx, w_val, label, file_path_name)
+                                def norm(s):
+                                    if not s: return ""
+                                    return s.lower().replace("config", "").replace(":", "").replace(" ", "").strip()
+                                n1 = norm(cfg)
+                                n2 = norm(c[4])
+                                is_match = False
+                                if n1 and n2:
+                                    if n1 == n2 or n1.startswith(n2) or n2.startswith(n1):
+                                        is_match = True
+                                    else:
+                                        m1 = re.match(r'^c(\d+)', n1)
+                                        m2 = re.match(r'^c(\d+)', n2)
+                                        if m1 and m2 and m1.group(1) == m2.group(1):
+                                            is_match = True
+                                if is_match:
+                                    matching_coords.append(c)
+                            
+                            if matching_coords:
+                                matching_coords.sort(key=lambda x: x[5])
+                                best_c = matching_coords[0]
+                                shutter_str = f"q{best_c[0]}d{best_c[1]}s{best_c[2]}"
+                            
                             cfg_col_str = cfg if cfg is not None else ""
                             if cfg_col_str.startswith("Config "):
                                 cfg_col_str = cfg_col_str[len("Config "):].strip()
@@ -3504,7 +3533,7 @@ class NIRSpecMOSReviewer:
                             else:
                                 row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {cfg_col_str:<{max_cfg_w}}"
                             
-                            row += f" | {gf:<18} | {cell:<15} | {s}"
+                            row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s}"
                             write(row)
                 write("-" * len(header))                
 
