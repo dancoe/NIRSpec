@@ -2180,6 +2180,30 @@ class NIRSpecMOSReviewer:
             with open(plans_path, 'w') as f_plans:
                 f_plans.write(plans_output.getvalue())
             print(f"Plans details saved to: {plans_path}")
+            
+            # Generate trace output file automatically
+            trace_path = Path(str(self.output_path).replace('_review.txt', '_trace.txt'))
+            trace_output = io.StringIO()
+            
+            print(f"\nCalculating MOS Trace Coverage (generating {trace_path.name})...")
+            
+            def write_trace(text):
+                print(text)
+                trace_output.write(text + "\n")
+            
+            old_trace = self.trace
+            self.trace = True
+            try:
+                write_trace("\n" + "="*80)
+                write_trace("🧪 NIRSPEC MOS SPECTRAL TRACE REPORT")
+                write_trace("="*80)
+                self._report_high_priority_targets(write_trace, icons)
+            finally:
+                self.trace = old_trace
+                
+            with open(trace_path, 'w') as f_trace:
+                f_trace.write(trace_output.getvalue())
+            print(f"\nTrace details saved to: {trace_path}")
 
     # ── Report section methods ───────────────────────────────────────────
 
@@ -3646,9 +3670,9 @@ class NIRSpecMOSReviewer:
                                 row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {cfg_col_str:<{max_cfg_w}}"
                             
                             if self.trace:
-                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s:<30} | {trace_cov_str}"
+                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<16} | {s:<30} | {trace_cov_str}"
                             else:
-                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<15} | {s}"
+                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<16} | {s}"
                             write(row)
                 write("-" * len(header))                
 
