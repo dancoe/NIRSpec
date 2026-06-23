@@ -156,7 +156,21 @@ python APT_review.py /path/to/program.aptx --output my_report.txt
 python APT_review.py program.aptx --noplots
 ```
 
-### 5. Review only specific observations
+### 5. Control Trace Calculations
+
+Calculating MOS spectral trace coverage for all high-priority targets takes a long time. By default, it runs after all reports and plots are completed, with terminal output silenced (saved directly to `*_trace.txt`).
+
+You can customize this behavior:
+
+```bash
+# Skip trace calculations entirely to save time
+python APT_review.py program.aptx --trace skip
+
+# Force full trace calculations (active on console)
+python APT_review.py program.aptx --trace
+```
+
+### 6. Review only specific observations
 
 By default, the script **excludes observations with a `COMPLETED` status** in APT.
 

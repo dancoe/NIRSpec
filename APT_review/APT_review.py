@@ -167,7 +167,12 @@ class NIRSpecMOSReviewer:
         self.dithers_only = dithers_only
         self.auto_yes = auto_yes
         self.combined = combined
-        self.trace = kwargs.get('trace', False)
+        trace_arg = kwargs.get('trace', 'false')
+        if isinstance(trace_arg, bool):
+            self.trace_mode = 'true' if trace_arg else 'false'
+        else:
+            self.trace_mode = str(trace_arg).lower()
+        self.trace = (self.trace_mode == 'true')
         
         try:
             self._load_xml()
@@ -2181,29 +2186,43 @@ class NIRSpecMOSReviewer:
                 f_plans.write(plans_output.getvalue())
             print(f"Plans details saved to: {plans_path}")
             
-            # Generate trace output file automatically
-            trace_path = Path(str(self.output_path).replace('_review.txt', '_trace.txt'))
-            trace_output = io.StringIO()
+
+    def generate_trace_report(self):
+        if self.trace_mode == 'skip':
+            return
+        if not self.output_path:
+            return
+        
+        trace_path = Path(str(self.output_path).replace('_review.txt', '_trace.txt'))
+        trace_output = io.StringIO()
+        
+        print(f"\nCalculating MOS Trace Coverage (generating {trace_path.name})...")
+        
+        def write_trace(text):
+            trace_output.write(text + "\n")
             
-            print(f"\nCalculating MOS Trace Coverage (generating {trace_path.name})...")
+        icons = {
+            'ERROR': '❌', 'WARNING': '⚠️ ', 'INFO': 'ℹ️ ', 'SUCCESS': '✅', 'TIP': '💡',
+            'FULL': '✅', 'MOSTLY': '🌔', 'PARTIAL': '🌓', 'FEW': '🌒', 'EMPTY': '🌑'
+        }
+        
+        import logging
+        logging.disable(logging.WARNING)
+        
+        old_trace = self.trace
+        self.trace = True
+        try:
+            write_trace("\n" + "="*80)
+            write_trace("🧪 NIRSPEC MOS SPECTRAL TRACE REPORT")
+            write_trace("="*80)
+            self._report_high_priority_targets(write_trace, icons)
+        finally:
+            self.trace = old_trace
+            logging.disable(logging.NOTSET)
             
-            def write_trace(text):
-                print(text)
-                trace_output.write(text + "\n")
-            
-            old_trace = self.trace
-            self.trace = True
-            try:
-                write_trace("\n" + "="*80)
-                write_trace("🧪 NIRSPEC MOS SPECTRAL TRACE REPORT")
-                write_trace("="*80)
-                self._report_high_priority_targets(write_trace, icons)
-            finally:
-                self.trace = old_trace
-                
-            with open(trace_path, 'w') as f_trace:
-                f_trace.write(trace_output.getvalue())
-            print(f"\nTrace details saved to: {trace_path}")
+        with open(trace_path, 'w') as f_trace:
+            f_trace.write(trace_output.getvalue())
+        print(f"Trace details saved to: {trace_path}")
 
     # ── Report section methods ───────────────────────────────────────────
 
@@ -4515,7 +4534,7 @@ class NIRSpecMOSReviewer:
             return
 
         try:
-            valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["👷", "🙈", "🤷🏻"]]
+            valid_obs = [str(o) for o in self.reviewed_obs_nums if self.obs_info.get(str(o), {}).get('sign') not in ["🙈", "🤷🏻"]]
             if not valid_obs:
                 return
 
@@ -4677,7 +4696,7 @@ def main():
     parser.add_argument("--plots", action="store_true", help="Generate MSA coverage plots only")
     parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
     parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', help="Combined plot strategy")
-    parser.add_argument("--trace", action="store_true", help="Recalculate spectral coverage using mos_trace")
+    parser.add_argument("--trace", choices=['true', 'false', 'skip'], nargs='?', const='true', default='false', help="Recalculate spectral coverage using mos_trace or skip it")
     
     args = parser.parse_args()
 
@@ -4732,6 +4751,7 @@ def main():
             reviewer.generate_dithers_plot()
         elif not args.noplots:
             reviewer.generate_plots()
+        reviewer.generate_trace_report()
 
 if __name__ == "__main__":
     main()
