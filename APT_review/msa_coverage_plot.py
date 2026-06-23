@@ -428,6 +428,13 @@ def main():
         obs_id_str = rows[0]['OBS_ID']
         prop_id_stem = Path(xml_path).stem.replace('JWST', '')
         
+        # Identify matching visit numbers for the given config_name
+        matching_v_nums = set()
+        if config_name:
+            for (o, e), cfg_name_val in config_mapping.items():
+                if str(o) == str(obs_id_str) and cfg_name_val == config_name:
+                    matching_v_nums.add(str(e))
+        
         # Determine active TA parameters for this observation
         active_filter = None
         active_readout = None
@@ -524,6 +531,11 @@ def main():
                     except: pass
                 # Reference stars
                 for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv"):
+                    filename_parts = f.name.split('-')
+                    if len(filename_parts) >= 4:
+                        file_v_num = filename_parts[2]
+                        if config_name and file_v_num not in matching_v_nums:
+                            continue
                     try:
                         m_df = pd.read_csv(f)
                         id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
@@ -532,7 +544,14 @@ def main():
                     except: pass
                 
                 if refstars_only:
-                    ta_files = [f.name for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv")]
+                    ta_files = []
+                    for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv"):
+                        filename_parts = f.name.split('-')
+                        if len(filename_parts) >= 4:
+                            file_v_num = filename_parts[2]
+                            if config_name and file_v_num not in matching_v_nums:
+                                continue
+                        ta_files.append(f.name)
                     ta_files_str = ", ".join(ta_files) if ta_files else "no TA file"
                     range_str = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
                     print(f"Obs {obs_id_str} [Filter: {active_filter}, Readout: {active_readout}] (Range: {range_str})  ({len(used_ref_ids)} stars, {ta_files_str})")
@@ -1392,10 +1411,17 @@ def main():
                 safe_cfg_name = cfg_name.replace(" : ", "_").replace(":", "_").replace(" ", "_")
                 safe_cfg_name = "".join(c for c in safe_cfg_name if c.isalnum() or c in "._-")
                 
-                cfg_title = f"{title} - {cfg_name}"
-                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}", 
+                # Filter rows to only those matching this config
+                matching_v_nums = {str(e) for (o, e), cn in config_mapping.items() if str(o) == str(obs_id) and cn == cfg_name}
+                cfg_rows = [r for r in rows if str(r.get('V_NUM')) in matching_v_nums] if matching_v_nums else rows
+                
+                cfg_visit_str = format_visit_labels([r['V_LABEL'] for r in cfg_rows])
+                cfg_prefix = "Visits" if "–" in cfg_visit_str or "," in cfg_visit_str else "Visit"
+                cfg_title = f"JWST {prog_num} Obs {obs_id} ({cfg_prefix} {cfg_visit_str}) - {cfg_name}"
+                
+                plot_group(cfg_rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}", 
                            common_limits=common_limits, config_name=cfg_name)
-                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}_refstars", 
+                plot_group(cfg_rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}_refstars", 
                            common_limits=common_limits, refstars_only=True, config_name=cfg_name)
     
     if do_combined:
