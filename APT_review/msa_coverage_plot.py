@@ -607,9 +607,6 @@ def main():
             v_label = row.get('V_LABEL', str(vid))
             config_label = row_to_config.get(id(row), "")
             label_key = (v_label, config_label) if config_label else v_label
-            cat_name = get_v_val(row, 'Target', 'TargetName')
-            if cat_name and cat_name not in unique_catalogs:
-                unique_catalogs[cat_name] = row
             
             s_region = get_v_val(row, 's_region', 'S_REGION')
             ra_ptr = get_v_val(row, 'RA Center Rot', 'RA')
@@ -621,6 +618,13 @@ def main():
             
             all_ras.extend(poly[:, 0])
             all_decs.extend(poly[:, 1])
+            
+            if config_name and str(row.get('V_NUM')) not in matching_v_nums:
+                continue
+            
+            cat_name = get_v_val(row, 'Target', 'TargetName')
+            if cat_name and cat_name not in unique_catalogs:
+                unique_catalogs[cat_name] = row
             
             # Calculate PySIAF quadrants
             main_ap_name = row.get('Aperture', 'NRS_FULL_MSA')
@@ -1235,7 +1239,7 @@ def main():
                         break
             
             # Extract and display the reference stars table below the legend
-            if not is_compilation:
+            if not is_compilation and (config_name is not None or len({r.get('V_NUM') for r in rows if r.get('V_NUM')}) <= 1):
                 plotted_refs = []
                 for src in all_sources:
                     if src['is_ref'] and src['id'] in used_ref_ids:
@@ -1419,9 +1423,9 @@ def main():
                 cfg_prefix = "Visits" if "–" in cfg_visit_str or "," in cfg_visit_str else "Visit"
                 cfg_title = f"JWST {prog_num} Obs {obs_id} ({cfg_prefix} {cfg_visit_str}) - {cfg_name}"
                 
-                plot_group(cfg_rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}", 
+                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}", 
                            common_limits=common_limits, config_name=cfg_name)
-                plot_group(cfg_rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}_refstars", 
+                plot_group(rows, cfg_title, f"{xml_stem}_Obs{obs_id}_{safe_cfg_name}_refstars", 
                            common_limits=common_limits, refstars_only=True, config_name=cfg_name)
     
     if do_combined:
