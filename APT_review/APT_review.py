@@ -250,7 +250,7 @@ class NIRSpecMOSReviewer:
                                         'primaries': primary_count,
                                         'secondaries': secondary_count,
                                         'apa': p_data.get('aperturePA', 0.0),
-                                        'catalog': p_data.get('catalog', {}).get('name', ''),
+                                        'catalog': (p_data.get('catalog') or {}).get('name', ''),
                                         'p_data': p_data
                                     }
                             except: pass
@@ -2613,7 +2613,7 @@ class NIRSpecMOSReviewer:
                 if p_data:
                     # Extract pointings from configs and exposures
                     cfgs = p_data.get('configs', [])
-                    cat_name = p_data.get('catalog', {}).get('name', '')
+                    cat_name = (p_data.get('catalog') or {}).get('name', '')
                     cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
                     
                     idx = 1
@@ -2680,7 +2680,7 @@ class NIRSpecMOSReviewer:
                     p_data = json_plans_data.get(norm_name)
                     if p_data:
                         cfgs = p_data.get('configs', [])
-                        cat_name = p_data.get('catalog', {}).get('name', '')
+                        cat_name = (p_data.get('catalog') or {}).get('name', '')
                         cat_sources = self.catalogs.get(cat_name, {}).get('sources', {}) if cat_name else {}
                         
                         idx = 1
