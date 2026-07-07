@@ -3827,6 +3827,7 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['SUCCESS']} Catalogs: {c_sum}")
             
             # Catalog ID Warning (if any)
+            cat_info = self.stats.get('catalog_info', {})
             for name in cat_names:
                 if name in cat_info:
                     m_id = cat_info[name].get('max_id', 0)
