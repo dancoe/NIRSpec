@@ -4268,8 +4268,10 @@ class NIRSpecMOSReviewer:
         """Parse identified CSV files for wavelength information for top targets."""
         top_targets = set()
         for cat in self.stats.get('high_priority_analysis', {}).values():
-            for t in cat['top_20']:
+            for t in cat.get('top_20', []):
                 top_targets.add(str(t['id']))
+            for sid in cat.get('all_sorted_ids', []):
+                top_targets.add(str(sid))
 
         if not top_targets: return
 
