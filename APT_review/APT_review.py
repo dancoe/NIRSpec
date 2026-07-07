@@ -2315,9 +2315,8 @@ class NIRSpecMOSReviewer:
 
         # Observation-specific (Warnings/Errors only)
         for obs_num_str in self._get_sorted_obs_nums(obs_map.keys()):
-            sign = self.obs_info.get(obs_num_str, {}).get('sign')
-            if sign not in ["🔎", "👷", "☑️"]:
-                continue # Skip detailed findings for excluded/drafts
+            if obs_num_str not in self.reviewed_obs_nums:
+                continue
             obs_findings = [f for f in obs_map[obs_num_str] if f[0] not in ['SUCCESS', 'INFO']]
             if obs_findings:
                 data = self.analytics.get(obs_num_str, {})
@@ -2341,7 +2340,7 @@ class NIRSpecMOSReviewer:
         # Order observations as they appear in the XML
         ordered_obs = [o for o in self.all_obs_nums if o in self.analytics]
         for o in ordered_obs:
-            if self.obs_info.get(o, {}).get('sign') == "👷":
+            if o not in self.reviewed_obs_nums:
                 continue
             
             obs_plans = self.analytics[o].get('plans', [])
@@ -2434,7 +2433,7 @@ class NIRSpecMOSReviewer:
         obs_coords = []
         
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷":
+            if obs_num not in self.reviewed_obs_nums:
                 continue
             
             ra, dec = self._get_c1e1_coords(obs_num)
@@ -2515,6 +2514,8 @@ class NIRSpecMOSReviewer:
                 for key in sorted_keys:
                     p = pointings[key]
                     obs_num = p['obs']
+                    if obs_num not in self.reviewed_obs_nums:
+                        continue
                     
                     plan_num = "-"
                     plan_name = "None specified"
@@ -2573,7 +2574,7 @@ class NIRSpecMOSReviewer:
         active_plans = {} # o -> list of (plan_num, plan_name)
         ordered_obs = [o for o in self.all_obs_nums if o in self.analytics]
         for o in ordered_obs:
-            if self.obs_info.get(o, {}).get('sign') == "👷":
+            if o not in self.reviewed_obs_nums:
                 continue
             obs_plans = self.analytics[o].get('plans', [])
             active_plans[o] = []
@@ -2743,6 +2744,8 @@ class NIRSpecMOSReviewer:
         write(f"Obs   | {'Planned APA':<21} | {'Assigned APA'}")
         write("-" * 80)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
+            if obs_num not in self.reviewed_obs_nums:
+                continue
             planned = self.analytics[obs_num].get('apa_planned', "N/A")
             p_val = self.analytics[obs_num].get('apa_planned_val')
             
@@ -2768,8 +2771,7 @@ class NIRSpecMOSReviewer:
         write("These rows / columns should be avoided to prevent data contamination:\n")
         
         for obs_num in self._get_sorted_obs_nums(shorts_data.keys()):
-            sign = self.obs_info.get(obs_num, {}).get('sign')
-            if sign not in ["🔎", "👷", "☑️"]:
+            if obs_num not in self.reviewed_obs_nums:
                 continue
             data = self.analytics.get(obs_num, {})
             target = data.get('target_name') or self.obs_info.get(obs_num, {}).get('target', 'Unknown')
@@ -2808,8 +2810,8 @@ class NIRSpecMOSReviewer:
             
         for s in sorted(self.stats['all_exposure_specs'], key=sort_spec_key):
             obs_id = str(s['obs'])
-            if self.obs_info.get(obs_id, {}).get('sign') == "👷":
-                continue # Skip for under construction
+            if obs_id not in self.reviewed_obs_nums:
+                continue
             write(f"{s['obs']:<5} | {s['id']:<5} | {s['gf']:<18} | {s['rp']:<18} | "
                   f"{s['g']:<8} | {s['i']:<6} | {s['dur']:<11.1f}")
 
@@ -2828,6 +2830,8 @@ class NIRSpecMOSReviewer:
         duplicate_pointings_found = []
         
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
+            if obs_num not in self.reviewed_obs_nums:
+                continue
             if 'configs' in self.analytics[obs_num]:
                 write(f"\nObservation {obs_num}")
                 header = f"  # | {'Config':<12} | {'Grating / Filter':<18} | {'Nod Pattern':<20} | {'Total Ints':<10} | {'Total Time':<10} | {'Offset (shutters)'}"
@@ -2915,7 +2919,7 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Parallel Set':<35} | {'Dither':<25} | {'Status'}")
         write("-" * 95)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') not in ["🔎", "👷", "☑️"]: continue
+            if obs_num not in self.reviewed_obs_nums: continue
             p = self.analytics[obs_num].get('parallel', "None")
             d = self.analytics[obs_num].get('dither',   "NONE")
             
@@ -2940,7 +2944,7 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Aperture PA Range':<35} | {'Background Limited':<20} | {'Other Requirements'}")
         write("-" * 110)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            if obs_num not in self.reviewed_obs_nums: continue
             d = self.analytics[obs_num].get(
                 'special_reqs_data', {'apa_range': "None", 'bg_lim': "None", 'others': []})
             others_str = ", ".join(d['others']) if d['others'] else "None"
@@ -2957,6 +2961,8 @@ class NIRSpecMOSReviewer:
               f"{'Fillers':<10} | {'Nod Pattern':<20} | {'Conf':<6} | {'Leakcal':<8}")
         write("-" * 140)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
+            if obs_num not in self.reviewed_obs_nums:
+                continue
             conf = "✚" if self.analytics[obs_num].get('conf_img')    else "No"
             leak = "✚" if self.analytics[obs_num].get('has_leakcal') else "No"
             nod  = self.analytics[obs_num].get('nod_pattern', "NONE")
@@ -2980,7 +2986,7 @@ class NIRSpecMOSReviewer:
         write(f"{'Obs':<5} | {'Method':<8} | {'Stars':<10} | {'Quads':<10}")
         write("-" * 80)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            if obs_num not in self.reviewed_obs_nums: continue
             
             v_info_map = self.analytics[obs_num].get('visit_info', {})
             ta_method = self.analytics[obs_num].get('ta_method', "MSATA") # Default to MSATA for MOS if info missing
@@ -3022,7 +3028,7 @@ class NIRSpecMOSReviewer:
         mag_cols = ['NRS_F110W', 'NRS_F140W', 'NRS_CLEAR']
  
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            if obs_num not in self.reviewed_obs_nums: continue
             ta_data = self.exports_data['ta_stars'].get(obs_num, {})
             if not ta_data: continue
  
@@ -3157,8 +3163,8 @@ class NIRSpecMOSReviewer:
                 obs_id = v_num_str
                 v_key = v_num_str
 
-            # Exclude observations under construction
-            if self.obs_info.get(obs_id, {}).get('sign') == "👷":
+            # Exclude observations not reviewed
+            if obs_id not in self.reviewed_obs_nums:
                 continue
 
             # Get used stars from analytics
@@ -3280,7 +3286,7 @@ class NIRSpecMOSReviewer:
               f"{'Acc':<6} | {'W_Min':<10} | {'W_Max':<10} | {'Filters'}")
         write("-" * 160)
         for obs_num in self._get_sorted_obs_nums(self.analytics.keys()):
-            if self.obs_info.get(obs_num, {}).get('sign') == "👷": continue
+            if obs_num not in self.reviewed_obs_nums: continue
             target  = self.analytics[obs_num].get('target_name', 'Unknown')
             info    = self.stats['catalog_info'].get(target, {})
             sources = info.get('total_sources', "N/A")
