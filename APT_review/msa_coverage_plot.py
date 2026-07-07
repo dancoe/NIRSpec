@@ -386,20 +386,23 @@ def main():
                 title += " (Ref Stars)"
         plt.figure(figsize=(9, 6))
         
-        # Cluster the rows into configurations based on coordinates (RA Center Rot, Dec Center Rot)
-        visit_to_configs = {}
+        # Get all configuration names for this observation from XML config mapping
+        configs_in_obs = []
+        obs_id_str = rows[0]['OBS_ID']
+        for (o, e), cfg_name in config_mapping.items():
+            if str(o) == str(obs_id_str) and cfg_name not in configs_in_obs:
+                configs_in_obs.append(cfg_name)
+
+        # Cluster the rows into configurations globally for the observation based on coordinates (RA Center Rot, Dec Center Rot)
+        obs_configs = []
         for row in rows:
-            vid = row['Visit ID']
-            if vid not in visit_to_configs:
-                visit_to_configs[vid] = []
-            
             ra = get_v_val(row, 'RA Center Rot', 'RA')
             dec = get_v_val(row, 'Dec Center Rot', 'Dec')
             if ra is None or dec is None: continue
             
-            # Find if this row fits in an existing configuration group for this visit
+            # Find if this row fits in an existing configuration group
             found_group = False
-            for group in visit_to_configs[vid]:
+            for group in obs_configs:
                 ref_row = group[0]
                 ref_ra = get_v_val(ref_row, 'RA Center Rot', 'RA')
                 ref_dec = get_v_val(ref_row, 'Dec Center Rot', 'Dec')
@@ -410,30 +413,51 @@ def main():
                     break
             
             if not found_group:
-                visit_to_configs[vid].append([row])
+                obs_configs.append([row])
         
-        # Map each row to a configuration label
+        # Sort configuration groups by minimum V_NUM to ensure chronological/exposure order
+        def get_min_vnum(group):
+            v_nums = []
+            for r in group:
+                try: v_nums.append(int(r.get('V_NUM', 1)))
+                except: v_nums.append(1)
+            return min(v_nums) if v_nums else 1
+            
+        obs_configs.sort(key=get_min_vnum)
+
+        # Map each row to its config label and config name
         row_to_config = {}
+        row_to_config_name = {}
+        for g_idx, group in enumerate(obs_configs):
+            config_label = f"c{g_idx+1}"
+            cfg_name_val = configs_in_obs[g_idx] if g_idx < len(configs_in_obs) else config_label
+            for r in group:
+                row_to_config[id(r)] = config_label
+                row_to_config_name[id(r)] = cfg_name_val
+        
         visit_has_multiple_configs = {}
-        for vid, groups in visit_to_configs.items():
-            visit_has_multiple_configs[vid] = (len(groups) > 1)
-            for g_idx, group in enumerate(groups, start=1):
-                config_label = f"c{g_idx}"
-                for r in group:
-                    row_to_config[id(r)] = config_label
+        visit_to_configs_mapped = {}
+        for r in rows:
+            vid = r['Visit ID']
+            lbl = row_to_config.get(id(r))
+            if vid not in visit_to_configs_mapped:
+                visit_to_configs_mapped[vid] = set()
+            if lbl:
+                visit_to_configs_mapped[vid].add(lbl)
+        for vid, lbls in visit_to_configs_mapped.items():
+            visit_has_multiple_configs[vid] = (len(lbls) > 1)
         
         labeled_configs = set()
 
         # Identify observed/used IDs for this observation
-        obs_id_str = rows[0]['OBS_ID']
         prop_id_stem = Path(xml_path).stem.replace('JWST', '')
         
         # Identify matching visit numbers for the given config_name
         matching_v_nums = set()
         if config_name:
-            for (o, e), cfg_name_val in config_mapping.items():
-                if str(o) == str(obs_id_str) and cfg_name_val == config_name:
-                    matching_v_nums.add(str(e))
+            for r in rows:
+                if row_to_config_name.get(id(r)) == config_name:
+                    matching_v_nums.add(str(r.get('V_NUM')))
         
         # Determine active TA parameters for this observation
         active_filter = None
@@ -619,7 +643,7 @@ def main():
             all_ras.extend(poly[:, 0])
             all_decs.extend(poly[:, 1])
             
-            if config_name and str(row.get('V_NUM')) not in matching_v_nums:
+            if config_name and row_to_config_name.get(id(row)) != config_name:
                 continue
             
             cat_name = get_v_val(row, 'Target', 'TargetName')
@@ -730,6 +754,26 @@ def main():
         # Filter and group sources for efficient plotting
         obs_c_ra = (min(all_ras) + max(all_ras)) / 2
         obs_c_dec = (min(all_decs) + max(all_decs)) / 2
+        
+        # Calculate limits to restrict labels to plot area
+        cos_dec_lim = np.cos(np.deg2rad(obs_c_dec))
+        if common_limits:
+            lim_c_ra, lim_c_dec, L_lim, lim_cos = common_limits
+        else:
+            ra_min, ra_max = min(all_ras), max(all_ras)
+            dec_min, dec_max = min(all_decs), max(all_decs)
+            width_eff = (ra_max - ra_min) * cos_dec_lim
+            height = dec_max - dec_min
+            max_dim = max(width_eff, height)
+            margin = 0.10 * max_dim
+            L_lim = max_dim + margin
+            lim_c_ra, lim_c_dec = obs_c_ra, obs_c_dec
+            
+        ra_range_lim = L_lim / cos_dec_lim
+        dec_min_lim = lim_c_dec - L_lim/2
+        dec_max_lim = lim_c_dec + L_lim/2
+        ra_min_lim = lim_c_ra - ra_range_lim/2
+        ra_max_lim = lim_c_ra + ra_range_lim/2
         
         # Categories to plot in bulk
         # Format: category_name -> {'ras': [], 'decs': [], 'sizes': [], 'colors': [], 'edgecolors': [], 'linewidths': [], 'alphas': [], 'zorder': N}
@@ -869,9 +913,13 @@ def main():
                     
                     # Add numeric label for ID above highest priority targets
                     # Positioned with a slightly larger vertical offset (deg) to avoid outline overlap
-                    plt.text(src['ra'], src['dec'] + 0.0007, str(src['id']),
-                             color='black', fontsize=7, ha='center', va='bottom',
-                             zorder=12, weight='bold')
+                    # Only plot label if it is inside the plot limits to avoid overflow
+                    y_label = src['dec'] + 0.0007
+                    if (ra_min_lim + 0.005 * ra_range_lim <= src['ra'] <= ra_max_lim - 0.005 * ra_range_lim) and \
+                       (dec_min_lim + 0.005 * L_lim <= y_label <= dec_max_lim - 0.005 * L_lim):
+                        plt.text(src['ra'], y_label, str(src['id']),
+                                 color='black', fontsize=7, ha='center', va='bottom',
+                                 zorder=12, weight='bold')
                 else:
                     c = cats['sci_observed'] if is_observed else cats['sci_normal']
                     c['ras'].append(src['ra'])
