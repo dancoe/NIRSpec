@@ -92,6 +92,18 @@ def deg_to_dms(dec):
         d += 1
     return f"{sign}{d:02d} {m:02d} {s:07.3f}"
 
+import unicodedata
+
+def pad_visual(text, width, align='left'):
+    text = str(text)
+    double_width_chars = "✅🌔🌓🌗🌘🌑❌⚠️💡🤷🏻☑️👷🔎"
+    vlen = sum(2 if unicodedata.east_asian_width(c) in ('W', 'F') or c in double_width_chars else 1 for c in text)
+    padding = max(0, width - vlen)
+    if align == 'right':
+        return ' ' * padding + text
+    else:
+        return text + ' ' * padding
+
 class NIRSpecMOSReviewer:
     def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, combined='auto', **kwargs):
         self.input_path = Path(input_file).absolute()
@@ -104,7 +116,12 @@ class NIRSpecMOSReviewer:
             self.files_used[str(self.input_path)] = self.input_path.stat().st_mtime
             
         self.potential_csv_files = []
-        self.include_set = self._parse_obs_list(include) if include else set()
+        self.include_all = False
+        if isinstance(include, str) and include.lower().strip() == 'all':
+            self.include_all = True
+            self.include_set = set()
+        else:
+            self.include_set = self._parse_obs_list(include) if include else set()
         self.exclude_set = self._parse_obs_list(exclude) if exclude else set()
         
         self.target_name_map = {}
@@ -1114,7 +1131,7 @@ class NIRSpecMOSReviewer:
             if not is_mos:
                 sign = "🤷🏻"
             elif is_completed:
-                if self.include_set and int(obs_num) in self.include_set:
+                if self.include_all or (self.include_set and int(obs_num) in self.include_set):
                     sign = "🔎"
                 else:
                     sign = "☑️"
@@ -1171,11 +1188,13 @@ class NIRSpecMOSReviewer:
             # Decide whether to analyze for the report
             if not is_mos: continue
             
-            if self.include_set:
+            if self.include_all:
+                pass
+            elif self.include_set:
                 if int(obs_num) not in self.include_set: continue
             else:
                 if is_unplanned: pass
-                elif is_completed: pass # Include in analysis for reporting purposes
+                elif is_completed: continue # Exclude completed by default
                 elif self.exclude_set and int(obs_num) in self.exclude_set: continue
 
             self.reviewed_obs_nums.append(obs_num)
@@ -3689,9 +3708,9 @@ class NIRSpecMOSReviewer:
                                 row = f"{' ' * max_id_w} | {' ' * max_weight_w} | {' ' * max_rank_w} | {cfg_col_str:<{max_cfg_w}}"
                             
                             if self.trace:
-                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<16} | {s:<30} | {trace_cov_str}"
+                                row += f" | {gf:<12} | {shutter_str:<11} | {pad_visual(cell, 16)} | {pad_visual(s, 30)} | {trace_cov_str}"
                             else:
-                                row += f" | {gf:<12} | {shutter_str:<11} | {cell:<16} | {s}"
+                                row += f" | {gf:<12} | {shutter_str:<11} | {pad_visual(cell, 16)} | {s}"
                             write(row)
                 write("-" * len(header))                
 
@@ -3808,15 +3827,17 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['SUCCESS']} Catalogs: {c_sum}")
             
             # Catalog ID Warning (if any)
-            max_id_overall = 0
-            cat_info = self.stats.get('catalog_info', {})
             for name in cat_names:
                 if name in cat_info:
                     m_id = cat_info[name].get('max_id', 0)
-                    if m_id > max_id_overall:
-                        max_id_overall = m_id
-            if max_id_overall >= 1000000:
-                write(f"{icons['WARNING']} Catalog max ID = {max_id_overall:,} (> 1,000,000)")
+                    if m_id >= 1000000:
+                        obs_using_cat = []
+                        for o in reviewed_full:
+                            if self.analytics.get(o, {}).get('target_name') == name:
+                                obs_using_cat.append(o)
+                        obs_str = ", ".join(map(str, obs_using_cat))
+                        obs_msg = f" (Obs {obs_str})" if obs_using_cat else ""
+                        write(f"{icons['WARNING']} Catalog '{name}' max ID = {m_id:,} (> 1,000,000){obs_msg}")
 
             # IRS2 readout
             non_irs2 = sorted({s['obs'] for s in self.stats.get('all_exposure_specs', [])
@@ -3899,7 +3920,10 @@ class NIRSpecMOSReviewer:
                     if o in shorts_data:
                         for entry in shorts_data[o]:
                             icon = "🛟 " if entry.get('is_rescue') else icons['WARNING']
-                            write(f"{icon}{entry['label_prefix']}{entry['main_msg']}")
+                            label_prefix = entry['label_prefix']
+                            if label_prefix.startswith("Config"):
+                                label_prefix = f"Obs {o} " + label_prefix
+                            write(f"{icon}{label_prefix}{entry['main_msg']}")
 
             write('')
 
@@ -4074,7 +4098,13 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['WARNING']}  Catalog weight max >= 1e9")
             max_id = info.get('max_id', 0)
             if max_id >= 1000000:
-                write(f"{icons['WARNING']}  Catalog max ID {max_id:,} > max recommended 1,000,000")
+                obs_using_cat = []
+                for o in reviewed_obs:
+                    if self.analytics.get(o, {}).get('target_name') == cat:
+                        obs_using_cat.append(o)
+                obs_str = ", ".join(map(str, obs_using_cat))
+                obs_msg = f" (Obs {obs_str})" if obs_using_cat else ""
+                write(f"{icons['WARNING']}  Catalog max ID {max_id:,} > max recommended 1,000,000{obs_msg}")
 
         write("\nMOS OBSERVATION/VISIT STRUCTURE")
         mismatched_obs = []
@@ -4114,7 +4144,10 @@ class NIRSpecMOSReviewer:
                 if o in shorts_data:
                     for entry in shorts_data[o]:
                         icon = "🛟 " if entry.get('is_rescue') else icons['WARNING']
-                        write(f"{icon}{entry['label_prefix']}{entry['main_msg']}")
+                        label_prefix = entry['label_prefix']
+                        if label_prefix.startswith("Config"):
+                            label_prefix = f"Obs {o} " + label_prefix
+                        write(f"{icon}{label_prefix}{entry['main_msg']}")
 
         write("\nCHECK MPT PLANS")
         plans = self.stats['program_metadata'].get('plans', [])
