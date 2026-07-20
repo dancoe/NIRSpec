@@ -326,13 +326,9 @@ def main():
     # Load data
     df = pd.read_csv(visits_csv, index_col=False)
     print(f"Columns found: {list(df.columns)}")
-    # Deduplicate: unique pointings (identity: Visit ID + RA + Dec)
-    # Using multiple columns to be robust to repeats in the visits export
-    subset_cols = [c for c in ['Visit ID', 'RA Center Rot', 'Dec Center Rot', 'Dither Index'] if c in df.columns]
-    if not subset_cols: # Fallback
-        subset_cols = ['Visit ID']
-    df_visits = df.drop_duplicates(subset=subset_cols).copy()
-    print(f"Total entries: {len(df)}, Unique pointings: {len(df_visits)}")
+    # Keep all entries to preserve different exposures/configurations with identical pointings/dithers
+    df_visits = df.copy()
+    print(f"Total entries: {len(df)}")
     
     catalogs, xml_prop_id = load_catalogs(xml_path)
     proposal_id = proposal_id_arg if proposal_id_arg else xml_prop_id
