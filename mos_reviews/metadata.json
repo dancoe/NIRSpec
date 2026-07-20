@@ -1,0 +1,6 @@
+{
+  "name": "NIRSpec APT Program Review Dashboard",
+  "description": "A dashboard to track and manage JWST NIRSpec APT program reviews, due dates, submission states, and flight readiness milestones.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
