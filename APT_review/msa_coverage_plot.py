@@ -402,37 +402,43 @@ def main():
             if str(o) == str(obs_id_str) and cfg_name not in configs_in_obs:
                 configs_in_obs.append(cfg_name)
 
-        # Cluster the rows into configurations globally for the observation based on coordinates (RA Center Rot, Dec Center Rot)
+        # Cluster the rows into configurations globally for the observation based on coordinates and dither index resets
         obs_configs = []
+        current_group = []
+        prev_dither = None
+        
         for row in rows:
             ra = get_v_val(row, 'RA Center Rot', 'RA')
             dec = get_v_val(row, 'Dec Center Rot', 'Dec')
+            dither = get_v_val(row, 'Dither Index', 'Dither')
+            try:
+                dither = int(dither) if dither is not None else None
+            except:
+                dither = None
+                
             if ra is None or dec is None: continue
             
-            # Find if this row fits in an existing configuration group
-            found_group = False
-            for group in obs_configs:
-                ref_row = group[0]
+            # Start a new group if coordinates shift or if the dither index resets to 1 (indicating new pointing/exposure)
+            start_new = False
+            if not current_group:
+                start_new = True
+            else:
+                ref_row = current_group[0]
                 ref_ra = get_v_val(ref_row, 'RA Center Rot', 'RA')
                 ref_dec = get_v_val(ref_row, 'Dec Center Rot', 'Dec')
                 dist = np.sqrt((ra - ref_ra)**2 + (dec - ref_dec)**2)
-                if dist < 0.002: # ~7 arcseconds threshold
-                    group.append(row)
-                    found_group = True
-                    break
-            
-            if not found_group:
-                obs_configs.append([row])
-        
-        # Sort configuration groups by minimum V_NUM to ensure chronological/exposure order
-        def get_min_vnum(group):
-            v_nums = []
-            for r in group:
-                try: v_nums.append(int(r.get('V_NUM', 1)))
-                except: v_nums.append(1)
-            return min(v_nums) if v_nums else 1
-            
-        obs_configs.sort(key=get_min_vnum)
+                if dist >= 0.002:
+                    start_new = True
+                elif dither == 1 and prev_dither is not None and prev_dither > 1:
+                    start_new = True
+                    
+            if start_new:
+                current_group = [row]
+                obs_configs.append(current_group)
+            else:
+                current_group.append(row)
+                
+            prev_dither = dither
 
         # Map each row to its config label and config name
         row_to_config = {}
