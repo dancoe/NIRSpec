@@ -468,6 +468,48 @@ class NIRSpecMOSReviewer:
             except Exception as e:
                 print(f"❌ Error during visits export: {e}")
 
+        if any_success:
+            # Since APT might delegate to a running instance and return immediately,
+            # we poll the output directories for up to 90 seconds.
+            import time
+            print("⏳ Waiting for APT to write export files...")
+            start_time = time.time()
+            timeout = 90
+            
+            # Identify what we are waiting for
+            wait_for_msa = is_missing_msa
+            wait_for_visits = is_missing_visits
+            
+            msa_ok = not wait_for_msa
+            visits_ok = not wait_for_visits
+            
+            while time.time() - start_time < timeout:
+                if not msa_ok:
+                    msa_files = list((self.input_path.parent / "msatargets").glob("*.csv"))
+                    if msa_files:
+                        # Ensure files are completely written (non-zero size and not changing)
+                        sizes1 = [f.stat().st_size for f in msa_files]
+                        time.sleep(1)
+                        sizes2 = [f.stat().st_size for f in msa_files]
+                        if sizes1 == sizes2 and all(s > 0 for s in sizes1):
+                            msa_ok = True
+                
+                if not visits_ok:
+                    visits_files = list((self.input_path.parent / "visits").glob("*.csv"))
+                    if visits_files:
+                        sizes1 = [f.stat().st_size for f in visits_files]
+                        time.sleep(1)
+                        sizes2 = [f.stat().st_size for f in visits_files]
+                        if sizes1 == sizes2 and all(s > 0 for s in sizes1):
+                            visits_ok = True
+                            
+                if msa_ok and visits_ok:
+                    print("✅ Export files detected and ready.")
+                    break
+                time.sleep(2)
+            else:
+                print("⚠️  Timed out waiting for export files to appear on disk.")
+
         return any_success
 
     def _parse_ta_csv(self, file_path, obs_num, visit_num=None, label=""):
