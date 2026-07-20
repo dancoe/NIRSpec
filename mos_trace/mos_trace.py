@@ -22,8 +22,8 @@ try:
                                  QPushButton, QButtonGroup, QSizePolicy,
                                  QScrollArea, QTextEdit, QFileDialog, QInputDialog,
                                  QListWidget, QListWidgetItem, QMessageBox,
-                                 QDialog, QSpinBox)
-    from PyQt5.QtCore import Qt
+                                 QDialog, QSpinBox, QLineEdit)
+    from PyQt5.QtCore import Qt, QEvent
     from PyQt5.QtGui import QFont
     from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 except ImportError:
@@ -32,8 +32,8 @@ except ImportError:
                                  QPushButton, QButtonGroup, QSizePolicy,
                                  QScrollArea, QTextEdit, QFileDialog, QInputDialog,
                                  QListWidget, QListWidgetItem, QMessageBox,
-                                 QDialog, QSpinBox)
-    from PyQt6.QtCore import Qt
+                                 QDialog, QSpinBox, QLineEdit)
+    from PyQt6.QtCore import Qt, QEvent
     from PyQt6.QtGui import QFont
     from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
@@ -1259,6 +1259,124 @@ class AutoAddDialog(QDialog):
         self.viewer.generate_auto_add_preview(rows, cols, buf, stag)
 
 
+class SlitEditWidget(QWidget):
+    def __init__(self, main_window, index, marker, q, col, row, extra_text="", parent=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.index = index
+        self.orig_q = q
+        self.orig_col = col
+        self.orig_row = row
+        self.extra_text = extra_text
+
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(2)
+
+        top_layout = QHBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(0)
+
+        prefix = marker + "Q"
+        self.lbl_prefix = QLabel(prefix)
+        self.lbl_prefix.setStyleSheet("color: white; font-family: 'Courier New', Courier, monospace; font-size: 13pt; background: transparent;")
+        top_layout.addWidget(self.lbl_prefix)
+
+        self.edit_q = QLineEdit(str(q))
+        self.setup_edit(self.edit_q, width=15)
+        top_layout.addWidget(self.edit_q)
+
+        self.lbl_sep1 = QLabel(" Slit (")
+        self.lbl_sep1.setStyleSheet("color: white; font-family: 'Courier New', Courier, monospace; font-size: 13pt; background: transparent;")
+        top_layout.addWidget(self.lbl_sep1)
+
+        self.edit_col = QLineEdit(str(col))
+        self.setup_edit(self.edit_col, width=35)
+        top_layout.addWidget(self.edit_col)
+
+        self.lbl_sep2 = QLabel(", ")
+        self.lbl_sep2.setStyleSheet("color: white; font-family: 'Courier New', Courier, monospace; font-size: 13pt; background: transparent;")
+        top_layout.addWidget(self.lbl_sep2)
+
+        self.edit_row = QLineEdit(str(row))
+        self.setup_edit(self.edit_row, width=35)
+        top_layout.addWidget(self.edit_row)
+
+        self.lbl_suffix = QLabel(")")
+        self.lbl_suffix.setStyleSheet("color: white; font-family: 'Courier New', Courier, monospace; font-size: 13pt; background: transparent;")
+        top_layout.addWidget(self.lbl_suffix)
+        top_layout.addStretch()
+
+        main_layout.addLayout(top_layout)
+
+        if extra_text:
+            self.lbl_extra = QLabel(extra_text)
+            self.lbl_extra.setStyleSheet("color: #888888; font-family: 'Courier New', Courier, monospace; font-size: 11pt; padding-left: 20px; background: transparent;")
+            main_layout.addWidget(self.lbl_extra)
+
+        self.setLayout(main_layout)
+        self.setStyleSheet("background: transparent;")
+
+    def setup_edit(self, line_edit, width):
+        line_edit.setFixedWidth(width)
+        line_edit.setStyleSheet("""
+            QLineEdit {
+                color: cyan;
+                background: transparent;
+                border: none;
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 13pt;
+                font-weight: bold;
+                padding: 0px;
+            }
+            QLineEdit:focus {
+                background-color: #2a2a4e;
+                border: 1px solid #5a5a7e;
+                border-radius: 2px;
+                color: #aaffaa;
+            }
+        """)
+        line_edit.setAlignment(Qt.AlignCenter if hasattr(Qt, 'AlignCenter') else Qt.AlignmentFlag.AlignCenter)
+        line_edit.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.FocusIn:
+            if self.index is not None:
+                self.main_window.select_slit_index(self.index)
+        elif event.type() == QEvent.KeyPress:
+            key = event.key()
+            if key in (Qt.Key_Return, Qt.Key_Enter):
+                self.commit_changes()
+                return True
+            elif key == Qt.Key_Escape:
+                self.revert_changes()
+                return True
+        return super().eventFilter(obj, event)
+
+    def commit_changes(self):
+        try:
+            q = int(self.edit_q.text().strip())
+            col = int(self.edit_col.text().strip())
+            row = int(self.edit_row.text().strip())
+        except ValueError:
+            self.revert_changes()
+            return
+
+        if not ((1 <= q <= 4 and 1 <= col <= 365 and 1 <= row <= 171) or q == 5):
+            self.revert_changes()
+            return
+
+        self.main_window.assign_edited_slit(self.index, q, col, row)
+
+    def revert_changes(self):
+        self.edit_q.setText(str(self.orig_q))
+        self.edit_col.setText(str(self.orig_col))
+        self.edit_row.setText(str(self.orig_row))
+        self.edit_q.clearFocus()
+        self.edit_col.clearFocus()
+        self.edit_row.clearFocus()
+
+
 class NIRSpecViewer(QMainWindow):
     """Main application window"""
     
@@ -2134,6 +2252,35 @@ class NIRSpecViewer(QMainWindow):
         
         self.plot_canvas.draw()
     
+    def select_slit_index(self, index):
+        if 0 <= index < len(self.plot_canvas.multiple_slits) and index != self.plot_canvas.selected_slit_index:
+            self.plot_canvas.selected_slit_index = index
+            self.plot_canvas.draw_slit_markers()
+            self.text_msa_selected.setCurrentRow(index)
+            if not self.plot_multiple.isChecked():
+                msa_x, msa_y, q, c, r = self.plot_canvas.multiple_slits[index]
+                self.plot_canvas.plot_spectrum_trace(msa_x, msa_y, self.current_config_key)
+                self.update_detector_text_boxes()
+
+    def assign_edited_slit(self, index, q, col, row):
+        try:
+            nx, ny = self.plot_canvas.get_msa_coords(q, col, row)
+            if index is None:
+                self.plot_canvas.plot_spectrum_trace(nx, ny, self.current_config_key)
+                self.update_detector_text_boxes()
+                self.update_msa_selected_text(nx, ny)
+            else:
+                self.plot_canvas.multiple_slits[index] = (nx, ny, q, col, row)
+                if self.plot_multiple.isChecked():
+                    self.plot_multiple_traces()
+                else:
+                    if index == self.plot_canvas.selected_slit_index:
+                        self.plot_canvas.plot_spectrum_trace(nx, ny, self.current_config_key)
+                        self.update_detector_text_boxes()
+                self.update_selected_slits_display()
+        except Exception as e:
+            print(f"Failed to assign slit: {e}")
+
     def update_selected_slits_display(self):
         """Update the MSA selected text box with all selected slits"""
         self.text_msa_selected.clear()
@@ -2143,11 +2290,14 @@ class NIRSpecViewer(QMainWindow):
         
         for i, (msa_x, msa_y, quadrant, col, row) in enumerate(self.plot_canvas.multiple_slits):
             marker = "→ " if i == self.plot_canvas.selected_slit_index else "  "
+            item = QListWidgetItem()
+            self.text_msa_selected.addItem(item)
             if quadrant == 5:
-                item_text = f"{marker}Fixed Slit {row}"
+                item.setText(f"{marker}Fixed Slit {row}")
             else:
-                item_text = f"{marker}Q{quadrant} Slit ({col:3d}, {row:3d})"
-            self.text_msa_selected.addItem(item_text)
+                widget = SlitEditWidget(self, i, marker, quadrant, col, row)
+                item.setSizeHint(widget.sizeHint())
+                self.text_msa_selected.setItemWidget(item, widget)
             if i == self.plot_canvas.selected_slit_index:
                 self.text_msa_selected.setCurrentRow(i)
     
@@ -2330,9 +2480,13 @@ class NIRSpecViewer(QMainWindow):
             self.text_msa_selected.clear()
             self.text_msa_selected.addItem(text)
         elif quadrant is not None and shutter_col is not None and shutter_row is not None:
-            text = f'Q{quadrant} Slit ({shutter_col}, {shutter_row})\n({msa_x:+.1f}", {msa_y:+.1f}")'
             self.text_msa_selected.clear()
-            self.text_msa_selected.addItem(text)
+            item = QListWidgetItem()
+            self.text_msa_selected.addItem(item)
+            extra = f'({msa_x:+.1f}", {msa_y:+.1f}")'
+            widget = SlitEditWidget(self, None, "", quadrant, shutter_col, shutter_row, extra_text=extra)
+            item.setSizeHint(widget.sizeHint())
+            self.text_msa_selected.setItemWidget(item, widget)
         else:
             self.text_msa_selected.clear()
             self.text_msa_selected.addItem('Outside MSA quadrants')
