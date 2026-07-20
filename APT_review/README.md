@@ -178,6 +178,9 @@ By default, the script **excludes observations with a `COMPLETED` status** in AP
 # Review only observation 3 (even if COMPLETED)
 python APT_review.py program.aptx --obs 3
 
+# Review all observations including those marked COMPLETED
+python APT_review.py program.aptx --obs all
+
 # Review a specific list/range
 python APT_review.py program.aptx --obs "1,3-5,10"
 

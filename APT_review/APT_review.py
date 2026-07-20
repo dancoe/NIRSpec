@@ -25,12 +25,14 @@ MOS_TRACE_DIR = SCRIPT_DIR.parent / 'mos_trace'
 if str(MOS_TRACE_DIR) not in sys.path:
     sys.path.insert(0, str(MOS_TRACE_DIR))
 
+import_trace_error = None
 try:
     import numpy as np
     from calculate_trace import get_slit_by_quadrant_col_row, calculate_nirspec_mos_trace
-except ImportError:
+except ImportError as e:
     get_slit_by_quadrant_col_row = None
     calculate_nirspec_mos_trace = None
+    import_trace_error = e
 
 # Suppress binary incompatibility warnings from scipy/numpy
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*MessageStream size changed.*")
@@ -38,7 +40,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*MessageStr
 # Silence pysiaf during import and usage
 logging.getLogger('pysiaf').setLevel(logging.ERROR)
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -105,7 +107,7 @@ def pad_visual(text, width, align='left'):
         return text + ' ' * padding
 
 class NIRSpecMOSReviewer:
-    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, combined='auto', **kwargs):
+    def __init__(self, input_file, output_file=None, include=None, exclude=None, exports_dir=None, shorts_only=False, dithers_only=False, auto_yes=False, combined='auto', label_obs_only=False, label_all=False, alpha_unobs=None, **kwargs):
         self.input_path = Path(input_file).absolute()
         self.exports_path = Path(exports_dir) if exports_dir else None
         self.output_path = Path(output_file) if output_file else None
@@ -184,6 +186,9 @@ class NIRSpecMOSReviewer:
         self.dithers_only = dithers_only
         self.auto_yes = auto_yes
         self.combined = combined
+        self.label_obs_only = label_obs_only
+        self.label_all = label_all
+        self.alpha_unobs = alpha_unobs
         trace_arg = kwargs.get('trace', 'false')
         if isinstance(trace_arg, bool):
             self.trace_mode = 'true' if trace_arg else 'false'
@@ -191,6 +196,13 @@ class NIRSpecMOSReviewer:
             self.trace_mode = str(trace_arg).lower()
         self.trace = (self.trace_mode == 'true')
         
+        if self.trace and calculate_nirspec_mos_trace is None:
+            print("⚠️  Warning: --trace was requested, but 'mos_trace' could not be imported.")
+            if import_trace_error:
+                print(f"   Reason: {import_trace_error}")
+            print("   Please check that you have activated the correct python environment (e.g. 'conda activate mos_trace')")
+            print("   or installed all required dependencies.\n")
+            
         try:
             self._load_xml()
             self.catalogs = self._parse_all_catalogs(self._root)
@@ -521,7 +533,6 @@ class NIRSpecMOSReviewer:
         return False
 
     def _parse_visits_csv(self, file_path):
-        import numpy as np
         if self.has_pysiaf is None:
             # First time loading - provide context for the pause
             print(f"📡 Loading PySIAF for quadrant analysis using Visits file {file_path.name}...")
@@ -529,6 +540,7 @@ class NIRSpecMOSReviewer:
         try:
             # Silence pysiaf update/PRD warnings during import
             with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                import numpy as np
                 import pysiaf
                 from pysiaf.utils import rotations
             self.has_pysiaf = True
@@ -2210,6 +2222,9 @@ class NIRSpecMOSReviewer:
         if self.trace_mode == 'skip':
             return
         if not self.output_path:
+            return
+        if calculate_nirspec_mos_trace is None:
+            print("⚠️  Skipping trace report generation because 'calculate_trace' could not be imported.")
             return
         
         trace_path = Path(str(self.output_path).replace('_review.txt', '_trace.txt'))
@@ -4596,6 +4611,12 @@ class NIRSpecMOSReviewer:
                    str(self.pid), ",".join(valid_obs)]
             if self.combined != 'auto':
                 cmd.extend(['--combined', self.combined])
+            if self.label_obs_only:
+                cmd.append('--label-obs-only')
+            if self.label_all:
+                cmd.append('--label-all')
+            if self.alpha_unobs is not None:
+                cmd.extend(['--alpha-unobs', str(self.alpha_unobs)])
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             plot_dir = self.visits_csv_path.parent
             saved = [l.split("Plot saved to: ", 1)[1].strip() for l in result.stdout.splitlines() if l.startswith("Plot saved to: ")]
@@ -4738,20 +4759,136 @@ def main():
     parser.add_argument("--plots", action="store_true", help="Generate MSA coverage plots only")
     parser.add_argument("--noplots", action="store_true", help="Skip plot generation")
     parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', help="Combined plot strategy")
+    parser.add_argument("--label-obs-only", "--label_obs_only", action="store_true", help="Only label observed targets/reference stars")
+    parser.add_argument("--label-all", "--label_all", action="store_true", help="Label all targets/reference stars even if unobserved")
+    parser.add_argument("--alpha-unobs", "--alpha_unobs", type=float, default=None, help="Alpha (transparency) for unobserved targets/stars")
     parser.add_argument("--trace", choices=['true', 'false', 'skip'], nargs='?', const='true', default='false', help="Recalculate spectral coverage using mos_trace or skip it")
+    parser.add_argument("--open", action="store_true", help="Open the most recent timestamped directory")
+    parser.add_argument("--new", action="store_true", help="Force new retrieval from APT into a new timestamped directory")
     
     args = parser.parse_args()
+
+    # Auto-reexecute inside conda/micromamba env 'mos_trace' if trace is requested but dependencies are missing
+    if args.trace == 'true' and calculate_nirspec_mos_trace is None:
+        if os.environ.get('APT_REVIEW_REEXECUTED') != 'true':
+            try:
+                # 1. Try micromamba
+                mamba_path = Path.home() / '.local' / 'bin' / 'micromamba'
+                mamba_root = Path.home() / 'micromamba'
+                if mamba_path.exists():
+                    result = subprocess.run([str(mamba_path), 'env', 'list', '-r', str(mamba_root)], capture_output=True, text=True, timeout=5)
+                    if 'mos_trace' in result.stdout:
+                        print("🔄 mos_trace micromamba environment detected. Re-executing script inside 'mos_trace' environment...")
+                        new_env = os.environ.copy()
+                        mamba_bin_dir = str(mamba_path.parent)
+                        if mamba_bin_dir not in new_env.get('PATH', ''):
+                            new_env['PATH'] = mamba_bin_dir + os.pathsep + new_env.get('PATH', '')
+                        new_env['MAMBA_ROOT_PREFIX'] = str(mamba_root)
+                        new_env['APT_REVIEW_REEXECUTED'] = 'true'
+                        cmd = [str(mamba_path), 'run', '-r', str(mamba_root), '-n', 'mos_trace', 'python'] + sys.argv
+                        res = subprocess.run(cmd, env=new_env)
+                        sys.exit(res.returncode)
+                
+                # 2. Try conda as fallback
+                conda_path = 'conda'
+                for base in [Path.home() / 'miniconda3', Path.home() / 'opt' / 'miniconda3', Path.home() / 'anaconda3']:
+                    p = base / 'bin' / 'conda'
+                    if p.exists():
+                        conda_path = str(p)
+                        break
+                
+                result = subprocess.run([conda_path, 'env', 'list'], capture_output=True, text=True, timeout=5)
+                if 'mos_trace' in result.stdout:
+                    print("🔄 mos_trace conda environment detected. Re-executing script inside 'mos_trace' environment...")
+                    new_env = os.environ.copy()
+                    conda_bin_dir = str(Path(conda_path).parent)
+                    if conda_bin_dir not in new_env.get('PATH', ''):
+                        new_env['PATH'] = conda_bin_dir + os.pathsep + new_env.get('PATH', '')
+                    new_env['APT_REVIEW_REEXECUTED'] = 'true'
+                    cmd = [conda_path, 'run', '-n', 'mos_trace', 'python'] + sys.argv
+                    res = subprocess.run(cmd, env=new_env)
+                    sys.exit(res.returncode)
+            except Exception:
+                pass
 
     # Handle PID input
     if args.apt_file and args.apt_file.isdigit() and 4 <= len(args.apt_file) <= 5:
         pid = args.apt_file
         print(f"🚀 Handling Program ID: {pid}")
-        dest_dir = Path.cwd() / pid
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        # Change CWD to the PID directory so outputs go there
-        os.chdir(dest_dir)
-        args.apt_file = str(download_aptx(pid, "."))
+        base_dir = Path.cwd() / pid
+        
+        # Look for existing timestamped subdirectories inside base_dir
+        timestamped_dirs = []
+        if base_dir.exists() and base_dir.is_dir():
+            for p in base_dir.iterdir():
+                if p.is_dir() and re.match(r'^\d{4}-\d{2}-\d{2}_\d{4}$', p.name):
+                    timestamped_dirs.append(p)
+        
+        # Sort chronologically by name (which works because of YYYY-MM-DD_HHMM format)
+        timestamped_dirs.sort(key=lambda x: x.name)
+        
+        action = None
+        if timestamped_dirs:
+            most_recent_dir = timestamped_dirs[-1]
+            if args.open:
+                action = 'o'
+            elif args.new:
+                action = 'n'
+            else:
+                # Prompt the user
+                while True:
+                    try:
+                        choice = input(f"Found existing reviews inside {pid}/:\nO: open most recent {most_recent_dir.name}\nN: new retrieval from APT\nSelect (O/N): ").strip().lower()
+                        if choice in ['o', 'n']:
+                            action = choice
+                            break
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nAborted.")
+                        sys.exit(1)
+                    print("Invalid option. Please enter 'O' or 'N'.")
+        else:
+            action = 'n'
+            
+        if action == 'o':
+            dest_dir = most_recent_dir
+            print(f"📂 Opening most recent review directory: {dest_dir.name}")
+            os.chdir(dest_dir)
+            # Look for existing .aptx files
+            apt_files = sorted(list(Path('.').glob('*.aptx')), key=lambda x: x.stat().st_mtime, reverse=True)
+            if apt_files:
+                args.apt_file = str(apt_files[0].name)
+            else:
+                args.apt_file = str(download_aptx(pid, "."))
+        else:
+            timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d_%H%M')
+            dest_dir = base_dir / timestamp
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            os.chdir(dest_dir)
+            args.apt_file = str(download_aptx(pid, "."))
+            
         print(f"📍 Working in directory: {dest_dir}")
+
+    elif args.apt_file and not Path(args.apt_file).exists():
+        m = re.search(r'(\d{4,5})', Path(args.apt_file).name)
+        if m:
+            pid = m.group(1)
+            base_dir = Path.cwd() / pid
+            # Look for existing timestamped subdirectories inside base_dir
+            timestamped_dirs = []
+            if base_dir.exists() and base_dir.is_dir():
+                for p in base_dir.iterdir():
+                    if p.is_dir() and re.match(r'^\d{4}-\d{2}-\d{2}_\d{4}$', p.name):
+                        timestamped_dirs.append(p)
+            
+            timestamped_dirs.sort(key=lambda x: x.name)
+            if timestamped_dirs:
+                most_recent_dir = timestamped_dirs[-1]
+                file_in_dir = most_recent_dir / Path(args.apt_file).name
+                if file_in_dir.exists():
+                    print(f"📂 File not found in CWD, but found inside directory {pid}/{most_recent_dir.name}/")
+                    print(f"🚀 Switching working directory to: {most_recent_dir}")
+                    os.chdir(most_recent_dir)
+                    args.apt_file = Path(args.apt_file).name
 
     if not args.apt_file:
         apt_files = sorted(list(Path('.').glob('*.aptx')), key=lambda x: x.stat().st_mtime, reverse=True)
@@ -4783,6 +4920,9 @@ def main():
         dithers_only=args.dithers,
         auto_yes=args.exports,
         combined=args.combined,
+        label_obs_only=args.label_obs_only,
+        label_all=args.label_all,
+        alpha_unobs=args.alpha_unobs,
         trace=args.trace
     )
     if args.plots:

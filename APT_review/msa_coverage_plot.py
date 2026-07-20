@@ -308,12 +308,18 @@ def main():
     parser.add_argument("valid_obs", nargs="?", default=None, help="Comma-separated valid observation numbers")
     parser.add_argument("--combined", choices=['auto', 'always', 'never'], default='auto', 
                         help="Combined plot strategy (default: auto, plot if separation < 30')")
+    parser.add_argument("--label-obs-only", "--label_obs_only", action="store_true", help="Only label observed targets/reference stars")
+    parser.add_argument("--label-all", "--label_all", action="store_true", help="Label all targets/reference stars even if unobserved")
+    parser.add_argument("--alpha-unobs", "--alpha_unobs", type=float, default=None, help="Alpha (transparency) for unobserved targets/stars")
     
     args = parser.parse_args()
     xml_path = args.xml_path
     visits_csv = args.visits_csv
     proposal_id_arg = args.proposal_id
     valid_obs_arg = args.valid_obs
+    label_obs_only = args.label_obs_only
+    label_all = args.label_all
+    alpha_unobs = args.alpha_unobs
     
     valid_obs = valid_obs_arg.split(',') if valid_obs_arg else None
     
@@ -380,7 +386,9 @@ def main():
 
 
         if refstars_only:
-            if "Obs" in title:
+            if "Observations" in title:
+                title = title.replace("Observations", "Observations (Ref Stars)")
+            elif "Obs" in title:
                 title = title.replace("Obs", "Obs (Ref Stars)")
             else:
                 title += " (Ref Stars)"
@@ -389,6 +397,7 @@ def main():
         # Get all configuration names for this observation from XML config mapping
         configs_in_obs = []
         obs_id_str = rows[0]['OBS_ID']
+        obs_ids = sorted(list(set(str(row['OBS_ID']) for row in rows)))
         for (o, e), cfg_name in config_mapping.items():
             if str(o) == str(obs_id_str) and cfg_name not in configs_in_obs:
                 configs_in_obs.append(cfg_name)
@@ -540,45 +549,47 @@ def main():
 
         if msa_dir.exists():
             for p_id in search_ids:
-                # Science targets
-                for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-exp*.csv"):
-                    if config_name:
-                        def normalize(s):
-                            return "".join(c for c in s.lower() if c.isalnum())
-                        if normalize(config_name) not in normalize(f.name):
-                            continue
-                    try:
-                        m_df = pd.read_csv(f)
-                        id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
-                        if id_col:
-                            observed_ids.update(m_df[id_col].astype(str).tolist())
-                    except: pass
-                # Reference stars
-                for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv"):
-                    filename_parts = f.name.split('-')
-                    if len(filename_parts) >= 4:
-                        file_v_num = filename_parts[2]
-                        if config_name and file_v_num not in matching_v_nums:
-                            continue
-                    try:
-                        m_df = pd.read_csv(f)
-                        id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
-                        if id_col:
-                            used_ref_ids.update(m_df[id_col].astype(str).tolist())
-                    except: pass
-                
-                if refstars_only:
-                    ta_files = []
-                    for f in msa_dir.glob(f"{p_id}-obs{obs_id_str}-*-TA.csv"):
+                for obs_id in obs_ids:
+                    # Science targets
+                    for f in msa_dir.glob(f"{p_id}-obs{obs_id}-exp*.csv"):
+                        if config_name:
+                            def normalize(s):
+                                return "".join(c for c in s.lower() if c.isalnum())
+                            if normalize(config_name) not in normalize(f.name):
+                                continue
+                        try:
+                            m_df = pd.read_csv(f)
+                            id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                            if id_col:
+                                observed_ids.update(m_df[id_col].astype(str).tolist())
+                        except: pass
+                    # Reference stars
+                    for f in msa_dir.glob(f"{p_id}-obs{obs_id}-*-TA.csv"):
                         filename_parts = f.name.split('-')
                         if len(filename_parts) >= 4:
                             file_v_num = filename_parts[2]
                             if config_name and file_v_num not in matching_v_nums:
                                 continue
-                        ta_files.append(f.name)
+                        try:
+                            m_df = pd.read_csv(f)
+                            id_col = next((c for c in m_df.columns if c.upper() == 'ID'), None)
+                            if id_col:
+                                used_ref_ids.update(m_df[id_col].astype(str).tolist())
+                        except: pass
+                
+                if refstars_only:
+                    ta_files = []
+                    for obs_id in obs_ids:
+                        for f in msa_dir.glob(f"{p_id}-obs{obs_id}-*-TA.csv"):
+                            filename_parts = f.name.split('-')
+                            if len(filename_parts) >= 4:
+                                file_v_num = filename_parts[2]
+                                if config_name and file_v_num not in matching_v_nums:
+                                    continue
+                            ta_files.append(f.name)
                     ta_files_str = ", ".join(ta_files) if ta_files else "no TA file"
                     range_str = f"{active_range[0]:.1f} – {active_range[1]:.1f}" if active_range else "N/A"
-                    print(f"Obs {obs_id_str} [Filter: {active_filter}, Readout: {active_readout}] (Range: {range_str})  ({len(used_ref_ids)} stars, {ta_files_str})")
+                    print(f"Obs {','.join(obs_ids)} [Filter: {active_filter}, Readout: {active_readout}] (Range: {range_str})  ({len(used_ref_ids)} stars, {ta_files_str})")
                 
                 # If we found something, don't necessarily stop, but we have results
                 if observed_ids:
@@ -751,6 +762,23 @@ def main():
             log_range = max_log_wt - min_log_wt
             if log_range == 0: log_range = 1
 
+        # Determine whether to label observed targets / reference stars only (based on options or density check)
+        if label_obs_only:
+            should_label_obs_only = True
+        elif label_all:
+            should_label_obs_only = False
+        else:
+            if refstars_only:
+                n_labels = len([src for src in all_sources if src['is_ref']])
+            else:
+                n_labels = len([src for src in all_sources if not src['is_ref'] and (src['weight'] == max_wt) and (src['weight'] > 0)])
+            should_label_obs_only = (n_labels > 50)
+
+        # Determine alpha for unobserved/unused objects
+        a_unobs_sci = alpha_unobs if alpha_unobs is not None else (0.05 if should_label_obs_only else 0.15)
+        a_unobs_ref_bg = alpha_unobs if alpha_unobs is not None else (0.02 if should_label_obs_only else 0.05)
+        a_unobs_ref_only = alpha_unobs if alpha_unobs is not None else (0.05 if should_label_obs_only else 0.70)
+
         # Filter and group sources for efficient plotting
         obs_c_ra = (min(all_ras) + max(all_ras)) / 2
         obs_c_dec = (min(all_decs) + max(all_decs)) / 2
@@ -849,7 +877,7 @@ def main():
                     base_zorder = 8 if is_used else 5
                     for idx, f_info in enumerate(filters_info):
                         z = base_zorder + idx * 0.1
-                        alpha = 1.0 if is_used else 0.70
+                        alpha = 1.0 if is_used else a_unobs_ref_only
                         facecolor = 'magenta' if is_used else f_info['color']
                         plt.scatter(src['ra'], src['dec'], marker='*', s=f_info['size'],
                                     color=facecolor, edgecolors=f_info['edgecolor'],
@@ -878,7 +906,7 @@ def main():
                         c['colors'].append('0.50')
                         c['edgecolors'].append('magenta' if is_used else 'black')
                         c['lws'].append(0.5)
-                        c['alphas'].append(1.0 if is_used else 0.35)
+                        c['alphas'].append(1.0 if is_used else a_unobs_ref_bg)
                     else:
                         is_observed = src['id'] in used_ref_ids or src['id'] in observed_ids
                         c = cats['ref_used'] if is_observed else cats['ref_unused']
@@ -889,7 +917,7 @@ def main():
                         is_ta = src['id'] in used_ref_ids
                         c['edgecolors'].append('magenta' if is_ta else ('black' if is_observed else '0.50'))
                         c['lws'].append(1.0 if is_ta else 0.5)
-                        c['alphas'].append(1.0 if is_observed else 0.15)
+                        c['alphas'].append(1.0 if is_observed else a_unobs_ref_bg)
             else:
                 is_highest = (src['weight'] == max_wt) and (src['weight'] > 0)
                 is_observed = src['id'] in observed_ids
@@ -903,7 +931,7 @@ def main():
                     # For unobserved highest, we'll plot the edge separately to keep alpha=1.0
                     c['edgecolors'].append('black' if is_observed else 'none')
                     c['lws'].append(1.0)
-                    c['alphas'].append(1.0 if is_observed else 0.15)
+                    c['alphas'].append(1.0 if is_observed else a_unobs_sci)
                     if is_observed:
                         # Extra ring for observed highest
                         c_ring = cats['sci_highest_obs']
@@ -914,12 +942,13 @@ def main():
                     # Add numeric label for ID above highest priority targets
                     # Positioned with a slightly larger vertical offset (deg) to avoid outline overlap
                     # Only plot label if it is inside the plot limits to avoid overflow
-                    y_label = src['dec'] + 0.0007
-                    if (ra_min_lim + 0.005 * ra_range_lim <= src['ra'] <= ra_max_lim - 0.005 * ra_range_lim) and \
-                       (dec_min_lim + 0.005 * L_lim <= y_label <= dec_max_lim - 0.005 * L_lim):
-                        plt.text(src['ra'], y_label, str(src['id']),
-                                 color='black', fontsize=7, ha='center', va='bottom',
-                                 zorder=12, weight='bold')
+                    if not should_label_obs_only or is_observed:
+                        y_label = src['dec'] + 0.0007
+                        if (ra_min_lim + 0.005 * ra_range_lim <= src['ra'] <= ra_max_lim - 0.005 * ra_range_lim) and \
+                           (dec_min_lim + 0.005 * L_lim <= y_label <= dec_max_lim - 0.005 * L_lim):
+                            plt.text(src['ra'], y_label, str(src['id']),
+                                     color='black', fontsize=7, ha='center', va='bottom',
+                                     zorder=12, weight='bold')
                 else:
                     c = cats['sci_observed'] if is_observed else cats['sci_normal']
                     c['ras'].append(src['ra'])
@@ -928,7 +957,7 @@ def main():
                     c['colors'].append(pt_color)
                     c['edgecolors'].append('black' if is_observed else '0.50')
                     c['lws'].append(0.5)
-                    c['alphas'].append(1.0 if is_observed else 0.15)
+                    c['alphas'].append(1.0 if is_observed else a_unobs_sci)
 
         # Vectorized plotting of categories
         for name, data in cats.items():
@@ -940,7 +969,7 @@ def main():
             # Sub-pass for outlines of unobserved highest priority targets
             if name == 'sci_highest':
                 plt.scatter(data['ras'], data['decs'], marker='o', s=data['sizes'], 
-                            color='none', edgecolors='black', linewidths=1.0, alpha=1.0, zorder=data['zorder']+0.1)
+                            color='none', edgecolors='black', linewidths=0.5, alpha=a_unobs_sci, zorder=data['zorder']+0.1)
             
             # Special handling for highest observed: add black outer ring outside the green inner ring
             if name == 'sci_highest_obs':
@@ -954,6 +983,11 @@ def main():
                 if src['is_ref']:
                     if abs(src['ra'] - obs_c_ra) > 0.75 or abs(src['dec'] - obs_c_dec) > 0.75:
                         continue
+                    
+                    if should_label_obs_only:
+                        is_observed = src['id'] in used_ref_ids or src['id'] in observed_ids
+                        if not is_observed:
+                            continue
                     
                     f110 = src['mags'].get('NRS_F110W')
                     f140 = src['mags'].get('NRS_F140W')
