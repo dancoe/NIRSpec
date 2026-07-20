@@ -4885,10 +4885,11 @@ def main():
             elif args.new:
                 action = 'n'
             else:
-                # Prompt the user
                 while True:
                     try:
-                        choice = input(f"Found existing reviews inside {pid}/:\nO: open most recent {most_recent_dir.name}\nN: new retrieval from APT\nSelect (O/N): ").strip().lower()
+                        choice = input(f"Found existing reviews inside {pid}/:\nO: [default] open most recent {most_recent_dir.name}\nN: new retrieval from APT\nSelect (O/N) [O]: ").strip().lower()
+                        if not choice:
+                            choice = 'o'
                         if choice in ['o', 'n']:
                             action = choice
                             break
