@@ -3678,28 +3678,36 @@ class NIRSpecMOSReviewer:
                                     slit = get_slit_by_quadrant_col_row(quadrant=q_idx, column=d_idx, row=s_idx)
                                     
                                     n1_min = n1_max = n2_min = n2_max = None
+                                    n1_cutoff_left = n1_cutoff_right = False
+                                    n2_cutoff_left = n2_cutoff_right = False
                                     
                                     trace1 = calculate_nirspec_mos_trace(slit=slit, grating=grating, filt=filt, detector="NRS1")
                                     if trace1:
-                                        det_x_range = np.linspace(0, 2047, 200)
+                                        det_x_range = np.arange(2048)
                                         det_y = trace1['trace_func'](det_x_range)
                                         det_w = trace1['wavelength_func'](det_x_range)
                                         valid = np.isfinite(det_y) & np.isfinite(det_w)
                                         on_det_w = det_w[valid]
+                                        on_det_x = det_x_range[valid]
                                         if len(on_det_w) > 0:
                                             n1_min = float(np.min(on_det_w)) * 1e6
                                             n1_max = float(np.max(on_det_w)) * 1e6
+                                            n1_cutoff_left = (np.min(on_det_x) <= 0)
+                                            n1_cutoff_right = (np.max(on_det_x) >= 2047)
                                             
                                     trace2 = calculate_nirspec_mos_trace(slit=slit, grating=grating, filt=filt, detector="NRS2")
                                     if trace2:
-                                        det_x_range = np.linspace(0, 2047, 200)
+                                        det_x_range = np.arange(2048)
                                         det_y = trace2['trace_func'](det_x_range)
                                         det_w = trace2['wavelength_func'](det_x_range)
                                         valid = np.isfinite(det_y) & np.isfinite(det_w)
                                         on_det_w = det_w[valid]
+                                        on_det_x = det_x_range[valid]
                                         if len(on_det_w) > 0:
                                             n2_min = float(np.min(on_det_w)) * 1e6
                                             n2_max = float(np.max(on_det_w)) * 1e6
+                                            n2_cutoff_left = (np.min(on_det_x) <= 0)
+                                            n2_cutoff_right = (np.max(on_det_x) >= 2047)
                                             
                                     norm_gf = gf.replace('-', '/').upper()
                                     nominal_ranges = {
@@ -3729,17 +3737,17 @@ class NIRSpecMOSReviewer:
                                                 icon_w = "🌔"
                                         
                                         if has_n1:
-                                            if blue_limit > 0 and n1_min > blue_limit + 0.02:
+                                            if blue_limit > 0 and n1_min > blue_limit + 0.02 and n1_cutoff_left:
                                                 s_parts.append(f"MISSING BLUE END: < {n1_min:.2f} µm")
                                         else:
-                                            if has_n2:
+                                            if has_n2 and n2_cutoff_left:
                                                 s_parts.append(f"CUTOFF: (NRS1) – {n2_min:.2f} µm")
                                                 
                                         if has_n2:
-                                            if red_limit > 0 and n2_max < red_limit - 0.02:
+                                            if red_limit > 0 and n2_max < red_limit - 0.02 and n2_cutoff_right:
                                                 s_parts.append(f"MISSING RED END: > {n2_max:.2f} µm")
                                         else:
-                                            if has_n1:
+                                            if has_n1 and n1_cutoff_right:
                                                 s_parts.append(f"CUTOFF: {n1_max:.2f} µm – (NRS2)")
                                                 
                                         if s_parts:
