@@ -169,6 +169,7 @@ class NIRSpecMOSReviewer:
             'ta_stars': {},   # obs_num -> visit_key -> { count, quad_counts, quads, pa, file, star_rows }
             'ta_params': {},   # obs_num string -> {visit_num string -> bin_string}
             'failed_shutters': [], # list of dicts {obs, msg}
+            'msaconflicts': {}, # obs_num string -> list of conflict dicts
             'wavelengths': {}, # obs_num -> {sid -> {gf -> {'n1_min': val, ...}}}
             'availability': {}, # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
             'catalogs': [],
@@ -363,7 +364,15 @@ class NIRSpecMOSReviewer:
             elif "msa.csv" in name_lower:
                 self._record_file_used(csv_file)
 
-            # Collection for potential wavelength data (all obs files)
+        # Parse any .msaconflicts files found in searched directories
+        for d in final_dirs:
+            for conf_file in d.glob("*.msaconflicts"):
+                if self._parse_msaconflicts(conf_file):
+                    self._record_file_used(conf_file)
+
+        # Collection for potential wavelength data (all obs files)
+        for csv_file in csv_files:
+            name_lower = csv_file.name.lower()
             if "obs" in name_lower and name_lower.endswith(".csv"):
                 wavelength_files.append(csv_file)
         
@@ -572,6 +581,79 @@ class NIRSpecMOSReviewer:
                         'star_rows': star_rows,
                     }
                     return True
+        except: pass
+        return False
+
+    def _parse_msaconflicts(self, file_path):
+        """Parse APT .msaconflicts report describing failed open/closed shutter conflicts."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as fh:
+                lines = fh.readlines()
+            
+            in_failed_open = False
+            in_failed_closed = False
+            count = 0
+            for line in lines:
+                s = line.strip()
+                if not s or s.startswith('-'):
+                    continue
+                if 'Observation' in line and 'Failed Open' in line:
+                    in_failed_open = True
+                    in_failed_closed = False
+                    continue
+                if 'Observation' in line and 'Failed Closed' in line:
+                    in_failed_open = False
+                    in_failed_closed = True
+                    continue
+                
+                parts = s.split()
+                if in_failed_closed and len(parts) >= 6:
+                    try:
+                        obs_num = str(int(parts[0]))
+                        shutter_idx = [i for i, part in enumerate(parts) if part.startswith('q') and 'd' in part and 's' in part]
+                        if shutter_idx:
+                            s_idx = shutter_idx[0]
+                            exp_id = parts[s_idx - 1]
+                            cfg_id = ' '.join(parts[1:s_idx - 1])
+                            shutter = parts[s_idx]
+                            sid = parts[s_idx + 1]
+                            w = float(parts[s_idx + 2])
+                            stype = parts[s_idx + 3]
+                            self.exports_data['msaconflicts'].setdefault(obs_num, []).append({
+                                'cfg_id': cfg_id,
+                                'exp_id': exp_id,
+                                'shutter': shutter,
+                                'sid': sid,
+                                'weight': w,
+                                'stype': stype,
+                                'state': 'closed',
+                                'file': file_path.name
+                            })
+                            count += 1
+                    except: pass
+                elif in_failed_open and len(parts) >= 6:
+                    try:
+                        obs_num = str(int(parts[0]))
+                        shutter_idx = [i for i, part in enumerate(parts) if part.startswith('q') and 'd' in part and 's' in part]
+                        if shutter_idx:
+                            s_idx = shutter_idx[0]
+                            shutter = parts[s_idx]
+                            sid = parts[s_idx + 1] if len(parts) > s_idx + 1 else ''
+                            w = float(parts[s_idx + 2]) if len(parts) > s_idx + 2 and parts[s_idx + 2].replace('.', '', 1).isdigit() else 0.0
+                            stype = parts[s_idx + 3] if len(parts) > s_idx + 3 else ''
+                            self.exports_data['msaconflicts'].setdefault(obs_num, []).append({
+                                'cfg_id': '',
+                                'exp_id': '',
+                                'shutter': shutter,
+                                'sid': sid,
+                                'weight': w,
+                                'stype': stype,
+                                'state': 'open',
+                                'file': file_path.name
+                            })
+                            count += 1
+                    except: pass
+            return count > 0
         except: pass
         return False
 
@@ -1123,6 +1205,107 @@ class NIRSpecMOSReviewer:
         
         self.stats['shorts_flags'] = self.exports_data.get('shorts', {})
 
+    def check_failed_shutters(self):
+        """Check for targets in failed closed/open shutters using operability maps and .msaconflicts."""
+        oper_dir = Path(__file__).parent / 'operability'
+        oper_maps = {}
+        if oper_dir.exists():
+            for p in sorted(oper_dir.glob('jwst_nirspec_msaoper_*.json')):
+                try:
+                    with open(p, 'r', encoding='utf-8') as f:
+                        oper_maps[p.stem] = {(int(r['Q']), int(r['x']), int(r['y'])): r for r in json.load(f)['msaoper']}
+                except: pass
+
+        # Choose design map (0017) and latest map (0018) if available
+        map_keys = sorted(oper_maps.keys())
+        latest_map_key = map_keys[-1] if map_keys else None
+        # Design map is 0017 if present, else earlier map or latest
+        design_map_key = 'jwst_nirspec_msaoper_0017' if 'jwst_nirspec_msaoper_0017' in oper_maps else (map_keys[-2] if len(map_keys) >= 2 else latest_map_key)
+        
+        design_map = oper_maps.get(design_map_key, {}) if design_map_key else {}
+        latest_map = oper_maps.get(latest_map_key, {}) if latest_map_key else {}
+
+        failed_shutter_flags = {} # obs_num -> list of dicts
+
+        # 1. First, check actual shutter coordinates from CSV exports
+        for obs_num, target_map in self.exports_data.get('shutter_coords', {}).items():
+            cat_name = self.obs_info.get(obs_num, {}).get('target')
+            cat_sources = self.catalogs.get(cat_name, {}).get('sources', {})
+
+            entries = []
+            seen = set()
+            for tid, coord_set in target_map.items():
+                cat_w = cat_sources.get(tid, {}).get('weight', 0.0)
+                if cat_w == 0.0:
+                    for cd in self.catalogs.values():
+                        if tid in cd.get('sources', {}):
+                            cat_w = cd['sources'][tid].get('weight', 0.0)
+                            break
+                for q, d, s, w, label, filename in coord_set:
+                    coord = (q, d, s)
+                    curr = design_map.get(coord)
+                    if not curr: continue
+                    state = curr.get('Internal state', '').lower()
+                    if state in ['closed', 'open']:
+                        effective_w = w if w > 0 else cat_w
+                        w_str = f" (weight {effective_w:,.0f})" if effective_w > 0 else ""
+                        nod_str = "n2" if "n2" in filename.lower() else "n1"
+                        cfg = label.replace("Config ", "").strip()
+                        
+                        # Check transition in latest map
+                        lat = latest_map.get(coord)
+                        lat_state = lat.get('Internal state', 'unlisted').lower() if lat else 'unlisted'
+                        note = ""
+                        if state == 'closed' and lat_state != 'closed':
+                            latest_ver = latest_map_key.replace('jwst_nirspec_msaoper_', '') if latest_map_key else 'latest'
+                            note = f" (cleared in latest CRDS map {latest_ver})"
+                        elif state != 'closed' and lat_state == 'closed':
+                            latest_ver = latest_map_key.replace('jwst_nirspec_msaoper_', '') if latest_map_key else 'latest'
+                            note = f" (newly failed closed in latest CRDS map {latest_ver})"
+
+                        key = (obs_num, cfg, nod_str, tid, q, d, s, state)
+                        if key in seen: continue
+                        seen.add(key)
+
+                        label_prefix = f"Config {cfg} {nod_str}: " if cfg else f"{nod_str}: "
+                        main_msg = f"Target {tid}{w_str} in q{q}d{d}s{s} failed {state}{note}"
+                        entries.append({
+                            'obs': obs_num,
+                            'label_prefix': label_prefix,
+                            'main_msg': main_msg,
+                            'tid': tid,
+                            'coord': f"q{q}d{d}s{s}",
+                            'state': state
+                        })
+            if entries:
+                failed_shutter_flags[obs_num] = entries
+
+        # 2. Check and integrate APT .msaconflicts files (if exports_dir contained any)
+        for obs_num, conf_list in self.exports_data.get('msaconflicts', {}).items():
+            obs_entries = failed_shutter_flags.setdefault(obs_num, [])
+            existing_tids = {e['tid'] for e in obs_entries}
+            for conf in conf_list:
+                tid = conf['sid']
+                if tid not in existing_tids:
+                    w = conf['weight']
+                    w_str = f" (weight {w:,.0f})" if w > 0 else ""
+                    cfg_label = f"Config {conf['cfg_id']}: " if conf['cfg_id'] else ""
+                    msg = f"Target {tid}{w_str} in {conf['shutter']} failed {conf['state']} ({conf['stype']})"
+                    obs_entries.append({
+                        'obs': obs_num,
+                        'label_prefix': cfg_label,
+                        'main_msg': msg,
+                        'tid': tid,
+                        'coord': conf['shutter'],
+                        'state': conf['state']
+                    })
+
+        for obs_num, entries in failed_shutter_flags.items():
+            for ent in entries:
+                self.log("Failed Shutters", f"⚠️ {ent['label_prefix']}{ent['main_msg']}", "WARNING", int(obs_num))
+
+        self.stats['failed_shutter_flags'] = failed_shutter_flags
+
     def _pre_process_observations(self):
         """Identify which observations exist and which should be analyzed for the report."""
         # 1. Parse Visit Statuses from XML
@@ -1311,6 +1494,7 @@ class NIRSpecMOSReviewer:
 
         self.analyze_high_priority_targets()
         self.check_shorts()
+        self.check_failed_shutters()
         
         # 7. Wavelength Coverage from Exports
         self._load_wavelength_exports()
@@ -4055,6 +4239,17 @@ class NIRSpecMOSReviewer:
                                 label_prefix = f"Obs {o} " + label_prefix
                             write(f"{icon}{label_prefix}{entry['main_msg']}")
 
+            # Failed shutter warnings for reviewed observations
+            failed_shutter_data = self.stats.get('failed_shutter_flags', {})
+            if failed_shutter_data:
+                for o in reviewed_full:
+                    if str(o) in failed_shutter_data:
+                        for entry in failed_shutter_data[str(o)]:
+                            label_prefix = entry['label_prefix']
+                            if label_prefix.startswith("Config"):
+                                label_prefix = f"Obs {o} " + label_prefix
+                            write(f"{icons['WARNING']} {label_prefix}{entry['main_msg']}")
+
             write('')
 
         # 2. Under Construction section
@@ -4278,6 +4473,17 @@ class NIRSpecMOSReviewer:
                         if label_prefix.startswith("Config"):
                             label_prefix = f"Obs {o} " + label_prefix
                         write(f"{icon}{label_prefix}{entry['main_msg']}")
+
+        # Failed shutter warnings
+        failed_shutter_data = self.stats.get('failed_shutter_flags', {})
+        if failed_shutter_data:
+            for o in reviewed_obs:
+                if str(o) in failed_shutter_data:
+                    for entry in failed_shutter_data[str(o)]:
+                        label_prefix = entry['label_prefix']
+                        if label_prefix.startswith("Config"):
+                            label_prefix = f"Obs {o} " + label_prefix
+                        write(f"{icons['WARNING']} {label_prefix}{entry['main_msg']}")
 
         write("\nCHECK MPT PLANS")
         plans = self.stats['program_metadata'].get('plans', [])
