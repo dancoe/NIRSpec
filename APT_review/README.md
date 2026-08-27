@@ -112,8 +112,19 @@ To enable **(OPTIONAL) plot generation**, you need the following:
 | `pandas` | Data handling for CSV plotting. |
 
 ```bash
-pip install numpy matplotlib pandas pysiaf
+# The plotting and trace dependencies are maintained in the existing
+# micromamba environment rather than Homebrew's default Python.
+micromamba install -n mos_trace -c conda-forge numpy matplotlib pandas pysiaf
+
+# Run the review with that same interpreter so subprocesses use its packages.
+micromamba run -n mos_trace python APT_review.py <program-or-aptx>
 ```
+
+The default `python3` on this laptop is Homebrew Python and does not include
+these optional plotting packages. The `mos_trace` environment already has
+`pandas`, `numpy`, `matplotlib`, and `pysiaf`; use it for MSA coverage plots and
+trace calculations. For an interactive shell, activate it first with
+`micromamba activate mos_trace`.
 
 ---
 

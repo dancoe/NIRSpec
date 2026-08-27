@@ -173,6 +173,7 @@ class NIRSpecMOSReviewer:
             'availability': {}, # visit_id -> {cat: name, counts: {Q: {ref, sci}}}
             'catalogs': [],
             'shutter_coords': {}, # obs_num -> {id -> set((q, d, s))}
+            'msa_presence': {}, # obs_num -> {pointing -> {nod_idx -> set(target IDs)}}
             'pointings_data': {}, # (obs_num, pointing_name, grating_filter) -> dict
         }
         self.visits_csv_path = None
@@ -897,6 +898,18 @@ class NIRSpecMOSReviewer:
                 if obs_num not in self.exports_data['shutter_coords']:
                     self.exports_data['shutter_coords'][obs_num] = {}
                 coords = self.exports_data['shutter_coords'][obs_num]
+
+                file_name_lower = file_path.name.lower()
+                nod_match = re.search(r'-c\d+e\d+n(\d+)-', file_name_lower)
+                nod_idx = nod_match.group(1) if nod_match else None
+                pointing_match = re.search(r':\s*([a-z0-9_]+)e\d+n\d+-', file_name_lower)
+                pointing_name = pointing_match.group(1) if pointing_match else None
+                if exp_idx is not None:
+                    presence_key = pointing_name or str(int(exp_idx))
+                    exp_presence = self.exports_data['msa_presence'].setdefault(obs_num, {}).setdefault(presence_key, {})
+                    presence = exp_presence.setdefault(nod_idx or 'all', set())
+                else:
+                    presence = None
                 
                 # Read the first row to get pointing parameters
                 first_row = None
@@ -927,6 +940,8 @@ class NIRSpecMOSReviewer:
                     nonlocal target_set_size, total_weight, count
                     sid = str(row.get(id_col, '')).strip() if id_col else ''
                     if not sid: return
+                    if presence is not None:
+                        presence.add(sid)
                     
                     stype = str(row.get(type_col, '')).strip() if type_col else ''
                     if stype.lower() in ['primary', 'filler']:
@@ -1020,6 +1035,8 @@ class NIRSpecMOSReviewer:
                     if q == 2:
                         if d == 211: msg = "shares Q2 Column 211 with short in q2d211s60"
                         elif s == 60: msg = "shares Q2 Row 60 with short in q2d211s60"
+                        elif d == 88: msg = "shares Q2 Column 88 with failed open shutter in q2d88s116"
+                        elif s == 116: msg = "shares Q2 Row 116 with failed open shutter in q2d88s116"
                     elif q == 3:
                         if d == 353: msg = "shares Q3 Column 353 with known short"
                         elif d == 354: msg = "shares Q3 Column 354 with known short"
@@ -1486,7 +1503,8 @@ class NIRSpecMOSReviewer:
             # Configurations used in Pointings (excluding ALLCLOSED)
             pointings = data.get('configs', [])
             
-            # Map Config Label -> set of Primary IDs from shutter_coords exports
+            # Map Config Label -> set of IDs from shutter_coords exports. This is
+            # retained as a fallback for exports without an exposure index.
             cfg_id_map = {}
             obs_shutter_coords = self.exports_data['shutter_coords'].get(obs_num, {})
             for sid, coord_set in obs_shutter_coords.items():
@@ -1501,6 +1519,8 @@ class NIRSpecMOSReviewer:
                         short_label = label[len("Config "):].strip()
                         if short_label not in cfg_id_map: cfg_id_map[short_label] = set()
                         cfg_id_map[short_label].add(sid)
+
+            exact_id_map = self.exports_data.get('msa_presence', {}).get(obs_num, {})
             
             # Split pointings into visits
             v_info = data.get('visit_info', {})
@@ -1520,7 +1540,14 @@ class NIRSpecMOSReviewer:
                 visit_obs_ids = set()
                 for pt in v_pointings:
                     if pt['config'] == 'ALLCLOSED': continue
-                    visit_obs_ids.update(cfg_id_map.get(pt['config'], set()))
+                    pt_presence = exact_id_map.get(pt.get('pointing'))
+                    if pt_presence is None:
+                        pt_presence = exact_id_map.get(str(pt['id']))
+                    if pt_presence is None:
+                        pt_ids = cfg_id_map.get(pt['config'], set())
+                    else:
+                        pt_ids = set().union(*pt_presence.values())
+                    visit_obs_ids.update(pt_ids)
                 
                 analysis[cat_name]['observed_in_visit'][(obs_num, v_key)] = visit_obs_ids
                 
@@ -1558,10 +1585,22 @@ class NIRSpecMOSReviewer:
                         v_res[gf]['by_config'][short_cfg]['n_total'] += cnt
                         
                         if 'configs' not in v_res: v_res['configs'] = set()
-                        if sid in cfg_id_map.get(pt['config'], set()):
-                            v_res[gf]['n_obs'] += cnt
-                            v_res['configs'].add(pt['config'])
-                            v_res[gf]['by_config'][short_cfg]['n_obs'] += cnt
+                        pt_presence = exact_id_map.get(pt.get('pointing'))
+                        if pt_presence is None:
+                            pt_presence = exact_id_map.get(str(pt['id']))
+                        if pt_presence is None:
+                            pt_ids = cfg_id_map.get(pt['config'], set())
+                            if sid in pt_ids:
+                                v_res[gf]['n_obs'] += cnt
+                                v_res['configs'].add(pt['config'])
+                                v_res[gf]['by_config'][short_cfg]['n_obs'] += cnt
+                        else:
+                            nods_observed = sum(sid in ids for ids in pt_presence.values())
+                            ints_per_nod = pt.get('spec_ints', 0)
+                            if nods_observed:
+                                v_res[gf]['n_obs'] += nods_observed * ints_per_nod
+                                v_res['configs'].add(pt['config'])
+                                v_res[gf]['by_config'][short_cfg]['n_obs'] += nods_observed * ints_per_nod
         
         self.stats['high_priority_analysis'] = analysis
 
@@ -1811,7 +1850,9 @@ class NIRSpecMOSReviewer:
             
             # Parse actual MSA configurations from the XML template
             msa_configs = []
-            for cfg in self.findall(mos_template, 'nsmos:Configuration'):
+            for cfg in mos_template:
+                if not (cfg.tag.endswith('Configuration') and cfg.get('Name')):
+                    continue
                 cfg_name = cfg.get('Name') or ""
                 slitlets_text = cfg.findtext(f"{{{NS['ns']}}}slitlets", namespaces=NS) or ""
                 primaries_text = cfg.findtext(f"{{{NS['ns']}}}primaries", namespaces=NS) or ""
@@ -2045,6 +2086,8 @@ class NIRSpecMOSReviewer:
                     'gf': s_gf,
                     'pointing': pt.findtext(f"{{{n_mos}}}Pointing", namespaces=NS),
                     'nod': nod_str,
+                    'nod_mult': nod_mult,
+                    'spec_ints': s_ints,
                     'total_ints': total_ints,
                     'total_time': total_time,
                     'disp_offset': disp_offset,
@@ -3795,6 +3838,19 @@ class NIRSpecMOSReviewer:
             write(f"\nMeteroid Zone Justification:")
             write(f"{meta['maz_justification'].strip()}")
 
+    def _write_msa_fill_summary(self, write, obs_nums):
+        """Report primary, filler, and secondary targets in each parsed MSA configuration."""
+        for obs_num in self._get_sorted_obs_nums(obs_nums):
+            configs = self.analytics.get(obs_num, {}).get('msa_configs', [])
+            counts = [cfg.get('n_primaries', 0) + cfg.get('n_fillers', 0) + cfg.get('n_secondaries', 0)
+                      for cfg in configs
+                      if cfg.get('n_primaries') is not None or cfg.get('n_fillers') is not None or cfg.get('n_secondaries') is not None]
+            if counts:
+                write(f"Masks well filled with Obs {obs_num}: "
+                      f"{', '.join(str(count) for count in counts)} sources")
+            else:
+                write(f"Masks well filled with Obs {obs_num}: check configurations")
+
     def _report_final_summary(self, write, icons):
         """Gold summary block: data excess, time budget, MSATA/integration/IRS2 bullets."""
         meta = self.stats.get('program_metadata', {})
@@ -3957,6 +4013,8 @@ class NIRSpecMOSReviewer:
                     else:
                         others = ", ".join(f"{n}" for n in nod_counts if n not in standards)
                         write(f"{icons['WARNING']} Nod Pattern: non-standard detected ({others})")
+
+            self._write_msa_fill_summary(write, reviewed_full)
             
             # Extra Data Excess warnings (if any)
             err_text = meta.get('error_text', "")
@@ -4197,7 +4255,7 @@ class NIRSpecMOSReviewer:
                 write(f"{icons['ERROR']} Obs {o}: Planned APA {p:.4f} does not match Assigned APA {a:.4f}")
 
         write("\nCHECK MSA CONFIGURATIONS")
-        write("👁️ masks well designed and filled")
+        self._write_msa_fill_summary(write, reviewed_obs)
         
         # Configuration warnings (e.g. repeated pointings) 
         config_msgs = []
@@ -4267,8 +4325,34 @@ class NIRSpecMOSReviewer:
 
             if weights:
                 unique_weights = sorted(list(set(weights)), reverse=True)
+                highest_weight = unique_weights[0]
                 weight_str = " or ".join([f"{w:,.0f}" for w in unique_weights[:2]])
-                write(f"✅ Highest priority targets (weight {weight_str}) achieve full depth in each of {n_v} visits")
+                
+                # Check if all highest-priority targets in active catalogs achieved 100% coverage in each visit
+                full_depth = True
+                for cat in active_catalogs:
+                    if cat in analysis:
+                        highest_sids = [sid for sid, s in self.catalogs.get(cat, {}).get('sources', {}).items() if s.get('weight') == highest_weight]
+                        results = analysis[cat].get('results', {})
+                        for sid in highest_sids:
+                            sid_res = results.get(sid, {})
+                            for o_num, visits_map in sid_res.items():
+                                if o_num not in reviewed_obs: continue
+                                for v_key, gf_map in visits_map.items():
+                                    for gf, gf_data in gf_map.items():
+                                        if gf == 'configs': continue
+                                        if gf_data.get('n_obs', 0) < gf_data.get('n_total', 0):
+                                            full_depth = False
+                                            break
+                                    if not full_depth: break
+                                if not full_depth: break
+                            if not full_depth: break
+                    if not full_depth: break
+
+                if full_depth:
+                    write(f"✅ Highest priority targets (weight {weight_str}) achieve full depth in each of {n_v} visits")
+                else:
+                    write(f"{icons['WARNING']} Highest priority targets (weight {weight_str}) do NOT all achieve full depth in each of {n_v} visits")
             else:
                 write("✅ Highest priority targets achieve full depth")
         else:

@@ -56,6 +56,7 @@ To avoid electrical shorts and the resulting "glow" that can contaminate scienti
 The following regions should be avoided for both science targets and MSATA reference stars:
 
 - **q2d211s60**: Avoid Row 60 and Column 211 of Quadrant 2.
+- **q2d88s116**: Avoid Row 116 and Column 88 of Quadrant 2 (failed open shutter).
 - **Q3 columns d353 and d354**: Avoid all shutters in Columns 353 and 354 of Quadrant 3.
 - **q4d16s36 (Wilhelm)**: Avoid Row 36 and Column 16 of Quadrant 4.
 
