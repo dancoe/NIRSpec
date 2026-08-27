@@ -9,5 +9,6 @@ __pycache__/
 *.aptx
 dither_plots/
 scratch/
+operability/
 [0-9][0-9][0-9][0-9]/
 [0-9][0-9][0-9][0-9][0-9]/
