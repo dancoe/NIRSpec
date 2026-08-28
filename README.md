@@ -12,7 +12,13 @@ Tools, notebooks, and interactive applications for JWST NIRSpec MOS (Multi-Objec
 ## Interactive Tools & Web Applications
 
 - **[MSA Operability & Geometry Visualizer](msa_operability/)**: High-performance interactive web application for exploring NIRSpec Micro-Shutter Array (MSA) operability states, quadrant coordinates, and Hawaii-2RG detector geometry overlays.
+
+  <p align="center">
+    <img src="msa_operability/assets/msa_visualizer_preview.png" alt="NIRSpec MSA Operability & Geometry Visualizer" width="900" />
+  </p>
+
 - **[APT Review Tools](APT_review/)**: Automated proposal verification, reports, and visual checking tools for APT programs.
+
 - **[MOS Reviews](mos_reviews/)**: Interactive interface for tracking and reviewing MOS target allocations.
 - **[MOS Trace](mos_trace/)**: Spectral trace simulation and optical dispersion mapping.
 

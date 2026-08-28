@@ -2,7 +2,12 @@
 
 An interactive high-performance web application to explore the James Webb Space Telescope (JWST) Near-Infrared Spectrograph (NIRSpec) **Micro-Shutter Array (MSA)** operability, shutter states, quadrant mapping, and detector layout geometry.
 
+<p align="center">
+  <img src="assets/msa_visualizer_preview.png" alt="NIRSpec MSA Operability & Geometry Visualizer" width="900" />
+</p>
+
 ---
+
 
 ## Key Features
 
