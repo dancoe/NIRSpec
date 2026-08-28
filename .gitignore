@@ -5,3 +5,8 @@ build/
 .env
 *.pyc
 __pycache__/
+screenshots/
+**/screenshots/
+AGENTS.md
+
+

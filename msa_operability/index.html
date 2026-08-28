@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JWST NIRSpec MSA Operability Visualizer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Top Header Bar -->
+    <header id="top-nav">
+      <div class="brand-group">
+        <div class="telescope-badge">JWST / NIRSpec</div>
+        <h1 class="header-title">
+          <span class="title-full">Micro-Shutter Array (MSA) Operability</span>
+          <span class="title-short">MSA Operability</span>
+        </h1>
+      </div>
+      <div class="header-controls">
+        <div class="map-switcher-group">
+          <label for="map-select" class="map-label">Map:</label>
+          <button id="btn-prev-map" class="btn-icon-nav" title="Previous Map (Left Arrow)">◀</button>
+          <select id="map-select" class="map-select"></select>
+          <button id="btn-next-map" class="btn-icon-nav" title="Next Map (Right Arrow)">▶</button>
+          <div class="blink-controls-group">
+            <button id="btn-blink-toggle" class="btn-blink" title="Toggle Auto Blink Between All Maps">
+              <span class="blink-dot"></span>
+              <span class="blink-btn-text">Blink</span>
+            </button>
+            <div class="blink-slider-wrapper" id="blink-slider-container" title="Adjust Blink Interval (0.2s - 2.5s)">
+              <input type="range" id="blink-speed-slider" min="200" max="2500" step="100" value="800" />
+              <span id="blink-rate-label" class="blink-rate-val">0.8s</span>
+            </div>
+          </div>
+        </div>
+        <div class="search-box">
+          <input type="text" id="shutter-search" placeholder="q2d88s116..." autocomplete="off" />
+          <button id="search-btn" title="Search & Center">Search</button>
+        </div>
+        <div class="header-actions">
+          <button id="btn-show-guide" class="btn-secondary" title="View MSA Documentation">📖 MSA Guide</button>
+          <button id="btn-reset-view" class="btn-primary" title="Fit Entire Array and Detectors in View">Reset View</button>
+          <div class="panel-toggles-group" title="Toggle left (⌘J) and right (⌘K) sidebar panels">
+            <button id="toggle-left-sidebar" class="btn-layout-toggle" title="Toggle Left Sidebar (Presets & Layers) — ⌘J / Ctrl+J">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5.5 2V14" stroke="currentColor" stroke-width="1.5"/>
+                <rect x="2" y="2" width="3.5" height="12" class="sidebar-fill" fill="currentColor"/>
+              </svg>
+            </button>
+            <button id="toggle-right-drawer" class="btn-layout-toggle" title="Toggle Right Panel (Inspector & Planner) — ⌘K / Ctrl+K">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M10.5 2V14" stroke="currentColor" stroke-width="1.5"/>
+                <rect x="10.5" y="2" width="3.5" height="12" class="drawer-fill" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div id="workspace">
+      <!-- Left Sidebar: Controls & Layer Toggles (Collapsed by default) -->
+      <aside id="sidebar" class="collapsed">
+        <!-- Quick View Navigator -->
+        <section class="panel-section">
+          <h3>Preset Views</h3>
+          <div class="preset-grid">
+            <button class="preset-btn" data-view="all">Full Array + Detectors</button>
+            <button class="preset-btn" data-view="msa">MSA Active Field</button>
+            <button class="preset-btn" data-view="q3">Quadrant 3 (TL)</button>
+            <button class="preset-btn" data-view="q1">Quadrant 1 (TR)</button>
+            <button class="preset-btn" data-view="q4">Quadrant 4 (BL)</button>
+            <button class="preset-btn" data-view="q2">Quadrant 2 (BR)</button>
+            <button class="preset-btn" data-view="fixed-slits">Fixed Slits Bar</button>
+            <button class="preset-btn highlight-stuck" data-view="stuck-open">Stuck Open Shutters</button>
+          </div>
+        </section>
+
+        <!-- Display Layers -->
+        <section class="panel-section">
+          <h3>Display Layers & Overlays</h3>
+          <div class="toggle-group">
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-detectors" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Detectors (NRS1 / NRS2)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-detector-pixels" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Detector Pixels (2048×2048 Grid)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-vignetting">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Vignetting Overlay (Pink/Edge)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-stuck-open" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Stuck Open Badges & Glow (25)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-stuck-closed" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Stuck Closed Shutters</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-fixed-slits" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Fixed Slits & IFU Apertures</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-magnet-arm">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Magnet Arm Sweep Path</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-grid" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Shutter Grid & Margins (0.07")</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-coordinates" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Quadrant & Array Coordinate Axes</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-dispersion" checked>
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Direction of Dispersion</span>
+            </label>
+          </div>
+
+          <div class="slider-control-group">
+            <div class="slider-control-header">
+              <span class="slider-control-label">Open Shutter Opacity</span>
+              <span id="shutter-opacity-val" class="slider-control-val font-mono">40%</span>
+            </div>
+            <input type="range" id="shutter-opacity-slider" min="0" max="100" step="5" value="40" class="custom-range-slider" />
+          </div>
+        </section>
+
+        <!-- Shutter Color Legend -->
+        <section class="panel-section">
+          <h3>Shutter State Legend</h3>
+          <div class="legend-list">
+            <div class="legend-item">
+              <span class="legend-color color-operable"></span>
+              <div class="legend-info">
+                <span class="legend-name">Operable / Normal</span>
+                <span class="legend-desc">Fully functional shutter (181,801)</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color color-stuck-closed"></span>
+              <div class="legend-info">
+                <span class="legend-name">Stuck Closed</span>
+                <span class="legend-desc">Failed closed microshutter (52,497)</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color color-stuck-open"></span>
+              <div class="legend-info">
+                <span class="legend-name">Stuck Open (Failed Open)</span>
+                <span class="legend-desc">Permanently open slit (25 total)</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color color-vignetted"></span>
+              <div class="legend-info">
+                <span class="legend-name">Vignetted Shutters</span>
+                <span class="legend-desc">Reduced/cut-off throughput flag (Purple)</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <span class="legend-color color-user-open"></span>
+              <div class="legend-info">
+                <span class="legend-name">User Configured Open Slit</span>
+                <span class="legend-desc">Click on any shutter to toggle slitlet</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Array Statistics Summary -->
+        <section class="panel-section">
+          <h3>Array Operability Stats</h3>
+          <div class="stats-table">
+            <div class="stat-row">
+              <span>Total Shutters</span>
+              <span class="stat-val font-mono" id="stat-total">249,660</span>
+            </div>
+            <div class="stat-row">
+              <span>Operable (Unvignetted)</span>
+              <span class="stat-val font-mono text-green" id="stat-operable">181,801 (72.8%)</span>
+            </div>
+            <div class="stat-row">
+              <span>Stuck Closed</span>
+              <span class="stat-val font-mono text-gray" id="stat-stuck-closed">52,497 (21.0%)</span>
+            </div>
+            <div class="stat-row">
+              <span>Stuck Open</span>
+              <span class="stat-val font-mono text-red" id="stat-stuck-open">25 (0.01%)</span>
+            </div>
+            <div class="stat-row">
+              <span>Vignetted Total</span>
+              <span class="stat-val font-mono text-pink" id="stat-vignetted">24,024 (9.6%)</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Center Viewport (Interactive Canvas) -->
+      <main id="viewport-container">
+        <canvas id="msa-canvas"></canvas>
+
+        <!-- Single-Row Floating HUD Banner -->
+        <div id="hud-bar">
+          <div class="hud-item hud-id-badge">
+            <span id="hud-shutter-id" class="font-mono">q1d182s78</span>
+            <span id="hud-status-badge" class="hud-badge font-mono">STUCK_CLOSED</span>
+          </div>
+          <div class="hud-divider"></div>
+          <div class="hud-item">
+            <span class="hud-muted">Quad:</span>
+            <span id="hud-quad" class="font-mono">Q1</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-muted">Quad Col, Row:</span>
+            <span id="hud-local-pos" class="font-mono">Col 182, Row 78</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-muted">Global:</span>
+            <span id="hud-global-pos" class="font-mono">Col 547, Row 94</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-muted">Size:</span>
+            <span class="font-mono">0.20" × 0.46" (0.07" bar)</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-muted">Vignetted:</span>
+            <span id="hud-vignetted" class="font-mono">No</span>
+          </div>
+          <div class="hud-divider"></div>
+          <div class="hud-item hud-scale-item">
+            <span id="hud-zoom-level" class="font-mono">Zoom: 32%</span>
+            <span id="hud-arcsec-scale" class="font-mono hud-muted">FOV: 3.99' × 3.73'</span>
+            <div class="scale-bar-compact">
+              <div id="scale-bar-line"></div>
+              <span id="scale-bar-text" class="font-mono">1 arcmin</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas Controls (Zoom In/Out, Fit, Reset View) -->
+        <div id="canvas-actions">
+          <button id="zoom-in-btn" class="action-btn" title="Zoom In (+)">+</button>
+          <button id="zoom-out-btn" class="action-btn" title="Zoom Out (-)">−</button>
+          <button id="zoom-fit-btn" class="action-btn" title="Fit Entire Array (Detectors + MSA)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+            </svg>
+          </button>
+          <button id="canvas-reset-btn" class="action-btn" title="Reset View (Reset Pan & Zoom)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Dispersion Arrow Banner -->
+        <div id="dispersion-indicator">
+          <div class="dispersion-line">
+            <span class="dispersion-text">Direction of Dispersion &rarr;</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- Right Drawer / Inspector Panel (Collapsed by default) -->
+      <aside id="inspector-drawer" class="collapsed">
+        <div class="drawer-header">
+          <h3>Shutter Inspector & Planner</h3>
+          <button id="close-drawer" class="btn-icon">&times;</button>
+        </div>
+        <div class="drawer-content">
+          <div id="selected-shutter-card" class="inspector-card">
+            <div class="inspector-badge" id="insp-badge">OPERABLE</div>
+            <div class="insp-title-wrapper">
+              <input type="text" id="insp-title-input" class="insp-input font-mono" value="q2d88s116" placeholder="e.g. q4d12s170" title="Type shutter ID (e.g. q4d12s170) and press Enter to jump" spellcheck="false" autocomplete="off" />
+            </div>
+            <p id="insp-sub" class="text-muted">Quadrant 2 &bull; Column 88 &bull; Row 116</p>
+
+            <div class="inspector-details">
+              <div class="detail-item">
+                <span class="detail-label">Local Coordinate</span>
+                <span class="detail-val font-mono" id="insp-local">Q1 Col 182, Row 85</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Global 2x2 Coordinate</span>
+                <span class="detail-val font-mono" id="insp-global">Col 547, Row 87</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Slit Dimension</span>
+                <span class="detail-val font-mono">0.20" width × 0.46" height</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Grid Spacing (Pitch)</span>
+                <span class="detail-val font-mono">0.27" pitch × 0.53" pitch</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Bar Margin Border</span>
+                <span class="detail-val font-mono">0.07" wall</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Internal State</span>
+                <span class="detail-val font-mono" id="insp-internal">normal</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Optical Vignetting</span>
+                <span class="detail-val font-mono" id="insp-vig">No (Full throughput)</span>
+              </div>
+            </div>
+
+            <div class="inspector-actions">
+              <button id="btn-toggle-open" class="btn-primary full-width">Toggle Open / Closed</button>
+              <button id="btn-open-slitlet-3" class="btn-secondary full-width">Create 3-Shutter Slitlet</button>
+            </div>
+          </div>
+
+          <!-- List of Stuck Open Shutters -->
+          <div class="stuck-open-section">
+            <h4 id="stuck-open-header">Failed Open Shutters (25)</h4>
+            <p class="text-muted text-small">Click any item to jump & inspect:</p>
+            <div id="stuck-open-list">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+
+          <!-- List of Vignetted Shutters -->
+          <div class="vignetted-section">
+            <div class="vignetted-header-row">
+              <h4 id="vignetted-header">Vignetted Shutters</h4>
+              <span class="vignetted-badge font-mono text-purple">Purple</span>
+            </div>
+            <p class="text-muted text-small">Shutters flagged as vignetted / reduced throughput:</p>
+            <div id="vignetted-list">
+              <!-- Populated dynamically by JS -->
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Modal for Detailed Documentation (MSA.md) -->
+    <div id="guide-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h2>NIRSpec Micro-Shutter Array (MSA) Reference Guide</h2>
+          <button id="close-modal" class="btn-icon">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-content">
+          <!-- Loaded dynamically or filled from MSA.md -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
