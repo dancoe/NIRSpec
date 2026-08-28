@@ -1,6 +1,11 @@
 # NIRSpec
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-dancoe%2FNIRSpec-blue?logo=github)](https://github.com/dancoe/NIRSpec)
+
+Repository: [https://github.com/dancoe/NIRSpec](https://github.com/dancoe/NIRSpec)
+
 Tools, notebooks, and interactive applications for JWST NIRSpec MOS (Multi-Object Spectroscopy) data analysis, proposal review, and instrument visualization.
+
 
 ---
 
