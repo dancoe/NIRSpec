@@ -11,7 +11,8 @@ Tools, notebooks, and interactive applications for JWST NIRSpec MOS (Multi-Objec
 
 ## Interactive Tools & Web Applications
 
-- **[MSA Operability & Geometry Visualizer](msa_operability/)**: High-performance interactive web application for exploring NIRSpec Micro-Shutter Array (MSA) operability states, quadrant coordinates, and Hawaii-2RG detector geometry overlays.
+- **[MSA Operability & Geometry Visualizer](msa_operability/)** ([Live Web App](https://dancoe.github.io/NIRSpec/)): High-performance interactive web application for exploring NIRSpec Micro-Shutter Array (MSA) operability states, quadrant coordinates, and Hawaii-2RG detector geometry overlays.
+
 
   <p align="center">
     <img src="msa_operability/assets/msa_visualizer_preview.png" alt="NIRSpec MSA Operability & Geometry Visualizer" width="900" />
