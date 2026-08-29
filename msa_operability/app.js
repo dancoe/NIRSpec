@@ -578,15 +578,12 @@ class MSAVisualizer {
         e.preventDefault();
         const targetScale = Math.min(this.width / 240, this.height / 240);
         this.animateCameraTo(0, 0, targetScale, 350);
-      } else if (e.key === 'f' || e.key === 'F') {
-        e.preventDefault();
-        const targetScale = Math.min(this.width / 460, this.height / 240);
-        this.animateCameraTo(0, 0, targetScale, 350);
       } else if (e.key === '+' || e.key === '=') {
         this.zoomAt(this.width / 2, this.height / 2, 1.12);
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
       }
+
 
 
 
@@ -771,7 +768,7 @@ class MSAVisualizer {
 
 
 
-    // Canvas UI Buttons (Zoom In/Out, Fit, Reset)
+    // Canvas UI Buttons (Zoom In/Out, Reset View)
     document.getElementById('zoom-in-btn').addEventListener('click', () => {
       this.zoomAt(this.width / 2, this.height / 2, 1.3);
     });
@@ -780,15 +777,6 @@ class MSAVisualizer {
       this.zoomAt(this.width / 2, this.height / 2, 1 / 1.3);
     });
 
-    const zoomFitBtn = document.getElementById('zoom-fit-btn');
-    if (zoomFitBtn) {
-      zoomFitBtn.addEventListener('click', () => {
-        const targetScale = Math.min(this.width / 460, this.height / 240);
-        this.animateCameraTo(0, 0, targetScale, 350);
-      });
-    }
-
-
     const canvasResetBtn = document.getElementById('canvas-reset-btn');
     if (canvasResetBtn) {
       canvasResetBtn.addEventListener('click', () => {
@@ -796,6 +784,7 @@ class MSAVisualizer {
         this.animateCameraTo(0, 0, targetScale, 350);
       });
     }
+
 
     // Panel Layout Toggles (Left Sidebar & Right Inspector Drawer)
     const toggleLeftBtn = document.getElementById('toggle-left-sidebar');
