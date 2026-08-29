@@ -832,7 +832,7 @@ button {
 /* Dispersion indicator */
 #dispersion-indicator {
   position: absolute;
-  bottom: 22px;
+  bottom: 64px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -849,6 +849,7 @@ button {
   box-shadow: none;
   transition: transform 0.15s ease, opacity 0.15s ease;
 }
+
 
 #dispersion-indicator:hover {
   transform: translateX(-50%) scale(1.05);
