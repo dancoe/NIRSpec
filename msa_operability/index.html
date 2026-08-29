@@ -86,7 +86,21 @@
         <!-- Display Layers -->
         <section class="panel-section">
           <h3>Display Layers & Overlays</h3>
+
+          <div class="slider-control-group" style="margin-bottom: 14px;">
+            <div class="slider-control-header">
+              <span class="slider-control-label">Open Shutter Opacity</span>
+              <span id="shutter-opacity-val" class="slider-control-val font-mono">40%</span>
+            </div>
+            <input type="range" id="shutter-opacity-slider" min="0" max="100" step="5" value="40" class="custom-range-slider" />
+          </div>
+
           <div class="toggle-group">
+            <label class="toggle-item">
+              <input type="checkbox" id="layer-fill-open">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Fill Open Shutters</span>
+            </label>
             <label class="toggle-item">
               <input type="checkbox" id="layer-detectors" checked>
               <span class="toggle-slider"></span>
@@ -138,15 +152,8 @@
               <span class="toggle-label">Direction of Dispersion</span>
             </label>
           </div>
-
-          <div class="slider-control-group">
-            <div class="slider-control-header">
-              <span class="slider-control-label">Open Shutter Opacity</span>
-              <span id="shutter-opacity-val" class="slider-control-val font-mono">40%</span>
-            </div>
-            <input type="range" id="shutter-opacity-slider" min="0" max="100" step="5" value="40" class="custom-range-slider" />
-          </div>
         </section>
+
 
         <!-- Shutter Color Legend -->
         <section class="panel-section">

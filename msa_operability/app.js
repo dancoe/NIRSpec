@@ -93,6 +93,7 @@ class MSAVisualizer {
 
     // Layer toggles (Default matching user configuration)
     this.layers = {
+      fillOpen: false, // Fill Open Shutters (off by default)
       detectors: true,
       detectorPixels: true,
       vignetting: true,
@@ -106,6 +107,7 @@ class MSAVisualizer {
     };
 
     this.shutterOpacity = 0.40; // Default 40% opacity for open shutters
+
 
     // Load persisted settings from localStorage
     this.loadSettings();
@@ -159,6 +161,7 @@ class MSAVisualizer {
   applySettingsToUI() {
     // Sync layer checkboxes
     const layerMap = {
+      'layer-fill-open': 'fillOpen',
       'layer-detectors': 'detectors',
       'layer-detector-pixels': 'detectorPixels',
       'layer-vignetting': 'vignetting',
@@ -170,6 +173,7 @@ class MSAVisualizer {
       'layer-coordinates': 'coordinates',
       'layer-dispersion': 'dispersion'
     };
+
 
     for (const [id, key] of Object.entries(layerMap)) {
       const el = document.getElementById(id);
@@ -693,6 +697,7 @@ class MSAVisualizer {
 
     // Layer checkboxes
     const layerMap = {
+      'layer-fill-open': 'fillOpen',
       'layer-detectors': 'detectors',
       'layer-detector-pixels': 'detectorPixels',
       'layer-vignetting': 'vignetting',
@@ -725,10 +730,21 @@ class MSAVisualizer {
         const val = parseInt(e.target.value);
         this.shutterOpacity = val / 100;
         if (opacityLabel) opacityLabel.innerText = `${val}%`;
+        // If user adjusts opacity > 0, auto-enable Fill Open Shutters checkbox if not checked
+        if (val > 0 && !this.layers.fillOpen) {
+          this.layers.fillOpen = true;
+          const fillEl = document.getElementById('layer-fill-open');
+          if (fillEl) fillEl.checked = true;
+        } else if (val === 0 && this.layers.fillOpen) {
+          this.layers.fillOpen = false;
+          const fillEl = document.getElementById('layer-fill-open');
+          if (fillEl) fillEl.checked = false;
+        }
         this.saveSettings();
         this.render();
       });
     }
+
 
     // Canvas UI Buttons (Zoom In/Out, Fit, Reset)
     document.getElementById('zoom-in-btn').addEventListener('click', () => {
@@ -1781,10 +1797,11 @@ class MSAVisualizer {
               ctx.strokeStyle = '#3d304c';
               ctx.lineWidth = 0.75 / scale;
               ctx.strokeRect(sx, sy, shutterW, shutterH);
-            } else if (op > 0) {
+            } else if (this.layers.fillOpen && op > 0) {
               ctx.fillStyle = `rgba(212, 184, 134, ${op})`; // Normal operable amber/gold aperture
               ctx.fillRect(sx, sy, shutterW, shutterH);
             }
+
           }
         }
       }
