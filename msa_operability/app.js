@@ -2006,9 +2006,10 @@ class MSAVisualizer {
 
     const arrowFontSize = 10.5 / scale;
     ctx.font = `600 ${arrowFontSize}px JetBrains Mono`;
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.95)'; // Vibrant Cyan
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
-    ctx.lineWidth = 1.6 / scale;
+    ctx.fillStyle = 'rgba(156, 163, 175, 0.9)'; // Subtle Clean Light Gray
+    ctx.strokeStyle = 'rgba(156, 163, 175, 0.9)';
+    ctx.lineWidth = 1.5 / scale;
+
 
     // 1. Column Axis Arrow (Pointing Leftwards along top of Q1)
     const colArrowY = trY - (6 / scale);
