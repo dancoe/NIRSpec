@@ -289,22 +289,22 @@
         <!-- Dispersion Arrow Banner -->
         <div id="dispersion-indicator" title="Click to hide Dispersion (can be re-enabled in Display Layers)">
           <span class="dispersion-label">Dispersion</span>
-          <svg class="dispersion-arrow-svg" viewBox="0 0 160 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg class="dispersion-arrow-svg" viewBox="0 0 220 22" fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
-              <linearGradient id="disp-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#3b82f6" />
-                <stop offset="25%" stop-color="#10b981" />
-                <stop offset="50%" stop-color="#eab308" />
-                <stop offset="75%" stop-color="#f97316" />
+              <linearGradient id="disp-rainbow-grad" x1="0" y1="0" x2="220" y2="0" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#2563eb" />
+                <stop offset="20%" stop-color="#06b6d4" />
+                <stop offset="40%" stop-color="#10b981" />
+                <stop offset="60%" stop-color="#eab308" />
+                <stop offset="80%" stop-color="#f97316" />
                 <stop offset="100%" stop-color="#ef4444" />
               </linearGradient>
             </defs>
-            <!-- Line shaft with rounded end -->
-            <line x1="4" y1="8" x2="146" y2="8" stroke="url(#disp-grad)" stroke-width="3.5" stroke-linecap="round" />
-            <!-- Arrow head -->
-            <path d="M140 3L154 8L140 13" stroke="#ef4444" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+            <!-- Bold Arrow Path (Wide shaft + sharp pointer head) -->
+            <path d="M4 11 L185 11 M175 4 L212 11 L175 18" stroke="url(#disp-rainbow-grad)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </div>
+
 
 
       </main>
