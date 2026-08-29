@@ -507,17 +507,19 @@ class MSAVisualizer {
       const hudId = document.getElementById('hud-shutter-id');
       const hudBadge = document.getElementById('hud-status-badge');
       const hudQuad = document.getElementById('hud-quad');
-      const hudLocal = document.getElementById('hud-local-pos');
-      const hudGlobal = document.getElementById('hud-global-pos');
-      const hudVig = document.getElementById('hud-vignetted');
+      const hudQuadCol = document.getElementById('hud-quad-col');
+      const hudQuadRow = document.getElementById('hud-quad-row');
+      const hudGlobalCol = document.getElementById('hud-global-col');
+      const hudGlobalRow = document.getElementById('hud-global-row');
       if (hudBadge) hudBadge.style.display = 'none';
       if (hudQuad) hudQuad.innerText = '-';
-      if (hudLocal) hudLocal.innerText = '-';
-      if (hudGlobal) hudGlobal.innerText = '-';
-      if (hudVig) hudVig.innerText = '-';
+      if (hudQuadCol) hudQuadCol.innerText = '-';
+      if (hudQuadRow) hudQuadRow.innerText = '-';
+      if (hudGlobalCol) hudGlobalCol.innerText = '-';
+      if (hudGlobalRow) hudGlobalRow.innerText = '-';
       this.render();
-
     });
+
 
     // Slowed down, gentle Wheel Zoom centered at cursor (reduced from 1.18 to 1.06)
     // Listened on the viewport container so wheel zoom works across canvas and floating overlays like DISPERSION
@@ -1231,9 +1233,10 @@ class MSAVisualizer {
     const hudId = document.getElementById('hud-shutter-id');
     const hudBadge = document.getElementById('hud-status-badge');
     const hudQuad = document.getElementById('hud-quad');
-    const hudLocal = document.getElementById('hud-local-pos');
-    const hudGlobal = document.getElementById('hud-global-pos');
-    const hudVig = document.getElementById('hud-vignetted');
+    const hudQuadCol = document.getElementById('hud-quad-col');
+    const hudQuadRow = document.getElementById('hud-quad-row');
+    const hudGlobalCol = document.getElementById('hud-global-col');
+    const hudGlobalRow = document.getElementById('hud-global-row');
 
     if (this.hoveredShutter) {
       const { q, x, y } = this.hoveredShutter;
@@ -1263,19 +1266,21 @@ class MSAVisualizer {
           hudBadge.className = 'hud-badge font-mono badge-operable';
         }
       }
-      hudQuad.innerText = `Q${q}`;
-      hudLocal.innerText = `Col ${x}, Row ${y}`;
-      hudGlobal.innerText = `Col ${global.globalCol}, Row ${global.globalRow}`;
-      if (hudVig) hudVig.innerText = isVig ? 'Yes' : 'No';
+      if (hudQuad) hudQuad.innerText = `Q${q}`;
+      if (hudQuadCol) hudQuadCol.innerText = x;
+      if (hudQuadRow) hudQuadRow.innerText = y;
+      if (hudGlobalCol) hudGlobalCol.innerText = global.globalCol;
+      if (hudGlobalRow) hudGlobalRow.innerText = global.globalRow;
     } else {
-
       hudId.innerText = `(${wx.toFixed(1)}", ${wy.toFixed(1)}")`;
       if (hudBadge) hudBadge.style.display = 'none';
-      hudQuad.innerText = '-';
-      hudLocal.innerText = '-';
-      hudGlobal.innerText = '-';
-      hudVig.innerText = '-';
+      if (hudQuad) hudQuad.innerText = '-';
+      if (hudQuadCol) hudQuadCol.innerText = '-';
+      if (hudQuadRow) hudQuadRow.innerText = '-';
+      if (hudGlobalCol) hudGlobalCol.innerText = '-';
+      if (hudGlobalRow) hudGlobalRow.innerText = '-';
     }
+
 
     // Update scale bar
     this.updateScaleBar();
