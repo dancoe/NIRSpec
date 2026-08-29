@@ -737,15 +737,26 @@ class MSAVisualizer {
           this.layers.fillOpen = true;
           const fillEl = document.getElementById('layer-fill-open');
           if (fillEl) fillEl.checked = true;
-        } else if (val === 0 && this.layers.fillOpen) {
-          this.layers.fillOpen = false;
-          const fillEl = document.getElementById('layer-fill-open');
-          if (fillEl) fillEl.checked = false;
         }
         this.saveSettings();
         this.render();
       });
     }
+
+
+    // Dispersion Indicator Banner (click to hide)
+    const dispersionEl = document.getElementById('dispersion-indicator');
+    if (dispersionEl) {
+      dispersionEl.addEventListener('click', () => {
+        this.layers.dispersion = false;
+        const layerDispEl = document.getElementById('layer-dispersion');
+        if (layerDispEl) layerDispEl.checked = false;
+        this.updateDispersionIndicator();
+        this.saveSettings();
+      });
+    }
+
+
 
 
     // Canvas UI Buttons (Zoom In/Out, Fit, Reset)

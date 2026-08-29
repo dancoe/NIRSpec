@@ -788,8 +788,16 @@ button {
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   z-index: 20;
+  user-select: none;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#dispersion-indicator:hover {
+  transform: translateX(-50%) scale(1.04);
+  opacity: 0.9;
 }
 
 .dispersion-line {
@@ -799,6 +807,7 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
 
 .dispersion-text {
   color: #ffffff;
