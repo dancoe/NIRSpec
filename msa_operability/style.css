@@ -821,10 +821,11 @@ button {
 }
 
 .action-btn svg {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: block;
 }
+
 
 .action-btn:hover {
   background: #30363d;
