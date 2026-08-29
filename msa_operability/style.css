@@ -235,9 +235,13 @@ html, body {
 }
 
 .blink-slider-wrapper {
-  display: flex;
+  display: none;
   align-items: center;
   gap: 4px;
+}
+
+.blink-slider-wrapper.active {
+  display: flex;
 }
 
 .blink-slider-wrapper input[type="range"] {
@@ -256,6 +260,7 @@ html, body {
   color: var(--text-dim);
   min-width: 24px;
 }
+
 
 .search-box {
   display: flex;
