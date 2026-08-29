@@ -74,8 +74,10 @@ open http://localhost:8000
 | :--- | :--- |
 | **Pan / Drag** | Click & Drag with mouse or finger touch (natural 1:1 motion) |
 | **Zoom In / Out** | Mouse Wheel (gentle speed) or `+` / `−` keys / on-screen buttons |
+| **Reset View (Zoom & Pan)** | **`R` key** or bottom-right reset icon button / top **Reset View** |
 | **Switch Operability Map** | **Left Arrow (`←`)** / **Right Arrow (`→`)** keys or top dropdown / `◀` `▶` buttons |
-| **Select Shutter** | Left Click on any microshutter |
+| **Toggle Auto Blink** | **Spacebar** or top **Blink** button |
+| **Select / Deselect Shutter** | Left Click on any microshutter (hover alone does not select) |
 | **Search Shutter** | Enter ID in top search box (e.g. `q2d88s116` or `Q1 38 25`) and press Enter |
-| **Reset View** | Click **Reset View** or **Full Array + Detectors** preset button |
 | **Toggle Slit State** | Select a shutter and click **Toggle Open / Closed** |
+

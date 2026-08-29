@@ -70,7 +70,7 @@ class MSAVisualizer {
 
     // User customized open shutters (Set of string 'q-x-y')
     this.userOpenShutters = new Set();
-    this.selectedShutter = { q: 2, x: 88, y: 116 }; // Default famous stuck open shutter
+    this.selectedShutter = null; // No shutter selected by default (only selected on explicit click)
 
     // Multi-map operability data repository
     this.allMapsData = null;
@@ -342,8 +342,13 @@ class MSAVisualizer {
 
     this.populateStuckOpenList();
     this.populateVignettedList();
-    this.updateInspector(this.selectedShutter.q, this.selectedShutter.x, this.selectedShutter.y);
+    if (this.selectedShutter) {
+      this.updateInspector(this.selectedShutter.q, this.selectedShutter.x, this.selectedShutter.y);
+    } else {
+      this.updateInspector(null);
+    }
     this.dataLoaded = true;
+
     this.saveSettings();
     this.render();
   }
@@ -539,11 +544,16 @@ class MSAVisualizer {
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         this.toggleBlink();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        const targetScale = Math.min(this.width / 460, this.height / 240);
+        this.animateCameraTo(0, 0, targetScale, 350);
       } else if (e.key === '+' || e.key === '=') {
         this.zoomAt(this.width / 2, this.height / 2, 1.12);
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
       }
+
     });
 
     // Map switcher UI buttons & select dropdown
