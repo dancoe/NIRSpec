@@ -807,9 +807,13 @@ class MSAVisualizer {
       closeDrawerBtn.addEventListener('click', () => this.toggleDrawer(false));
     }
 
-    document.getElementById('btn-reset-view').addEventListener('click', () => {
-      this.fitView('msa');
-    });
+    const btnResetView = document.getElementById('btn-reset-view');
+    if (btnResetView) {
+      btnResetView.addEventListener('click', () => {
+        this.fitView('msa');
+      });
+    }
+
 
 
     // Search Box
