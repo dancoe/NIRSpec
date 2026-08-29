@@ -2006,14 +2006,14 @@ class MSAVisualizer {
 
     const arrowFontSize = 10.5 / scale;
     ctx.font = `600 ${arrowFontSize}px JetBrains Mono`;
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.9)'; // Cyan
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.9)';
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.95)'; // Vibrant Cyan
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.95)';
     ctx.lineWidth = 1.6 / scale;
 
-    // 1. Column Axis Arrow (Pointing Leftwards along top of Q1: Col 1 -> Col 730)
+    // 1. Column Axis Arrow (Pointing Leftwards along top of Q1)
     const colArrowY = trY - (6 / scale);
-    const colStartX = trX;
-    const colEndX = trX - (38 / scale);
+    const colStartX = trX - (2 / scale);
+    const colEndX = trX - (44 / scale);
     
     ctx.beginPath();
     ctx.moveTo(colStartX, colArrowY);
@@ -2024,14 +2024,15 @@ class MSAVisualizer {
     ctx.lineTo(colEndX + (4 / scale), colArrowY + (3 / scale));
     ctx.stroke();
 
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Col 1 ➔', colStartX + (42 / scale), colArrowY);
+    // "Col" text centered directly above the top arrow
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Col', (colStartX + colEndX) / 2, colArrowY - (2 / scale));
 
-    // 2. Row Axis Arrow (Pointing Downwards along right of Q1: Row 1 -> Row 342)
+    // 2. Row Axis Arrow (Pointing Downwards along right of Q1)
     const rowArrowX = trX + (8 / scale);
-    const rowStartY = trY;
-    const rowEndY = trY + (38 / scale);
+    const rowStartY = trY + (2 / scale);
+    const rowEndY = trY + (44 / scale);
 
     ctx.beginPath();
     ctx.moveTo(rowArrowX, rowStartY);
@@ -2042,12 +2043,14 @@ class MSAVisualizer {
     ctx.lineTo(rowArrowX + (3 / scale), rowEndY - (4 / scale));
     ctx.stroke();
 
+    // "Row" text placed halfway down the right side of the vertical arrow
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('Row 1 ➔', rowArrowX + (4 / scale), rowStartY - (2 / scale));
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Row', rowArrowX + (5 / scale), (rowStartY + rowEndY) / 2);
 
     ctx.restore();
   }
+
 
 
   renderHighlights(ctx) {
