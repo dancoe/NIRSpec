@@ -94,8 +94,8 @@ class MSAVisualizer {
     // Layer toggles (Default matching user configuration)
     this.layers = {
       fillOpen: false, // Fill Open Shutters (off by default)
-      detectors: true,
-      detectorPixels: true,
+      detectors: false, // Detectors off by default
+      detectorPixels: false,
       vignetting: true,
       stuckOpen: true,
       stuckClosed: true,
@@ -105,6 +105,7 @@ class MSAVisualizer {
       coordinates: true,
       dispersion: true
     };
+
 
     this.shutterOpacity = 0.40; // Default 40% opacity for open shutters
 
