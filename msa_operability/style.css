@@ -798,7 +798,8 @@ button {
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   color: var(--text-main);
-  font-size: 17px;
+  font-size: 19px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -808,10 +809,17 @@ button {
   transition: all 0.15s ease;
 }
 
+.action-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
 .action-btn:hover {
   background: #30363d;
   color: #58a6ff;
 }
+
 
 
 
