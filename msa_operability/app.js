@@ -1016,24 +1016,30 @@ class MSAVisualizer {
   }
 
   // Convert (Q, col, row) to global 2x2 grid coordinates (1..730, 1..342)
+  // Starting at Top-Right corner (Q1: col 1, row 1):
+  // Global Col increases from Right to Left (Q1/Q2 -> Q3/Q4): 1..730
+  // Global Row increases from Top to Bottom (Q1/Q3 -> Q2/Q4): 1..342
   quadToGlobal(q, col, row) {
     let globalCol = 0;
     let globalRow = 0;
 
-    if (q === 3 || q === 4) {
-      globalCol = MSA_CONSTANTS.COLS - col + 1;
+    // Columns: Q1/Q2 (Right): 1..365, Q3/Q4 (Left): 366..730
+    if (q === 1 || q === 2) {
+      globalCol = col;
     } else {
       globalCol = MSA_CONSTANTS.COLS + col;
     }
 
-    if (q === 3 || q === 1) {
-      globalRow = MSA_CONSTANTS.ROWS - row + 1;
+    // Rows: Q1/Q3 (Top): 1..171, Q2/Q4 (Bottom): 172..342
+    if (q === 1 || q === 3) {
+      globalRow = row;
     } else {
       globalRow = MSA_CONSTANTS.ROWS + row;
     }
 
     return { globalCol, globalRow };
   }
+
 
   getShutterState(q, col, row) {
     if (q < 1 || q > 4 || col < 1 || col > MSA_CONSTANTS.COLS || row < 1 || row > MSA_CONSTANTS.ROWS) {
@@ -1181,13 +1187,14 @@ class MSAVisualizer {
       const gRow = parseInt(match[2]);
       if (gCol >= 1 && gCol <= MSA_CONSTANTS.COLS * 2 && gRow >= 1 && gRow <= MSA_CONSTANTS.ROWS * 2) {
         const q = (gCol <= MSA_CONSTANTS.COLS)
-          ? (gRow <= MSA_CONSTANTS.ROWS ? 3 : 4)
-          : (gRow <= MSA_CONSTANTS.ROWS ? 1 : 2);
-        const col = (gCol <= MSA_CONSTANTS.COLS) ? (MSA_CONSTANTS.COLS - gCol + 1) : (gCol - MSA_CONSTANTS.COLS);
-        const row = (gRow <= MSA_CONSTANTS.ROWS) ? (MSA_CONSTANTS.ROWS - gRow + 1) : (gRow - MSA_CONSTANTS.ROWS);
+          ? (gRow <= MSA_CONSTANTS.ROWS ? 1 : 2)
+          : (gRow <= MSA_CONSTANTS.ROWS ? 3 : 4);
+        const col = (gCol <= MSA_CONSTANTS.COLS) ? gCol : (gCol - MSA_CONSTANTS.COLS);
+        const row = (gRow <= MSA_CONSTANTS.ROWS) ? gRow : (gRow - MSA_CONSTANTS.ROWS);
         this.jumpToShutter(q, col, row);
         return;
       }
+
     }
 
     // Search fixed slit name
@@ -1987,8 +1994,56 @@ class MSAVisualizer {
     const q4Y = (halfGapY + qH) + (16 / scale);
     ctx.fillText('Q4', q4X, q4Y);
 
+    // --- Row and Column Arrows along Top-Right Corner (Q1) ---
+    // Top-Right outer corner coordinates:
+    const trX = halfGapX + qW; // outer right edge of Q1
+    const trY = -(halfGapY + qH); // outer top edge of Q1
+
+    const arrowFontSize = 10.5 / scale;
+    ctx.font = `600 ${arrowFontSize}px JetBrains Mono`;
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.9)'; // Cyan
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.9)';
+    ctx.lineWidth = 1.6 / scale;
+
+    // 1. Column Axis Arrow (Pointing Leftwards along top of Q1: Col 1 -> Col 730)
+    const colArrowY = trY - (6 / scale);
+    const colStartX = trX;
+    const colEndX = trX - (38 / scale);
+    
+    ctx.beginPath();
+    ctx.moveTo(colStartX, colArrowY);
+    ctx.lineTo(colEndX, colArrowY);
+    // Arrow head pointing left
+    ctx.lineTo(colEndX + (4 / scale), colArrowY - (3 / scale));
+    ctx.moveTo(colEndX, colArrowY);
+    ctx.lineTo(colEndX + (4 / scale), colArrowY + (3 / scale));
+    ctx.stroke();
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Col 1 ➔', colStartX + (42 / scale), colArrowY);
+
+    // 2. Row Axis Arrow (Pointing Downwards along right of Q1: Row 1 -> Row 342)
+    const rowArrowX = trX + (8 / scale);
+    const rowStartY = trY;
+    const rowEndY = trY + (38 / scale);
+
+    ctx.beginPath();
+    ctx.moveTo(rowArrowX, rowStartY);
+    ctx.lineTo(rowArrowX, rowEndY);
+    // Arrow head pointing downwards (in inverted canvas Y, down is +Y)
+    ctx.lineTo(rowArrowX - (3 / scale), rowEndY - (4 / scale));
+    ctx.moveTo(rowArrowX, rowEndY);
+    ctx.lineTo(rowArrowX + (3 / scale), rowEndY - (4 / scale));
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Row 1 ➔', rowArrowX + (4 / scale), rowStartY - (2 / scale));
+
     ctx.restore();
   }
+
 
   renderHighlights(ctx) {
     const shutterW = MSA_CONSTANTS.SHUTTER_WIDTH;  // 0.20" opening

@@ -114,6 +114,12 @@ Shutters are commonly referenced by string IDs such as `q2d88s116`:
 
 *Example*: `q2d88s116` refers to Quadrant 2, Column 88, Row 116.
 
+### 5.3 Full-Array (Global) Coordinates
+Global indexing starts at the **Top-Right outer corner (Q1)**:
+- **Global Columns (1...730)**: Origin at the right edge of Q1/Q2, increasing to the left (Q1/Q2: 1...365 $\rightarrow$ Q3/Q4: 366...730).
+- **Global Rows (1...342)**: Origin at the top edge of Q1/Q3, increasing downwards (Q1/Q3: 1...171 $\rightarrow$ Q2/Q4: 172...342).
+
+
 ---
 
 ## 6. Detectors, Overlap, & The Physics of Vignetting
