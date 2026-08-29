@@ -661,12 +661,11 @@ button {
   cursor: grabbing;
 }
 
-/* Single-Row Floating HUD Banner */
+/* Single-Row Floating HUD Banner (Top Left) */
 #hud-bar {
   position: absolute;
-  top: 10px;
-  left: 12px;
-  right: 12px;
+  top: 12px;
+  left: 14px;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -680,7 +679,6 @@ button {
   z-index: 20;
   font-size: 11px;
   white-space: nowrap;
-  overflow-x: auto;
 }
 
 #hud-bar::-webkit-scrollbar {
@@ -738,9 +736,32 @@ button {
   flex-shrink: 0;
 }
 
-.hud-scale-item {
-  margin-left: auto;
+/* Bottom-Right Dock for Scale Card & Action Buttons */
+#bottom-right-dock {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+#scale-dock-card {
+  display: flex;
+  align-items: center;
   gap: 12px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-main);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
 }
 
 .scale-bar-compact {
@@ -759,45 +780,40 @@ button {
 
 #scale-bar-text {
   font-size: 10px;
-  color: #fff;
-}
-
-#scale-bar-text {
-  font-size: 10px;
   font-family: var(--font-mono);
   color: #fff;
 }
 
 /* Canvas Navigation Controls */
 #canvas-actions {
-  position: absolute;
-  bottom: 24px;
-  right: 24px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  z-index: 20;
 }
 
 .action-btn {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   background: rgba(22, 27, 34, 0.9);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   color: var(--text-main);
-  font-size: 18px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  transition: all 0.15s ease;
 }
+
 .action-btn:hover {
   background: #30363d;
   color: #58a6ff;
 }
+
+
 
 /* Dispersion indicator */
 #dispersion-indicator {
