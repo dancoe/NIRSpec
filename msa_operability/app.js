@@ -553,6 +553,11 @@ class MSAVisualizer {
         }
       }
 
+      // Don't intercept single-key shortcuts if Cmd/Ctrl/Alt is held down (e.g. Cmd-R / Ctrl-R for browser refresh)
+      if (isCmdOrCtrl || e.altKey) {
+        return;
+      }
+
       // Don't intercept regular keys if user is typing in search box
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
         return;
@@ -580,6 +585,7 @@ class MSAVisualizer {
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
       }
+
 
 
     });
