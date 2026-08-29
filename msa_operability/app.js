@@ -571,12 +571,16 @@ class MSAVisualizer {
         e.preventDefault();
         const targetScale = Math.min(this.width / 240, this.height / 240);
         this.animateCameraTo(0, 0, targetScale, 350);
+      } else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        const targetScale = Math.min(this.width / 460, this.height / 240);
+        this.animateCameraTo(0, 0, targetScale, 350);
       } else if (e.key === '+' || e.key === '=') {
-
         this.zoomAt(this.width / 2, this.height / 2, 1.12);
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
       }
+
 
     });
 
@@ -771,9 +775,11 @@ class MSAVisualizer {
     const zoomFitBtn = document.getElementById('zoom-fit-btn');
     if (zoomFitBtn) {
       zoomFitBtn.addEventListener('click', () => {
-        this.fitView('all');
+        const targetScale = Math.min(this.width / 460, this.height / 240);
+        this.animateCameraTo(0, 0, targetScale, 350);
       });
     }
+
 
     const canvasResetBtn = document.getElementById('canvas-reset-btn');
     if (canvasResetBtn) {
