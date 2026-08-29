@@ -742,14 +742,13 @@ button {
   flex-shrink: 0;
 }
 
-/* Bottom-Right Dock for Scale Card & Action Buttons */
-#bottom-right-dock {
+/* Bottom-Left Dock for Scale Card */
+#bottom-left-dock {
   position: absolute;
   bottom: 16px;
-  right: 16px;
+  left: 16px;
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  align-items: center;
   z-index: 20;
   pointer-events: auto;
 }
@@ -790,12 +789,18 @@ button {
   color: #fff;
 }
 
-/* Canvas Navigation Controls */
+/* Canvas Navigation Controls (Bottom-Right) */
 #canvas-actions {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  z-index: 20;
+  pointer-events: auto;
 }
+
 
 .action-btn {
   width: 34px;
