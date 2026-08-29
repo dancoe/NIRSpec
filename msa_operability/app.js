@@ -516,6 +516,7 @@ class MSAVisualizer {
       if (hudGlobal) hudGlobal.innerText = '-';
       if (hudVig) hudVig.innerText = '-';
       this.render();
+
     });
 
     // Slowed down, gentle Wheel Zoom centered at cursor (reduced from 1.18 to 1.06)
@@ -1258,8 +1259,9 @@ class MSAVisualizer {
       hudQuad.innerText = `Q${q}`;
       hudLocal.innerText = `Col ${x}, Row ${y}`;
       hudGlobal.innerText = `Col ${global.globalCol}, Row ${global.globalRow}`;
-      hudVig.innerText = isVig ? 'Yes' : 'No';
+      if (hudVig) hudVig.innerText = isVig ? 'Yes' : 'No';
     } else {
+
       hudId.innerText = `(${wx.toFixed(1)}", ${wy.toFixed(1)}")`;
       if (hudBadge) hudBadge.style.display = 'none';
       hudQuad.innerText = '-';
