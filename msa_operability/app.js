@@ -2029,18 +2029,139 @@ class MSAVisualizer {
     }
   }
 
-  // Simple Markdown parser for guide modal
+  // Full Markdown & GFM Table parser for guide modal
   renderMarkdown(md) {
-    return md
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-      .replace(/`([^`]+)`/gim, '<code>$1</code>')
-      .replace(/\n\n/gim, '<br/><br/>');
+    const lines = md.split('\n');
+    let html = '';
+    let inTable = false;
+    let tableHeaderDone = false;
+    let inCode = false;
+    let codeContent = '';
+    let inList = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Code blocks ```
+      if (line.trim().startsWith('```')) {
+        if (inCode) {
+          html += `<pre><code>${codeContent}</code></pre>`;
+          inCode = false;
+          codeContent = '';
+        } else {
+          if (inList) { html += '</ul>'; inList = false; }
+          if (inTable) { html += '</tbody></table>'; inTable = false; tableHeaderDone = false; }
+          inCode = true;
+          codeContent = '';
+        }
+        continue;
+      }
+      if (inCode) {
+        codeContent += line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '\n';
+        continue;
+      }
+
+      // Markdown Tables
+      if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+        const cells = line.trim().split('|').slice(1, -1).map(c => c.trim());
+        const isSeparator = cells.every(c => /^:?-+:?$/.test(c));
+
+        if (isSeparator) {
+          tableHeaderDone = true;
+          continue;
+        }
+
+        if (!inTable) {
+          if (inList) { html += '</ul>'; inList = false; }
+          inTable = true;
+          tableHeaderDone = false;
+          html += '<table class="guide-table"><thead><tr>';
+          cells.forEach(c => {
+            html += `<th>${this.formatInlineMd(c)}</th>`;
+          });
+          html += '</tr></thead><tbody>';
+          continue;
+        } else {
+          html += '<tr>';
+          cells.forEach(c => {
+            html += `<td>${this.formatInlineMd(c)}</td>`;
+          });
+          html += '</tr>';
+          continue;
+        }
+      } else if (inTable) {
+        html += '</tbody></table>';
+        inTable = false;
+        tableHeaderDone = false;
+      }
+
+      const trimmed = line.trim();
+
+      // Horizontal rules
+      if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += '<hr class="guide-divider" />';
+        continue;
+      }
+
+      // Headings
+      if (trimmed.startsWith('# ')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<h1 class="guide-h1">${this.formatInlineMd(trimmed.substring(2))}</h1>`;
+        continue;
+      }
+      if (trimmed.startsWith('## ')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<h2 class="guide-h2">${this.formatInlineMd(trimmed.substring(3))}</h2>`;
+        continue;
+      }
+      if (trimmed.startsWith('### ')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<h3 class="guide-h3">${this.formatInlineMd(trimmed.substring(4))}</h3>`;
+        continue;
+      }
+
+      // Lists
+      if (/^[-*]\s+/.test(trimmed)) {
+        if (!inList) { html += '<ul class="guide-list">'; inList = true; }
+        html += `<li>${this.formatInlineMd(trimmed.replace(/^[-*]\s+/, ''))}</li>`;
+        continue;
+      } else if (inList && trimmed === '') {
+        html += '</ul>';
+        inList = false;
+        continue;
+      }
+
+      // Paragraphs & Callout alerts
+      if (trimmed.length > 0) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<p class="guide-p">${this.formatInlineMd(trimmed)}</p>`;
+      }
+    }
+
+    if (inTable) html += '</tbody></table>';
+    if (inList) html += '</ul>';
+    if (inCode) html += `<pre><code>${codeContent}</code></pre>`;
+
+    return html;
+  }
+
+  // Format inline bold, italics, code, LaTeX math, and links
+  formatInlineMd(text) {
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\\sim\s*/g, '~')
+      .replace(/\\times\s*/g, '×')
+      .replace(/\\mu\\text\{m\}/g, 'µm')
+      .replace(/\\dots/g, '…')
+      .replace(/\\text\{([^\}]+)\}/g, '$1')
+      .replace(/\$([^\$]+)\$/g, '<span class="font-mono text-cyan">$1</span>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   }
 }
+
 
 // Initialize Application when DOM is ready
 window.addEventListener('DOMContentLoaded', () => {
