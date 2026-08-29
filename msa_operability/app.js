@@ -578,11 +578,15 @@ class MSAVisualizer {
         e.preventDefault();
         const targetScale = Math.min(this.width / 240, this.height / 240);
         this.animateCameraTo(0, 0, targetScale, 350);
+      } else if (e.key === 'h' || e.key === 'H' || e.key === '/' || e.key === '?') {
+        e.preventDefault();
+        this.openGuideModal();
       } else if (e.key === '+' || e.key === '=') {
         this.zoomAt(this.width / 2, this.height / 2, 1.12);
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
       }
+
 
 
 
@@ -863,18 +867,11 @@ class MSAVisualizer {
     });
 
     // Documentation Modal
-    const modal = document.getElementById('guide-modal');
-    document.getElementById('btn-show-guide').addEventListener('click', async () => {
-      try {
-        const res = await fetch('MSA.md');
-        const text = await res.text();
-        document.getElementById('modal-content').innerHTML = this.renderMarkdown(text);
-      } catch (e) {
-        document.getElementById('modal-content').innerHTML = '<p>Unable to load MSA.md</p>';
-      }
-      modal.classList.remove('hidden');
+    document.getElementById('btn-show-guide').addEventListener('click', () => {
+      this.openGuideModal();
     });
 
+    const modal = document.getElementById('guide-modal');
     document.getElementById('close-modal').addEventListener('click', () => {
       modal.classList.add('hidden');
     });
@@ -883,6 +880,20 @@ class MSAVisualizer {
       modal.classList.add('hidden');
     });
   }
+
+  async openGuideModal() {
+    const modal = document.getElementById('guide-modal');
+    if (!modal) return;
+    try {
+      const res = await fetch('MSA.md');
+      const text = await res.text();
+      document.getElementById('modal-content').innerHTML = this.renderMarkdown(text);
+    } catch (e) {
+      document.getElementById('modal-content').innerHTML = '<p>Unable to load MSA.md</p>';
+    }
+    modal.classList.remove('hidden');
+  }
+
 
   // Convert screen coordinates to world coordinates (arcsec)
   screenToWorld(screenX, screenY) {

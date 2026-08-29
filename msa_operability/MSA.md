@@ -1,26 +1,54 @@
 # JWST NIRSpec Micro-Shutter Array (MSA) Reference Guide
 
-## Quick Visual Color & Status Key
+## 1. What Is Being Shown? (Visual Color & Status Key)
 
-| Color | Status & Meaning | Action / Science Impact |
+The canvas presents a millimeter-accurate optical projection of the NIRSpec Multi-Object Spectroscopy focal plane:
+
+| Visual Element | Status & Meaning | Science & Planning Significance |
 | :--- | :--- | :--- |
-| **Dark Green / Grid** | **Operable (Closed)** | Healthy microshutter. Ready to be configured open for science observations. |
-| **Bright Gold / Filled** | **Operable (Configured Open)** | Open slit collecting light from target astronomical sources. |
-| **Bright Cyan / Blue** | **Custom User Slit / Selection** | Slit selected or opened by user in the visualizer / inspector. |
-| **Bright Red Dot** | **Failed Open (Stuck Open)** | Critical planning constraint (~25 across array). Permanently open, leaks sky background onto detectors. |
-| **Purple Overlay** | **Vignetted Shutter** | Located around array edges & outer corners. Throughput is partially or fully cut off by detector geometry. |
-| **Slate Gray / Darkened** | **Failed Closed (Stuck Closed)** | Unusable shutter (~17.5% of array). Will not open when commanded, but causes no optical contamination. |
-| **Dark Violet Regions** | **H2RG Detectors (NRS1 & NRS2)** | The two Hawaii-2RG detector footprints behind the MSA focal plane. |
+| **Dark Green Matrix** | **Operable (Closed)** | Standard healthy microshutters available to be opened for astronomical target placement. |
+| **Bright Gold / Filled** | **Operable (Configured Open)** | Shutters programmed open during an observation to let target starlight through. |
+| **Bright Cyan / Blue** | **Custom Slit / Selected Focus** | Shutter currently clicked/selected for inspection or opened in custom planning tests. |
+| **Bright Red Dots** | **Failed Open (Stuck Open)** | Critical planning constraint (~25 across array). Permanently stuck open, leaking background sky light. |
+| **Purple Overlay** | **Vignetted Shutters** | Concentrated at outer quadrant corners. Throughput is truncated by optical/detector boundaries. |
+| **Slate Gray / Darkened** | **Failed Closed (Stuck Closed)** | Inactive shutters (~17.5% of array). Will not open when commanded, but cause no contamination. |
+| **Dark Violet Blocks** | **Detectors (NRS1 & NRS2)** | The two 2048 × 2048 Hawaii-2RG detector active areas positioned behind the MSA. |
+| **Rainbow Arrow** | **Direction of Dispersion** | Shows the spectral dispersion vector along the horizontal axis (Blue $\rightarrow$ Red). |
 
 ---
 
-## 1. Overview of the NIRSpec MSA
+## 2. Interactive Functionality & Capabilities
 
-The **Near-Infrared Spectrograph (NIRSpec)** on board the **James Webb Space Telescope (JWST)** enables simultaneous Multi-Object Spectroscopy (MOS) of hundreds of astronomical targets over a ~3.6' × 3.4' field of view. This capability is powered by the **Micro-Shutter Array (MSA)**, a MEMS device containing **249,660 individually addressable shutters**.
+| Feature Area | Key Functionality | How To Use |
+| :--- | :--- | :--- |
+| **Pan & Zoom Navigation** | 1:1 smooth canvas panning and centered mouse wheel zooming. | **Click & Drag** canvas to pan; **Mouse Wheel** or `+`/`−` to zoom; **`R` key** resets view directly to the MSA. |
+| **Operability Map History** | Explore reference maps spanning pre-flight to present-day on-orbit states. | Use the **Top Map Dropdown**, **`←` / `→` arrow keys**, or click the **Blink** button (or **Spacebar**) for automated blinking. |
+| **Shutter Inspection & Jump** | Instant telemetry lookup for any of the 249,660 shutters. | **Click any shutter** to open the right Inspector drawer, or type an ID into the **Search Box** (e.g. `q2d88s116` or `Q1 38 25`). |
+| **Slit Planning Simulation** | Plan single-shutter or standard 3-shutter nod slitlets (`1x3`). | In the Inspector drawer, click **Toggle Open / Closed** or **Open 3-Shutter Slitlet (1x3)**. |
+| **Stuck Open & Vignetted Browsers** | Quick-navigation lists grouped by quadrant. | Click any shutter chip in the right drawer to instantly fly the camera directly to that shutter. |
+| **Display Layer Customization** | Toggle visibility and opacity of detectors, open shutters, vignetting, and grid outlines. | Use the checkboxes and opacity sliders in the collapsible left sidebar (**`⌘J` / `Ctrl+J`**). |
+| **Documentation & Help** | Instant access to this comprehensive reference manual. | Press **`H`**, **`?`**, or **`/`** from anywhere in the app. |
 
 ---
 
-## 2. Key Physical Dimensions & Geometry
+## 3. Keyboard & Mouse Shortcuts Cheatsheet
+
+| Action | Shortcut / Control |
+| :--- | :--- |
+| **Pan / Drag Canvas** | **Click & Drag** with mouse or touch |
+| **Zoom In / Out** | **Mouse Wheel** (centered at cursor) or **`+` / `−` keys** |
+| **Reset View (MSA Active Area)** | **`R` key** or bottom-right reset icon button / top **Reset View** |
+| **Switch Operability Map** | **Left Arrow (`←`)** / **Right Arrow (`→`)** keys or top dropdown |
+| **Toggle Auto Blink** | **Spacebar** or top **Blink** button |
+| **Show MSA Reference Guide** | **`H`**, **`?`**, or **`/` keys** |
+| **Toggle Left Sidebar** | **`⌘J` / `Ctrl+J`** |
+| **Toggle Right Inspector Drawer** | **`⌘K` / `Ctrl+K`** |
+| **Search & Center Shutter** | Type ID in search box (e.g. `q2d88s116`) and press **Enter** |
+| **Close Modal / Deselect** | **Escape key (`Esc`)** |
+
+---
+
+## 4. Key Physical Dimensions & Geometry
 
 | Parameter | Value | Value in Physical Units | Notes |
 | :--- | :--- | :--- | :--- |
@@ -55,11 +83,11 @@ The **Near-Infrared Spectrograph (NIRSpec)** on board the **James Webb Space Tel
 
 ---
 
-## 3. Quadrant Numbering & Coordinate Systems
+## 5. Quadrant Numbering & Coordinate Systems
 
 NIRSpec uses two interconnected coordinate systems for referencing shutters:
 
-### 3.1 Quadrant Coordinates (Q, Col, Row)
+### 5.1 Quadrant Coordinates (Q, Col, Row)
 In each quadrant, columns are indexed 1...365 and rows are indexed 1...171, matching CRDS reference files (`jwst_nirspec_msaoper_*.json`) and the JWST pipeline WCS:
 - **Q1 (Top-Right)**:
   - Column 1 is at the **far right outer edge**; Column 365 is at the **central gap**.
@@ -78,7 +106,7 @@ In each quadrant, columns are indexed 1...365 and rows are indexed 1...171, matc
   - Row 1 is at the **central bar**; Row 171 is at the **bottom outer edge**.
   - *Outside Corner*: (x=365, y=171) (Bottom-Left)
 
-### 3.2 Standard MPT (MSA Planning Tool) Naming Format
+### 5.2 Standard MPT (MSA Planning Tool) Naming Format
 Shutters are commonly referenced by string IDs such as `q2d88s116`:
 - `q<Q>`: Quadrant index (1, 2, 3, or 4)
 - `d<Col>`: Column (dispersion/col index, 1...365)
@@ -88,43 +116,21 @@ Shutters are commonly referenced by string IDs such as `q2d88s116`:
 
 ---
 
-## 4. Detectors, Overlap, & The Physics of Vignetting
+## 6. Detectors, Overlap, & The Physics of Vignetting
 
-### 4.1 Detector Geometry: NRS1 & NRS2
+### 6.1 Detector Geometry: NRS1 & NRS2
 The NIRSpec focal plane assembly (FPA) consists of **two Teledyne 2048 × 2048 Hawaii-2RG (H2RG) detectors**, labeled **NRS1** (left / short-wavelength side of dispersion) and **NRS2** (right / long-wavelength side of dispersion).
 - The two detectors are separated by a physical gap of **~18''** (~178 pixels / ~3.2 mm).
 - The detector array active imaging area extends wider horizontally than the MSA microshutter array.
 
-### 4.2 Why Are Some Shutters Vignetted?
+### 6.2 Why Are Some Shutters Vignetted?
 1. **Geometric Non-Overlap**: Optical projection of the MSA aperture plane onto the tilted detector field means certain outer perimeter and corner shutters do not project full throughput onto the active detector pixels.
 2. **Dispersion Cutoff**: When light passes through a shutter at the outer edge of the array, the dispersed spectrum may fall partially or completely off the edge of the detector or into the inter-detector gap.
 3. **Reference Operability Mask**: The CRDS operability file (`jwst_nirspec_msaoper_*.json`) explicitly marks shutters as `Vignetted: 'yes'` when their optical path or dispersed throughput suffers from physical vignetting (>24,000 shutters).
 
 ---
 
-## 5. Microshutter Actuation & Operability States
-
-Each microshutter consists of a silicon nitride door with a magnetic coating, a torsional hinge, and electrostatic address electrodes. A sweeping magnetic arm pulls open all shutters, and individual electrostatic voltages hold desired shutters open while non-energized shutters snap closed.
-
-In the reference operability dataset (`jwst_nirspec_msaoper_0018.json`):
-
-1. **Operable / Normal (Unvignetted)**:
-   - Controllable shutters that open and close on command with full optical throughput to the detectors.
-   - ~181,801 shutters (~72.8% of the array).
-2. **Stuck Closed**:
-   - Failed closed shutters that cannot open (e.g. mechanical blockage, hinge stiffness, or damaged address lines/shorts).
-   - Inactive during science exposures; do not contaminate spectra.
-   - ~52,497 shutters total.
-3. **Stuck Open (Failed Open)**:
-   - Shutters permanently stuck open (~25 shutters across the array).
-   - Critical planning constraint: stuck open shutters allow unwanted sky/target light to contaminate background spectra on the detectors.
-   - Notable stuck open shutter: `q2d88s116` (Quadrant 2, Col 88, Row 116).
-4. **Vignetted**:
-   - Shutters whose throughput is partially or fully truncated by detector edges or instrument baffles (~24,024 shutters total).
-
----
-
-## 6. Central Bar: Fixed Slits & IFU Aperture
+## 7. Central Bar: Fixed Slits & IFU Aperture
 
 Located within the ~37'' horizontal dividing bar between upper and lower quadrants:
 
@@ -139,7 +145,7 @@ Located within the ~37'' horizontal dividing bar between upper and lower quadran
 
 ---
 
-## 7. Summary Table of Array Statistics (from `jwst_nirspec_msaoper_0018.json`)
+## 8. Summary Table of Array Statistics (from `jwst_nirspec_msaoper_0018.json`)
 
 | Metric | Count | Percentage of Total |
 | :--- | :--- | :--- |

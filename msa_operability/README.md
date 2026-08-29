@@ -77,9 +77,12 @@ open http://localhost:8000
 | **Reset View (MSA Field)** | **`R` key** or bottom-right reset icon button / top **Reset View** |
 | **Switch Operability Map** | **Left Arrow (`←`)** / **Right Arrow (`→`)** keys or top dropdown / `◀` `▶` buttons |
 | **Toggle Auto Blink** | **Spacebar** or top **Blink** button |
+| **Open Reference Guide & Help** | **`H`**, **`?`**, or **`/` keys** / top **📖 MSA Guide** button |
 | **Select / Deselect Shutter** | Left Click on any microshutter (hover alone does not select) |
 | **Search Shutter** | Enter ID in top search box (e.g. `q2d88s116` or `Q1 38 25`) and press Enter |
 | **Toggle Slit State** | Select a shutter and click **Toggle Open / Closed** |
+| **Toggle Sidebars** | **`⌘J` / `Ctrl+J`** (Left), **`⌘K` / `Ctrl+K`** (Right Inspector) |
+
 
 
 
