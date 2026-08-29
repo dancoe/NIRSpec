@@ -496,12 +496,30 @@ class MSAVisualizer {
       }
     });
 
+    this.canvas.addEventListener('mouseleave', () => {
+      this.hoveredShutter = null;
+      const hudId = document.getElementById('hud-shutter-id');
+      const hudBadge = document.getElementById('hud-status-badge');
+      const hudQuad = document.getElementById('hud-quad');
+      const hudLocal = document.getElementById('hud-local-pos');
+      const hudGlobal = document.getElementById('hud-global-pos');
+      const hudVig = document.getElementById('hud-vignetted');
+      if (hudBadge) hudBadge.style.display = 'none';
+      if (hudQuad) hudQuad.innerText = '-';
+      if (hudLocal) hudLocal.innerText = '-';
+      if (hudGlobal) hudGlobal.innerText = '-';
+      if (hudVig) hudVig.innerText = '-';
+      this.render();
+    });
+
     // Slowed down, gentle Wheel Zoom centered at cursor (reduced from 1.18 to 1.06)
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.06 : (1 / 1.06);
       this.zoomAt(this.mousePos.x, this.mousePos.y, zoomFactor);
+      this.updateHover();
     }, { passive: false });
+
 
     // Keyboard navigation: Left/Right arrows switch operability maps, Cmd-J / Cmd-K toggle panels
     window.addEventListener('keydown', (e) => {
@@ -1140,7 +1158,17 @@ class MSAVisualizer {
     const { x: wx, y: wy } = this.screenToWorld(this.mousePos.x, this.mousePos.y);
 
     const hit = this.worldToQuad(wx, wy);
+    const prevHover = this.hoveredShutter;
     this.hoveredShutter = hit ? { q: hit.q, x: hit.col, y: hit.row } : null;
+
+    const hoverChanged = (!prevHover && this.hoveredShutter) ||
+      (prevHover && !this.hoveredShutter) ||
+      (prevHover && this.hoveredShutter && (prevHover.q !== this.hoveredShutter.q || prevHover.x !== this.hoveredShutter.x || prevHover.y !== this.hoveredShutter.y));
+
+    if (hoverChanged && !this.isDragging) {
+      this.render();
+    }
+
 
     // Update HUD Bar
     const hudId = document.getElementById('hud-shutter-id');
