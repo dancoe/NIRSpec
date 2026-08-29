@@ -210,9 +210,10 @@ class MSAVisualizer {
     this.setupEventListeners();
     this.applySettingsToUI();
     await this.loadAllMapsData();
-    this.fitView('all');
+    this.fitView('msa');
     this.render();
   }
+
 
   setupResizeHandler() {
     const resize = () => {
@@ -568,9 +569,10 @@ class MSAVisualizer {
         this.toggleBlink();
       } else if (e.key === 'r' || e.key === 'R') {
         e.preventDefault();
-        const targetScale = Math.min(this.width / 460, this.height / 240);
+        const targetScale = Math.min(this.width / 240, this.height / 240);
         this.animateCameraTo(0, 0, targetScale, 350);
       } else if (e.key === '+' || e.key === '=') {
+
         this.zoomAt(this.width / 2, this.height / 2, 1.12);
       } else if (e.key === '-' || e.key === '_') {
         this.zoomAt(this.width / 2, this.height / 2, 1 / 1.12);
@@ -765,7 +767,7 @@ class MSAVisualizer {
     const canvasResetBtn = document.getElementById('canvas-reset-btn');
     if (canvasResetBtn) {
       canvasResetBtn.addEventListener('click', () => {
-        const targetScale = Math.min(this.width / 460, this.height / 240);
+        const targetScale = Math.min(this.width / 240, this.height / 240);
         this.animateCameraTo(0, 0, targetScale, 350);
       });
     }
@@ -787,8 +789,9 @@ class MSAVisualizer {
     }
 
     document.getElementById('btn-reset-view').addEventListener('click', () => {
-      this.fitView('all');
+      this.fitView('msa');
     });
+
 
     // Search Box
     const searchInput = document.getElementById('shutter-search');
