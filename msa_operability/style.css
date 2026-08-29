@@ -822,12 +822,31 @@ button {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
-.dispersion-arrow-svg {
-  width: 220px;
-  height: 22px;
-  display: block;
-  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.7));
+.dispersion-arrow-bar {
+  display: flex;
+  align-items: center;
+  width: 200px;
+  height: 14px;
 }
+
+.dispersion-shaft {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, #2563eb 0%, #06b6d4 25%, #10b981 50%, #eab308 75%, #f97316 95%, #ef4444 100%);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+}
+
+.dispersion-head {
+  width: 0;
+  height: 0;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 11px solid #ef4444;
+  margin-left: -1px;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4));
+}
+
 
 
 
