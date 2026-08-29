@@ -518,12 +518,14 @@ class MSAVisualizer {
     });
 
     // Slowed down, gentle Wheel Zoom centered at cursor (reduced from 1.18 to 1.06)
-    this.canvas.addEventListener('wheel', (e) => {
+    // Listened on the viewport container so wheel zoom works across canvas and floating overlays like DISPERSION
+    this.container.addEventListener('wheel', (e) => {
       e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.06 : (1 / 1.06);
       this.zoomAt(this.mousePos.x, this.mousePos.y, zoomFactor);
       this.updateHover();
     }, { passive: false });
+
 
 
     // Keyboard navigation: Left/Right arrows switch operability maps, Cmd-J / Cmd-K toggle panels
