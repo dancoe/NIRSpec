@@ -1,10 +1,13 @@
 # NIRSpec
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-dancoe%2FNIRSpec-blue?logo=github)](https://github.com/dancoe/NIRSpec)
+[![Live Web App](https://img.shields.io/badge/Live_App-dancoe.github.io%2FNIRSpec-brightgreen?logo=googlechrome&logoColor=white)](https://dancoe.github.io/NIRSpec/)
 
-Repository: [https://github.com/dancoe/NIRSpec](https://github.com/dancoe/NIRSpec)
+- **Public Repository:** [https://github.com/dancoe/NIRSpec](https://github.com/dancoe/NIRSpec)
+- **Live MSA Operability Visualizer:** [https://dancoe.github.io/NIRSpec/](https://dancoe.github.io/NIRSpec/)
 
 Tools, notebooks, and interactive applications for JWST NIRSpec MOS (Multi-Object Spectroscopy) data analysis, proposal review, and instrument visualization.
+
 
 
 ---
