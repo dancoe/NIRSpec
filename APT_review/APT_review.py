@@ -4536,22 +4536,35 @@ class NIRSpecMOSReviewer:
                 highest_weight = unique_weights[0]
                 weight_str = " or ".join([f"{w:,.0f}" for w in unique_weights[:2]])
                 
-                # Check if all highest-priority targets in active catalogs achieved 100% coverage in each visit
+                # Check if high-priority targets achieved full depth when observed (i.e. no partial exposure)
                 full_depth = True
+                top_weights = set(unique_weights[:2])
                 for cat in active_catalogs:
                     if cat in analysis:
-                        highest_sids = [sid for sid, s in self.catalogs.get(cat, {}).get('sources', {}).items() if s.get('weight') == highest_weight]
+                        highest_sids = [sid for sid, s in self.catalogs.get(cat, {}).get('sources', {}).items() if s.get('weight') in top_weights]
                         results = analysis[cat].get('results', {})
                         for sid in highest_sids:
-                            sid_res = results.get(sid, {})
+                            sid_res = results.get(str(sid)) or results.get(sid, {})
                             for o_num, visits_map in sid_res.items():
                                 if o_num not in reviewed_obs: continue
                                 for v_key, gf_map in visits_map.items():
                                     for gf, gf_data in gf_map.items():
                                         if gf == 'configs': continue
-                                        if gf_data.get('n_obs', 0) < gf_data.get('n_total', 0):
-                                            full_depth = False
-                                            break
+                                        by_config = gf_data.get('by_config', {})
+                                        if by_config:
+                                            for cfg, c_res in by_config.items():
+                                                c_obs = c_res.get('n_obs', 0)
+                                                c_total = c_res.get('n_total', 0)
+                                                if 0 < c_obs < c_total:
+                                                    full_depth = False
+                                                    break
+                                        else:
+                                            n_obs = gf_data.get('n_obs', 0)
+                                            n_total = gf_data.get('n_total', 0)
+                                            if 0 < n_obs < n_total:
+                                                full_depth = False
+                                                break
+                                        if not full_depth: break
                                     if not full_depth: break
                                 if not full_depth: break
                             if not full_depth: break
