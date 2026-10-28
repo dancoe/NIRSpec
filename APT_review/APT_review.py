@@ -11,6 +11,8 @@ import csv
 import io
 import shlex
 import urllib.request
+import urllib.error
+import time
 import subprocess
 import sys
 import warnings
@@ -5046,18 +5048,72 @@ class NIRSpecMOSReviewer:
 
 
 
+def download_file_with_retry(url, dest_file, retries=3, timeout=30):
+    """Download a file with browser User-Agent, retries with backoff, and curl fallback."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+    }
+    req = urllib.request.Request(url, headers=headers)
+    last_error = None
+    dest_path = Path(dest_file)
+    temp_dest = dest_path.with_suffix(f".part_{os.getpid()}")
+    
+    # 1. Try urllib with retries and exponential backoff
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response, open(temp_dest, 'wb') as out_f:
+                shutil.copyfileobj(response, out_f)
+            temp_dest.replace(dest_path)
+            return True
+        except Exception as e:
+            last_error = e
+            if temp_dest.exists():
+                try:
+                    temp_dest.unlink()
+                except OSError:
+                    pass
+            if attempt < retries:
+                delay = 2 ** attempt
+                print(f"⚠️  Download attempt {attempt} failed ({e}). Retrying in {delay}s...")
+                time.sleep(delay)
+    
+    # 2. Try curl fallback if available
+    print(f"⚠️  urllib failed ({last_error}). Trying curl fallback...")
+    try:
+        curl_cmd = [
+            "curl", "-f", "-s", "-S", "-L",
+            "-A", headers['User-Agent'],
+            "--retry", "2",
+            "--retry-delay", "1",
+            "--connect-timeout", str(timeout),
+            "-o", str(dest_path),
+            url
+        ]
+        res = subprocess.run(curl_cmd, capture_output=True, text=True)
+        if res.returncode == 0 and dest_path.exists() and dest_path.stat().st_size > 0:
+            return True
+        else:
+            if res.stderr.strip():
+                print(f"⚠️  curl fallback error: {res.stderr.strip()}")
+    except Exception as e:
+        print(f"⚠️  curl fallback failed: {e}")
+
+    return False
+
+
 def download_aptx(pid, dest_dir):
-    """Download JWST APTX file from STScI. Handle existing files."""
+    """Download JWST APTX file from STScI. Handle existing files and fallbacks."""
     base_url = "https://www.stsci.edu/jwst/phase2-public/"
     url = f"{base_url}{pid}.aptx"
+    dest_path_dir = Path(dest_dir).resolve()
     
     # Check what already exists in dest_dir
-    existing = list(Path(dest_dir).glob(f"JWST{pid}*.aptx"))
+    existing = list(dest_path_dir.glob(f"JWST{pid}*.aptx"))
     
     if existing:
         # Prompt user if interactive, otherwise default to using existing
-        # But for now, let's follow the user's suggestion of handling duplicates
-        print(f"\n📁 Program {pid} APTX file(s) already exist in {dest_dir}:")
+        print(f"\n📁 Program {pid} APTX file(s) already exist in {dest_path_dir.name}:")
         for f in sorted(existing, key=lambda x: x.stat().st_mtime):
             print(f"  - {f.name}")
         
@@ -5066,24 +5122,55 @@ def download_aptx(pid, dest_dir):
         if not choice or choice == 'u':
             return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
         elif choice == 'o':
-            dest_file = Path(dest_dir) / f"JWST{pid}.aptx"
+            dest_file = dest_path_dir / f"JWST{pid}.aptx"
         else: # Download newest with timestamp
             now = datetime.now().strftime("%m%d") # e.g. 421 for April 21
-            dest_file = Path(dest_dir) / f"JWST{pid}_{now}.aptx"
+            dest_file = dest_path_dir / f"JWST{pid}_{now}.aptx"
     else:
-        dest_file = Path(dest_dir) / f"JWST{pid}.aptx"
+        dest_file = dest_path_dir / f"JWST{pid}.aptx"
 
-    print(f"📥 Downloading {url} to {dest_file}...")
-    try:
-        urllib.request.urlretrieve(url, dest_file)
+    print(f"📥 Downloading {url} to {dest_file.name}...")
+    success = download_file_with_retry(url, dest_file)
+    if success:
         print(f"✅ Successfully downloaded {pid}")
         return dest_file
-    except Exception as e:
-        print(f"❌ Error downloading {pid}: {e}")
-        if existing:
-            print("Using existing file as fallback.")
-            return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
-        sys.exit(1)
+
+    print(f"❌ Error downloading {pid} from STScI.")
+
+    # 1. Fallback: check ~/Downloads for previously downloaded file
+    downloads_dir = Path.home() / "Downloads"
+    if downloads_dir.exists():
+        download_candidates = sorted(
+            list(downloads_dir.glob(f"*{pid}*.aptx")),
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+        if download_candidates:
+            matched_file = download_candidates[0]
+            print(f"💡 Found matching file in ~/Downloads: {matched_file.name}")
+            shutil.copy2(matched_file, dest_file)
+            print(f"✅ Copied {matched_file.name} to {dest_file.name} as fallback.")
+            return dest_file
+
+    # 2. Fallback: check existing file in current directory
+    if existing:
+        print("Using existing file in current directory as fallback.")
+        return sorted(existing, key=lambda x: x.stat().st_mtime)[-1]
+
+    # 3. Fallback: check existing file in sibling review directories
+    parent_existing = sorted(
+        list(dest_path_dir.parent.glob(f"*/JWST{pid}*.aptx")),
+        key=lambda x: x.stat().st_mtime,
+        reverse=True
+    )
+    if parent_existing:
+        matched_parent_file = parent_existing[0]
+        print(f"💡 Found existing review file: {matched_parent_file.parent.name}/{matched_parent_file.name}")
+        shutil.copy2(matched_parent_file, dest_file)
+        print(f"✅ Copied previous review file to {dest_file.name} as fallback.")
+        return dest_file
+
+    sys.exit(1)
 
 def main():
     parser = argparse.ArgumentParser(description="Review JWST NIRSpec MOS Programs")
