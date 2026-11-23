@@ -441,6 +441,8 @@ class NIRSpecMOSReviewer:
         #     obs_flag = ["-obs", ",".join(sorted_obs)]
 
         any_success = False
+        attempted_msa = False
+        attempted_visits = False
         
         # 1. MSA Targets
         if is_missing_msa:
@@ -451,12 +453,12 @@ class NIRSpecMOSReviewer:
             output_dir = self.input_path.parent / "msatargets"
             output_dir.mkdir(parents=True, exist_ok=True)
             print(f"📡 Exporting msatargets using APT...")
+            attempted_msa = True
             try:
-                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=60)
+                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=300)
                 any_success = True
             except subprocess.TimeoutExpired:
-                print("⚠️  Export of msatargets timed out (took > 60s). This can happen if APT tries to contact STScI servers for online validation but is blocked or delayed by the network.")
-                print("👉 Please run the command manually or do the export from within the APT GUI: File -> Export... -> MSA Targets.")
+                print("⚠️  Export of msatargets timed out (took > 300s). APT may still be finishing in the background; checking output directory...")
             except Exception as e:
                 print(f"❌ Error during msatargets export: {e}")
 
@@ -471,49 +473,51 @@ class NIRSpecMOSReviewer:
             output_dir.mkdir(parents=True, exist_ok=True)
 
             print(f"📡 Exporting visit coverage using APT...")
+            attempted_visits = True
             try:
-                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=60)
+                subprocess.run(cmd, cwd=str(self.input_path.parent), timeout=300)
                 any_success = True
             except subprocess.TimeoutExpired:
-                print("⚠️  Export of visits timed out (took > 60s). This can happen if APT tries to contact STScI servers for online validation but is blocked or delayed by the network.")
-                print("👉 Please run the command manually or do the export from within the APT GUI: File -> Export... -> CSV.")
+                print("⚠️  Export of visits timed out (took > 300s). APT may still be finishing in the background; checking output directory...")
             except Exception as e:
                 print(f"❌ Error during visits export: {e}")
 
-        if any_success:
-            # Since APT might delegate to a running instance and return immediately,
-            # we poll the output directories for up to 90 seconds.
+        if any_success or attempted_msa or attempted_visits:
+            # Since APT might delegate to a running instance or finish writing in the background,
+            # poll the output directories until file counts and sizes stabilize.
             import time
             print("⏳ Waiting for APT to write export files...")
             start_time = time.time()
-            timeout = 90
+            timeout = 150
             
-            # Identify what we are waiting for
-            wait_for_msa = is_missing_msa
-            wait_for_visits = is_missing_visits
+            wait_for_msa = attempted_msa
+            wait_for_visits = attempted_visits
             
             msa_ok = not wait_for_msa
             visits_ok = not wait_for_visits
             
             while time.time() - start_time < timeout:
                 if not msa_ok:
-                    msa_files = list((self.input_path.parent / "msatargets").glob("*.csv"))
+                    msa_files = sorted((self.input_path.parent / "msatargets").glob("*.csv"))
                     if msa_files:
-                        # Ensure files are completely written (non-zero size and not changing)
-                        sizes1 = [f.stat().st_size for f in msa_files]
-                        time.sleep(1)
-                        sizes2 = [f.stat().st_size for f in msa_files]
-                        if sizes1 == sizes2 and all(s > 0 for s in sizes1):
+                        snap1 = [(f.name, f.stat().st_size) for f in msa_files]
+                        time.sleep(2)
+                        msa_files2 = sorted((self.input_path.parent / "msatargets").glob("*.csv"))
+                        snap2 = [(f.name, f.stat().st_size) for f in msa_files2]
+                        if snap1 == snap2 and all(s > 0 for _, s in snap1):
                             msa_ok = True
+                            any_success = True
                 
                 if not visits_ok:
-                    visits_files = list((self.input_path.parent / "visits").glob("*.csv"))
+                    visits_files = sorted((self.input_path.parent / "visits").glob("*.csv"))
                     if visits_files:
-                        sizes1 = [f.stat().st_size for f in visits_files]
-                        time.sleep(1)
-                        sizes2 = [f.stat().st_size for f in visits_files]
-                        if sizes1 == sizes2 and all(s > 0 for s in sizes1):
+                        snap1 = [(f.name, f.stat().st_size) for f in visits_files]
+                        time.sleep(2)
+                        visits_files2 = sorted((self.input_path.parent / "visits").glob("*.csv"))
+                        snap2 = [(f.name, f.stat().st_size) for f in visits_files2]
+                        if snap1 == snap2 and all(s > 0 for _, s in snap1):
                             visits_ok = True
+                            any_success = True
                             
                 if msa_ok and visits_ok:
                     print("✅ Export files detected and ready.")
@@ -521,6 +525,10 @@ class NIRSpecMOSReviewer:
                 time.sleep(2)
             else:
                 print("⚠️  Timed out waiting for export files to appear on disk.")
+                if not msa_ok:
+                    print("👉 You can export manually in APT: File -> Export... -> MSA Targets, then rerun APT_review.py.")
+                if not visits_ok:
+                    print("👉 You can export manually in APT: File -> Export... -> CSV, then rerun APT_review.py.")
 
         return any_success
 
@@ -2354,7 +2362,73 @@ class NIRSpecMOSReviewer:
                 return 99999
         return sorted(iterable, key=sort_key)
 
+    def _recheck_late_ta_exports(self):
+        """Re-check searched directories for -TA.csv files that may have finished exporting in the background."""
+        if not getattr(self, 'searched_dirs', None):
+            return
+        missing_obs = {
+            str(o) for o in getattr(self, 'reviewed_obs_nums', [])
+            if self.analytics.get(str(o), {}).get('ta_method') == "MSATA"
+            and not self.exports_data.get('ta_stars', {}).get(str(o))
+        }
+        if not missing_obs:
+            return
+
+        newly_loaded_obs = set()
+        for d in self.searched_dirs:
+            if not d.exists():
+                continue
+            for csv_file in d.glob("*.csv"):
+                name_lower = csv_file.name.lower()
+                if name_lower.endswith("-ta.csv") and "obs" in name_lower:
+                    m = re.search(r'obs(\d+)(?:-(\d+))?', name_lower)
+                    if m:
+                        obs_num = str(int(m.group(1)))
+                        if obs_num not in missing_obs:
+                            continue
+                        v_num = m.group(2)
+                        label = f"Visit {obs_num}:{int(v_num)}" if v_num else f"Visit {obs_num}:1"
+                        if self._parse_ta_csv(csv_file, obs_num, v_num, label=label):
+                            self._record_file_used(csv_file)
+                            newly_loaded_obs.add(obs_num)
+
+        for obs_num in newly_loaded_obs:
+            visit_stars_info = self.exports_data['ta_stars'].get(obs_num, {})
+            v_info = self.analytics.get(obs_num, {}).get('visit_info', {})
+            for v_key, v_data in visit_stars_info.items():
+                if v_key in v_info:
+                    v_info[v_key]['stars'] = v_data['count']
+                    v_info[v_key]['quads'] = v_data['quads']
+                    v_info[v_key]['quad_counts'] = v_data['quad_counts']
+                    if v_data.get('pa') is not None:
+                        v_info[v_key]['pointing_pa'] = v_data['pa']
+                    v_info[v_key]['source'] = v_data['file']
+
+            # Replace stale "No reference stars found." log entries for this obs
+            pat = re.compile(rf'Obs {int(obs_num)}: .*No reference stars found')
+            self.results = [
+                r for r in self.results
+                if not (r.get('category') == "Reference Stars" and pat.search(r.get('message', '')))
+            ]
+            v_keys = sorted(visit_stars_info.keys(), key=int)
+            for v_key in v_keys:
+                v_data = visit_stars_info[v_key]
+                v_star_count = v_data['count']
+                v_quads = v_data['quads']
+                v_source = v_data['file']
+                v_label = f"Visit {obs_num}:{v_key}: " if len(v_keys) > 1 else ""
+                if v_star_count > 0:
+                    self.stats['ref_stars'].append(v_star_count)
+                    v_status = "SUCCESS" if v_star_count >= 8 else "WARNING"
+                    if v_star_count < 5:
+                        v_status = "ERROR"
+                    vq_count = len(v_quads)
+                    self.log("Reference Stars", f"{v_label}Stars: {v_star_count} in {vq_count} quads ({v_source})", v_status, obs_num)
+                    vq_status = "SUCCESS" if vq_count >= 3 else "WARNING"
+                    self.log("Reference Stars", f"{v_label}Quadrants: {vq_count}", vq_status, obs_num)
+
     def print_report(self):
+        self._recheck_late_ta_exports()
         output = io.StringIO()
         icons = {
             'ERROR': '❌', 'WARNING': '⚠️ ', 'INFO': 'ℹ️ ', 'SUCCESS': '✅', 'TIP': '💡',
@@ -4130,6 +4204,8 @@ class NIRSpecMOSReviewer:
             
             for obs_num in self._get_sorted_obs_nums(no_ref_obs):
                 write(f"❌  Obs {obs_num} has no reference stars!")
+            if no_ref_obs:
+                write(f"{icons['WARNING']} If reference stars exist in APT, the automatic export may not have finished in time — try rerunning APT_review.py.")
 
             # Catalogs
             active_catalogs = {self.analytics[o].get('target_name') for o in self.analytics if 'target_name' in self.analytics[o]}
@@ -4605,8 +4681,10 @@ class NIRSpecMOSReviewer:
         if not items_to_print:
             write(f"{icons['WARNING']} No reference stars found in exports")
         else:
+            missing_ref_stars = False
             for obs_num, v_key, info in items_to_print:
                 if info is None:
+                    missing_ref_stars = True
                     v_keys = sorted(self.analytics.get(str(obs_num), {}).get('visit_info', {}).keys(), key=int)
                     if not v_keys: v_keys = ['1']
                     for vk in v_keys:
@@ -4616,6 +4694,8 @@ class NIRSpecMOSReviewer:
                     quads = len(info['quads'])
                     icon = "✅" if count >= 8 and quads >= 3 else icons['WARNING']
                     write(f"{icon} Visit {obs_num}:{v_key} – {count} stars in {quads} quads")
+            if missing_ref_stars:
+                write(f"{icons['WARNING']} If reference stars exist in APT, the automatic export may not have finished in time — try rerunning APT_review.py.")
 
 
     def _report_catalogs(self, write, icons):
